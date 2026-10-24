@@ -45,7 +45,7 @@ window.Workspace = (() => {
   }
   async function refresh() {
     const [comparison, profiles, runs] = await Promise.all([api("/api/v1/comparison"), api("/api/v1/solar/imports"), api("/api/v1/analysis/runs")]);
-    data = { ...comparison, imports: profiles.imports, runs: runs.runs }; return data;
+    data = { ...comparison, imports: profiles.imports, runs: runs.runs }; window.dispatchEvent(new Event("app:refreshed")); return data;
   }
   async function duplicate(run) {
     if (window.Analysis?.load) { await Analysis.load(run.input.request); location.hash = "/scenarios/nieuw"; UI.toast("Kopie geladen als nieuw scenario. Controleer en bevestig de invoer opnieuw."); }
@@ -180,7 +180,7 @@ window.Workspace = (() => {
     window.addEventListener("analysis:candidates", () => { enhanceOptions(); update(); });
     window.addEventListener("analysis:loaded", () => { enhanceOptions(); for (const card of Analysis.candidateCards.values()) card._updateProgress?.(); scenarioFlow.show(0); update(); });
     Analysis.ready.then(() => { const draft = UI.read("thuisaccu-draft", null); if (draft) { try { Analysis.restore(draft); UI.toast("Je concept is hersteld. Bevestigingen moet je opnieuw controleren."); } catch { UI.toast("Het concept kon niet worden hersteld.", true); } } update(); });
-    window.addEventListener("app:route", () => update());
+    window.addEventListener("app:route", () => update()); window.addEventListener("app:refreshed", () => update());
     // Bestaande uitleg blijft contextueel beschikbaar boven de wizard.
     const help = el("details", null, "context-help"); help.append(el("summary", "Over deze schatting en je gegevens")); for (const child of [...section.children]) if (child.tagName === "P") help.append(child); section.prepend(help);
   }
@@ -190,7 +190,7 @@ window.Workspace = (() => {
       if (location.hash.slice(2) !== (id ? `${key.split("/")[0]}/${id}` : key)) return;
       if (key === "dashboard") dashboard();
       lists(key);
-      if (key === "scenarios/detail") { const run = data.runs.find(r => String(r.id) === id); const out = screen(key); out.replaceChildren(); if (run) { out.append($("analysis-result")); Analysis.renderResult(run.result, run.input.request); } else out.append(empty("Analyse niet gevonden", "De API toont maximaal de laatste 100 analyses.", link("Terug naar scenario’s", "#/scenarios"))); }
+      if (key === "scenarios/detail") { const run = data.runs.find(r => String(r.id) === id); const out = screen(key); out.replaceChildren(); if (run) { Results.render(run, out); } else out.append(empty("Analyse niet gevonden", "De API toont maximaal de laatste 100 analyses.", link("Terug naar scenario’s", "#/scenarios"))); }
       if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { const result = el("div"); out.append(profileName(item), result); Research.renderSolar(item.summary, item.filename, item.options.timezone, result); $("page-actions").append(button("Start scenario met dit profiel", () => { location.hash = "/scenarios/nieuw"; $("analysis-profile").value = String(item.id); })); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
     } catch (error) { UI.toast(error.message, true); }
   }

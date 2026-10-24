@@ -22,6 +22,7 @@ pub fn app(catalog: Catalog) -> Router {
         .route("/app.js", get(script))
         .route("/ui.js", get(ui_script))
         .route("/workspace.js", get(workspace_script))
+        .route("/results.js", get(results_script))
         .route("/analysis.js", get(analysis_script))
         .route("/api/v1/analysis/costs", get(scenario_api::costs))
         .route(
@@ -78,6 +79,13 @@ async fn workspace_script() -> ([(header::HeaderName, &'static str); 1], &'stati
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         include_str!("../../../web/workspace.js"),
+    )
+}
+
+async fn results_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../../../web/results.js"),
     )
 }
 

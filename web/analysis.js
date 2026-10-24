@@ -96,27 +96,6 @@
     byId("analysis-history").replaceChildren(); const pick = make("option", "Kies een bewaarde analyse…"); pick.value = ""; byId("analysis-history").append(pick);
     for (const run of savedRuns) { const option = make("option", `${run.title} · ${new Date(run.created_at_unix_s * 1000).toLocaleString("nl-NL")}`); option.value = String(run.id); byId("analysis-history").append(option); }
   }
-  function renderResult(result, context) {
-    const out = byId("analysis-result"); out.replaceChildren();
-    out.append(make("h3", result.recommendation), make("p", `${context.title || "Scenario"} · ${context.site?.address || ""} · ${names[context.parameters?.objective] || ""} · ${context.parameters?.horizon_years || ""} jaar vanaf ${context.parameters?.start_year || ""}`, "muted"));
-    const scroll = make("div", null, "table-scroll"), table = make("table"), head = make("thead"), header = make("tr");
-    for (const label of ["Optie", "Netto start", "NPV", "Nettowinst over looptijd", "ROI", "Blijvend terugverdiend", "Eigen zonnestroom gebruikt (jaar 1)"]) header.append(make("th", label)); head.append(header); table.append(head);
-    const body = make("tbody");
-    const add = values => { const row = make("tr"); for (const v of values) row.append(make("td", v)); body.append(row); return row; };
-    add([`Geen accu${result.recommended_key === "no_battery" ? " · aanbevolen" : ""}`, money(0), money(0), money(0), "Niet van toepassing", "Geen investering", `${number(result.baseline_first_year.self_consumption_pct)}%`]);
-    for (const r of result.candidates) { const row = add([`${r.name}${r.key === result.recommended_key ? " · aanbevolen" : ""}${r.within_budget ? "" : " · boven budget"}`, money(r.initial_investment_eur), money(r.npv_eur), money(r.net_profit_eur), r.roi_pct === null ? "Niet bepaald" : `${number(r.roi_pct)}%`, r.payback_years === null ? "Niet binnen horizon" : `Uiterlijk einde jaar ${r.payback_years}`, `${number(r.first_year.self_consumption_pct)}%`]); if (r.key === result.recommended_key) row.className = "recommended-row"; }
-    table.append(body); scroll.append(table); out.append(scroll, make("p", "NPV is het netto voordeel ten opzichte van géén accu, na disconteren. ROI is nettowinst over de hele looptijd gedeeld door de netto startinvestering; geen jaarlijks rendementspercentage. De terugverdientijd blijft ook na latere vervangingskosten positief.", "muted"));
-    for (const r of result.candidates) {
-      const detail = make("details", null, "panel result-detail"); detail.append(make("summary", `${r.name} — kasstromen, energie en gevoeligheid`));
-      const stats = make("div", null, "stats"); for (const [label, value] of [["Levensduurkosten, extra t.o.v. geen accu", money(r.lifetime_extra_costs_eur)], ["Bespaarde energiekosten over looptijd", money(r.lifetime_energy_saving_eur)], ["NPV bij ongunstige aannames", money(r.pessimistic.npv_eur)], ["NPV bij gunstige aannames", money(r.optimistic.npv_eur)], ["Extra zonnestroom naar huishouden, jaar 1", `${number(r.first_year.battery_to_load_kwh)} kWh`], ["Verliezen incl. capaciteitsafname, jaar 1", `${number(r.first_year.conversion_and_fade_loss_kwh)} kWh`], ["Standbyverbruik, jaar 1", `${number(r.first_year.standby_kwh)} kWh`], ["Netafname / teruglevering, jaar 1", `${number(r.first_year.grid_import_kwh)} / ${number(r.first_year.grid_export_kwh)} kWh`]]) { const stat = make("div"); stat.append(make("small", label), make("strong", value)); stats.append(stat); } detail.append(stats);
-      const wrapper = make("div", null, "table-scroll"), yearTable = make("table"), heading = make("tr"); for (const label of ["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Netto voordeel", "Cumulatief", "Zelfvoorziening"]) heading.append(make("th", label)); yearTable.append(heading);
-      for (const y of r.years) { const tr = make("tr"); for (const text of [String(y.calendar_year), money(y.baseline_bill_eur), money(y.battery_bill_eur), money(y.extra_costs_eur), money(y.financing_interest_eur), money(y.net_cashflow_eur), money(y.cumulative_eur), `${number(y.energy.self_sufficiency_pct)}%`]) tr.append(make("td", text)); yearTable.append(tr); }
-      wrapper.append(yearTable); detail.append(wrapper); out.append(detail);
-    }
-    const warnings = make("ul", null, "warnings"); result.warnings.forEach(w => warnings.append(make("li", w))); out.append(warnings);
-    const snapshot = make("details"); snapshot.append(make("summary", "Gebruikte invoer en aannames")); const pre = make("pre", JSON.stringify(context, null, 2)); snapshot.append(pre); out.append(snapshot);
-    out.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
   byId("analysis-add").addEventListener("click", () => costCatalog && addCandidate());
   byId("analysis-add-catalog").addEventListener("click", () => {
     const c = catalog?.configurations.find(c => String(c.id) === byId("analysis-catalog").value); if (!c) return message("Kies eerst een catalogusuitvoering.", true);
@@ -167,7 +146,7 @@
     raw.candidates = input.candidates.map(c => ({ configuration_id: c.configuration_id, fields: { name: c.name, ...c.battery, assumptions: c.assumptions, loan_amount_eur: c.financing.loan_amount_eur, annual_interest_pct: c.financing.annual_interest_pct, loan_years: c.financing.years }, costs: c.costs.map(cost => ({ category: cost.category, notes: cost.notes, fields: { amount: cost.status === "priced" ? (cost.amount_minor / 100).toFixed(2) : "", status: cost.status, source: cost.source, year: cost.year ?? "" } })) }));
     restore(raw); UI.write("thuisaccu-draft", capture());
   }
-  window.Analysis = { renderResult, refreshData, addCandidate, capture, restore, load, parameterFields, tariffFields, parameters, collectCandidate, get candidateCards() { return candidateCards; }, get costCatalog() { return costCatalog; }, get savedRuns() { return savedRuns; } };
+  window.Analysis = { refreshData, addCandidate, capture, restore, load, parameterFields, tariffFields, parameters, collectCandidate, get candidateCards() { return candidateCards; }, get costCatalog() { return costCatalog; }, get savedRuns() { return savedRuns; } };
   Analysis.ready = (async () => {
     costCatalog = await request("/api/v1/analysis/costs"); const sources = byId("analysis-cost-sources"); sources.append(make("p", `Onderzocht op ${costCatalog.researched_on}. ${costCatalog.notes}`));
     for (const source of costCatalog.sources) { const p = make("p"), link = make("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer"; p.append(link, make("small", source.note)); sources.append(p); }

@@ -221,3 +221,33 @@ pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .scenario-review { margin-bottom: 1rem; }
 @media (max-width: 1200px) { .scenario-layout { grid-template-columns: 1fr; } .scenario-summary { position: static; } }
 @media (max-width: 540px) { .cost-row, .cost-row[data-timing=event] { grid-template-columns: 1fr; } .analysis-options-heading select { max-width: 100%; } }
+.option-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+.option-kpi { border-top: 4px solid var(--accent); padding: 1rem; }
+.option-kpi h3 { margin-top: 0; }
+.option-kpi .stats strong { font-size: 1.15rem; }
+.recommendation { margin: 1rem 0 1.5rem; background: var(--accent-soft); }
+.recommendation h2 { margin: .5rem 0 1rem; }
+.result-meta p { margin-bottom: .35rem; }
+.demo-banner { background: #fff0d4; border: 1px solid #bb8226; color: #774600; padding: 1rem; border-radius: var(--radius); font-size: .85rem; font-weight: 700; }
+.result-dashboard table { table-layout: fixed; font-size: .76rem; }
+.result-dashboard th, .result-dashboard td { min-width: 0; padding: .7rem .5rem; }
+.result-dashboard td:not(:first-child) { text-align: right; }
+.result-dashboard th:not(:first-child) { text-align: right; }
+.result-dashboard .table-scroll { min-width: 0; }
+.result-dashboard .negative { color: var(--danger); }
+.input-option { margin: 1rem 0; }
+.result-dashboard .input-option td { text-align: left; }
+@media (max-width: 899px) { .result-dashboard table { min-width: 45rem; } .chart svg { min-width: 0; } }
+@media print {
+  :root { --bg: white; --surface: white; --ink: #111; --muted: #444; --line: #ccc; color-scheme: light; }
+  .sidebar, #menu-toggle, .toasts, footer, .page-header .actions, .tabs, .wizard-footer, .skip { display: none !important; }
+  main { margin: 0; padding: 0; width: 100%; max-width: none; }
+  .result-dashboard > [role=tabpanel] { display: block !important; break-before: auto; margin-top: 1.5rem; }
+  .result-dashboard .panel, .chart { break-inside: avoid; box-shadow: none; }
+  .result-dashboard .table-scroll { overflow: visible; }
+  .result-dashboard table { min-width: 0; font-size: 8pt; }
+  .result-dashboard td, .result-dashboard th { padding: 4pt; }
+  .result-dashboard .table-scroll::after { display: none; }
+  .option-kpis { grid-template-columns: repeat(3, 1fr); }
+  .chart svg { max-height: 22cm; }
+}
