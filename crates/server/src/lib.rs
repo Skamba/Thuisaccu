@@ -20,6 +20,7 @@ pub fn app(catalog: Catalog) -> Router {
         .route("/", get(index))
         .route("/styles.css", get(styles))
         .route("/app.js", get(script))
+        .route("/ui.js", get(ui_script))
         .route("/analysis.js", get(analysis_script))
         .route("/api/v1/analysis/costs", get(scenario_api::costs))
         .route(
@@ -62,6 +63,13 @@ async fn script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         include_str!("../../../web/app.js"),
+    )
+}
+
+async fn ui_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../../../web/ui.js"),
     )
 }
 

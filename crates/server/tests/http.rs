@@ -161,3 +161,19 @@ async fn database_failures_are_reported_without_leaking_internal_errors() {
     let body = to_bytes(response.into_body(), 1024).await.unwrap();
     assert_eq!(body.as_ref(), br#"{"error":"database_error"}"#);
 }
+
+#[tokio::test]
+async fn shared_browser_helpers_are_embedded() {
+    let response = test_app()
+        .await
+        .oneshot(Request::get("/ui.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/javascript; charset=utf-8"
+    );
+    let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    assert!(std::str::from_utf8(&body).unwrap().contains("formatMoney"));
+}

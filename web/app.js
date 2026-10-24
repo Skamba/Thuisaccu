@@ -5,7 +5,7 @@ const selected = new Set();
 let dataset = null;
 let history = [];
 let previewSignature = null;
-const fmt = (value, digits = 2) => new Intl.NumberFormat("nl-NL", { maximumFractionDigits: digits }).format(value);
+const fmt = (value, digits = 2) => UI.formatNumber(value, digits);
 const date = (seconds, timeZone = "UTC") => new Date(seconds * 1000).toLocaleString("nl-NL", { timeZone, timeZoneName: "short" });
 function node(tag, text, cls) {
   const n = document.createElement(tag);
@@ -13,11 +13,7 @@ function node(tag, text, cls) {
   if (cls) n.className = cls;
   return n;
 }
-function notice(message, error = false) {
-  $("notice").textContent = message;
-  $("notice").hidden = false;
-  $("notice").classList.toggle("error", error);
-}
+function notice(message, error = false) { UI.toast(message, error); }
 async function api(url, options) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => ({}));

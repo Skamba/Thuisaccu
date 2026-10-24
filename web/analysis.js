@@ -2,12 +2,12 @@
   "use strict";
   const byId = id => document.getElementById(id);
   const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined && text !== null) el.textContent = text; if (cls) el.className = cls; return el; };
-  const number = (v, digits = 2) => new Intl.NumberFormat("nl-NL", { maximumFractionDigits: digits }).format(v);
+  const number = (v, digits = 2) => UI.formatNumber(v, digits);
   const money = v => `€ ${number(v)}`;
   const names = { net_present_value: "Hoogste netto voordeel (NPV)", roi: "Hoogste ROI", payback: "Kortste blijvende terugverdientijd", self_consumption: "Meeste eigen zonnestroom gebruiken" };
   let costCatalog, catalog, savedRuns = [], sites = [], selectedSite = null, sequence = 0;
   const candidateCards = new Map();
-  function message(text, error = false) { const box = byId("analysis-message"); box.hidden = false; box.textContent = text; box.className = error ? "notice error" : "notice"; }
+  function message(text, error = false) { UI.toast(text, error); }
   async function request(url, options) { const response = await fetch(url, options); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.message || body.error || `Verzoek mislukt (${response.status})`); return body; }
   const post = (url, payload) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   async function action(button, work) { button.disabled = true; try { await work(); } catch (e) { message(e.message, true); } finally { button.disabled = false; } }
