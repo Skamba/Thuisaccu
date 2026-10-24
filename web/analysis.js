@@ -38,7 +38,25 @@
     const controls = make("div", null, "actions");
     const included = make("button", "Markeer pakketonderdelen als inbegrepen", "secondary"); included.type = "button";
     const notApplicable = make("button", "Overige onbekende posten: niet van toepassing", "text-button"); notApplicable.type = "button";
-    controls.append(included, notApplicable); details.append(controls, make("p", "Vul offertes of expliciete schattingen in. Bij een all-in pakket staat de prijs één keer bij accu/pakket; inbegrepen componenten mogen niet dubbel worden geteld. Beoordeel ook extra vaste netkosten, verzekering en fiscale administratie.", "muted"));
+    const estimate = make("button", "Vul open posten met indicaties", "secondary"); estimate.type = "button";
+    const kindLabel = make("label", "Soort accu (voor de indicaties)"), kind = make("select"); for (const [value, label] of [["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij"]]) { const option = make("option", label); option.value = value; kind.append(option); } kindLabel.append(kind);
+    // Alleen nog onbekende posten worden gevuld; eigen invoer blijft staan. Zie docs/keuzehulp.md.
+    estimate.addEventListener("click", () => {
+      const config = catalog?.configurations.find(c => String(c.id) === panel.dataset.configurationId), described = config && window.Keuzehulp?.describe(catalog, config);
+      const item = { kind: described?.kind ?? kind.value, manufacturer: config?.manufacturer_name ?? "", phases: described?.phases ?? null, inverterIncluded: described ? described.inverterIncluded : kind.value === "plug" };
+      const lines = window.Keuzehulp.estimateCosts(costCatalog, item, {});
+      if (described?.offer) Object.assign(lines.find(l => l.category === "battery"), { status: "priced", amount_minor: described.offer.upfront_amount_minor, source: described.offer.source_url, notes: `Gepubliceerde prijs van ${described.offer.seller}.` });
+      let filled = 0;
+      for (const row of rows.querySelectorAll(".cost-row")) {
+        const line = lines.find(l => l.category === row.dataset.category), status = row.querySelector('[data-cost="status"]');
+        if (!line || status.value !== "unknown" || line.status === "unknown") continue;
+        status.value = line.status; row.querySelector('[data-cost="amount"]').value = line.status === "priced" ? (line.amount_minor / 100).toFixed(2) : "";
+        row.querySelector('[data-cost="source"]').value = line.source; row.dataset.notes = line.notes; filled++;
+      }
+      panel.dispatchEvent(new Event("change", { bubbles: true }));
+      message(filled ? `${filled} kostenposten gevuld met indicaties. Controleer ze en vervang ze door offertebedragen waar je die hebt.` : "Er waren geen open posten om te vullen.");
+    });
+    controls.append(estimate, kindLabel, included, notApplicable); details.append(controls, make("p", "Vul offertes of expliciete schattingen in. Bij een all-in pakket staat de prijs één keer bij accu/pakket; inbegrepen componenten mogen niet dubbel worden geteld. Beoordeel ook extra vaste netkosten, verzekering en fiscale administratie.", "muted"));
     const rows = make("div", null, "cost-rows");
     for (const category of costCatalog.categories) {
       const row = make("div", null, "cost-row"); row.dataset.category = category.key; row.dataset.timing = category.timing;
@@ -87,8 +105,6 @@
     if ([...byId("analysis-profile").options].some(o => o.value === selected)) byId("analysis-profile").value = selected;
     byId("analysis-catalog").replaceChildren(); const choose = make("option", "Kies catalogusuitvoering…"); choose.value = ""; byId("analysis-catalog").append(choose);
     for (const c of catalog.configurations) { const option = make("option", `${c.manufacturer_name} · ${c.product_name} · ${c.name}`); option.value = String(c.id); byId("analysis-catalog").append(option); }
-    byId("analysis-history").replaceChildren(); const pick = make("option", "Kies een bewaarde analyse…"); pick.value = ""; byId("analysis-history").append(pick);
-    for (const run of savedRuns) { const option = make("option", `${run.title} · ${new Date(run.created_at_unix_s * 1000).toLocaleString("nl-NL")}`); option.value = String(run.id); byId("analysis-history").append(option); }
     window.dispatchEvent(new CustomEvent("analysis:data", { detail: { imports: profiles.imports, runs: savedRuns } }));
   }
   byId("analysis-add").addEventListener("click", () => costCatalog && addCandidate());
@@ -107,9 +123,8 @@
   byId("address-results").addEventListener("change", () => { const site = sites[Number(byId("address-results").value)]; if (byId("address-results").value !== "" && site) { selectedSite = site; byId("analysis-address").value = site.address; } });
   byId("analysis-form").addEventListener("submit", event => { event.preventDefault(); action(byId("analysis-run"), async () => {
     const input = { title: byId("analysis-name").value, solar_import_id: Number(byId("analysis-profile").value), site: selectedSite || { address: byId("analysis-address").value, latitude: null, longitude: null, bag_id: null }, parameters: parameters(), candidates: [...candidateCards].map(([key,card]) => collectCandidate(key,card)), costs_confirmed: byId("confirm-costs").checked, technical_assumptions_confirmed: byId("confirm-technical").checked, consumption_is_gross: byId("confirm-gross").checked, production_is_ac: byId("confirm-gross").checked };
-    const response = await post("/api/v1/analysis/runs", input); UI.write("thuisaccu-draft", null); window.dispatchEvent(new Event("analysis:saved")); await refreshData(); location.hash = `/scenarios/${response.id}`; byId("analysis-history").value = String(response.id); message("Scenario doorgerekend en met invoer en modelversie in SQLite bewaard.");
+    const response = await post("/api/v1/analysis/runs", input); UI.write("thuisaccu-draft", null); window.dispatchEvent(new Event("analysis:saved")); await refreshData(); location.hash = `/scenarios/${response.id}`; message("Scenario doorgerekend en met invoer en modelversie in SQLite bewaard.");
   }); });
-  byId("analysis-history").addEventListener("change", () => { const run = savedRuns.find(r => String(r.id) === byId("analysis-history").value); if (run) location.hash = `/scenarios/${run.id}`; });
   const parameterFields = { start_year: "analysis-start", horizon_years: "analysis-years", discount_pct: "analysis-discount", annual_cost_escalation_pct: "cost-escalation", annual_pv_loss_pct: "pv-degradation", annual_load_growth_pct: "load-growth", objective: "analysis-objective", budget_eur: "analysis-budget", price_uncertainty_pct: "price-uncertainty", cost_uncertainty_pct: "cost-uncertainty" };
   const tariffFields = { import_eur_per_kwh: "tariff-import", export_eur_per_kwh: "tariff-export", export_fee_eur_per_kwh: "tariff-export-fee", annual_price_change_pct: "tariff-escalation" };
   function capture() {

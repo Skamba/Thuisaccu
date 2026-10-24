@@ -264,7 +264,8 @@ fieldset, .cost-row, .stats > div, .claim + .claim, footer { border-color: var(-
 @media print {
   :root, :root[data-theme] { --bg: white; --surface: white; --soft: #f2f4f2; --ink: #111; --muted: #444; --line: #ccc; --accent: #20523e; --accent-soft: #eef3ed; --danger: #96352a; --warn: #714b13; color-scheme: light; }
 }
-#catalog table, [data-screen=opwek] table, [data-screen=scenarios] table { min-width: 55rem; }
+#catalog table { min-width: 40rem; }
+[data-screen=opwek] table, [data-screen=scenarios] table { min-width: 55rem; }
 .analysis-options-heading .actions > label { width: min(100%, 23rem); }
 @media (max-width: 540px) { .chart { padding: .65rem; } .chart figcaption { font-size: .85rem; } .option-kpi .stats strong { font-size: 1rem; } }
 .import-file-layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1.25rem; align-items: start; }
@@ -296,3 +297,12 @@ fieldset, .cost-row, .stats > div, .claim + .claim, footer { border-color: var(-
 .hero-start { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
 p.warning { color: var(--demo-ink); font-weight: 600; }
 .kh-product .badge { align-self: flex-start; }
+.kh-costs { border-top: 1px solid var(--line); padding-top: .5rem; }
+.kh-costs > summary { font-weight: 600; cursor: pointer; }
+.kh-cost-group h4 { margin: 1rem 0 .25rem; font-size: .9rem; }
+.kh-cost { padding: .45rem 0; border-bottom: 1px solid var(--line); }
+.kh-cost-head { display: grid; grid-template-columns: 1fr 7.5rem; gap: .5rem; align-items: center; font-size: .9rem; }
+.kh-cost-head input { padding: .35rem .5rem; text-align: right; }
+.kh-cost-status { text-align: right; color: var(--muted); font-size: .85rem; }
+.kh-cost-basis { margin: .25rem 0 0; font-size: .8rem; color: var(--muted); }
+.kh-cost-group details > summary { font-size: .85rem; color: var(--muted); cursor: pointer; margin-top: .4rem; }

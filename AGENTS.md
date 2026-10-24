@@ -75,7 +75,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 - Zet API- of gebruikersdata uitsluitend via `textContent`/`createElement` in de DOM (de `make`/`node`-helpers). Nooit `innerHTML` met data.
 - Toegankelijkheid: echte `<label>`s, `aria-live` voor statusmeldingen, zichtbare focus, toetsenbordbediening. Kleur is niet de enige betekenisdrager.
 - Getallen in `nl-NL`-notatie; houd valuta, eenheid en meetgrens bij elke waarde zichtbaar.
-- `crates/server/tests/http.rs` controleert dat de HTML `/styles.css`, `/app.js` en `Zonne-opwekbestand` bevat.
+- `crates/server/tests/http.rs` controleert dat de HTML `/styles.css`, `/app.js`, `/keuzehulp.js` en het bestandsveld `solar-file` bevat.
 
 ## Tests
 

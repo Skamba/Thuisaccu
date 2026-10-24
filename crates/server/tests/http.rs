@@ -40,7 +40,7 @@ async fn home_and_stylesheet_are_served_without_external_services() {
     let body = to_bytes(response.into_body(), 32 * 1024).await.unwrap();
     let html = std::str::from_utf8(&body).unwrap();
     assert!(html.contains("/styles.css"));
-    assert!(html.contains("Zonne-opwekbestand"));
+    assert!(html.contains(r#"id="solar-file""#));
     assert!(html.contains("/app.js"));
     assert!(!html.contains("analysis-demo"));
     assert!(!html.contains("/samples/"));

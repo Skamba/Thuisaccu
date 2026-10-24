@@ -1,42 +1,306 @@
 {
-  "researched_on":"2026-10-24",
-  "currency":"EUR",
-  "notes":"Kostencategorieën op basis van Nederlandse bronnen. Bedragen hangen af van offerte, aansluiting en contract; geen automatische btw-teruggave. Alleen extra kosten ten opzichte van geen accu worden meegenomen.",
-  "sources":[
-    {"title":"Sessy: hardwareprijzen inclusief btw, exclusief installatie","url":"https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/","note":"5 kWh €3550 en 10 kWh €5500 als gepubliceerde standaardprijzen; geen totaalofferte."},
-    {"title":"Installatiepakketten Batterij-Outlet","url":"https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/","note":"Voorbeeld van een aanbieder: basisinstallatie vanaf €1349 incl. btw, uitgebreid vanaf €2049; maatwerk en meterkast zijn apart. Dit is geen algemene marktprijs of offerte voor een specifiek merk."},
-    {"title":"Liander: eenmalige tarieven 2026, revisie 1.1","url":"https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf","note":"Voorbeeld: 1-fase naar 3-fase vanaf €368,77 incl. btw, met voorwaarden. Geen tarief voor iedere aansluiting of toekomstig jaar."},
-    {"title":"Liander: vaste en eenmalige netbeheerkosten","url":"https://www.liander.nl/tarieven","note":"Neem bij verzwaring zowel de eenmalige wijziging als het verschil in jaarlijkse vaste kosten mee."},
-    {"title":"Belastingdienst: thuisbatterij en btw","url":"https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw","note":"Teruggave is voorwaardelijk; onder meer handelsgebruik, EMS, contract en KOR spelen mee. Btw over privégebruik en aangifte kunnen extra kosten veroorzaken."},
-    {"title":"Rijksoverheid: salderingsregeling","url":"https://www.rijksoverheid.nl/themas/klimaat-milieu-en-natuur/energie-thuis/salderingsregeling","note":"Salderen stopt op 1 januari 2027. Terugleververgoeding en terugleverkosten apart vastleggen; contractbedragen blijven invoer."},
-    {"title":"Centraal Beheer: dekking thuisbatterij","url":"https://www.centraalbeheer.nl/verzekeringen/opstalverzekering","note":"Een voorbeeld van standaarddekking; eventuele extra premie of installatievoorwaarden hangen van de eigen polis af."}
+  "researched_on": "2026-10-24",
+  "currency": "EUR",
+  "notes": "Kostencategorieën op basis van Nederlandse bronnen. Bedragen hangen af van offerte, aansluiting en contract; geen automatische btw-teruggave. Alleen extra kosten ten opzichte van geen accu worden meegenomen.",
+  "sources": [
+    {
+      "title": "Sessy: hardwareprijzen inclusief btw, exclusief installatie",
+      "url": "https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/",
+      "note": "5 kWh €3550 en 10 kWh €5500 als gepubliceerde standaardprijzen; geen totaalofferte."
+    },
+    {
+      "title": "Installatiepakketten Batterij-Outlet",
+      "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/",
+      "note": "Voorbeeld van een aanbieder: basisinstallatie vanaf €1349 incl. btw, uitgebreid vanaf €2049; maatwerk en meterkast zijn apart. Dit is geen algemene marktprijs of offerte voor een specifiek merk."
+    },
+    {
+      "title": "Liander: eenmalige tarieven 2026, revisie 1.1",
+      "url": "https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf",
+      "note": "Voorbeeld: 1-fase naar 3-fase vanaf €368,77 incl. btw, met voorwaarden. Geen tarief voor iedere aansluiting of toekomstig jaar."
+    },
+    {
+      "title": "Liander: vaste en eenmalige netbeheerkosten",
+      "url": "https://www.liander.nl/tarieven",
+      "note": "Neem bij verzwaring zowel de eenmalige wijziging als het verschil in jaarlijkse vaste kosten mee."
+    },
+    {
+      "title": "Belastingdienst: thuisbatterij en btw",
+      "url": "https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw",
+      "note": "Teruggave is voorwaardelijk; onder meer handelsgebruik, EMS, contract en KOR spelen mee. Btw over privégebruik en aangifte kunnen extra kosten veroorzaken."
+    },
+    {
+      "title": "Rijksoverheid: salderingsregeling",
+      "url": "https://www.rijksoverheid.nl/themas/klimaat-milieu-en-natuur/energie-thuis/salderingsregeling",
+      "note": "Salderen stopt op 1 januari 2027. Terugleververgoeding en terugleverkosten apart vastleggen; contractbedragen blijven invoer."
+    },
+    {
+      "title": "Centraal Beheer: dekking thuisbatterij",
+      "url": "https://www.centraalbeheer.nl/verzekeringen/opstalverzekering",
+      "note": "Een voorbeeld van standaarddekking; eventuele extra premie of installatievoorwaarden hangen van de eigen polis af."
+    }
   ],
-  "categories":[
-    {"key":"battery","label":"Accu of complete pakketprijs","timing":"upfront","note":"Voer bij een all-in offerte de pakketprijs hier in; zet inbegrepen onderdelen niet nogmaals als extra kosten."},
-    {"key":"inverter","label":"Extra/hybride omvormer","timing":"upfront","note":"Alleen een extra omvormer die voor deze accu nodig is."},
-    {"key":"ems_metering","label":"EMS, meter, CT-klemmen, gateway","timing":"upfront","note":"Controleer wat in het systeem of installatiepakket zit."},
-    {"key":"backup","label":"Noodstroomkast en omschakeling","timing":"upfront","note":"Back-up is niet standaard bij elke accu; financiële noodstroomwaarde wordt niet berekend."},
-    {"key":"installation","label":"Installatie, arbeid en inbedrijfstelling","timing":"upfront","note":"Inclusief ontwerp/instellen/testen voor zover geoffreerd."},
-    {"key":"cabling_protection","label":"Kabels, beveiliging, doorvoer, montage","timing":"upfront","note":"Extra lengte, graafwerk, brandwerende doorvoer en montage kunnen buiten pakketten vallen."},
-    {"key":"meter_cabinet","label":"Aanpassing groepenkast","timing":"upfront","note":"Groep, hoofdschakelaar, aardlek en aanpassing naar 3-fase; aparte installateurskosten."},
-    {"key":"grid_connection","label":"Netbeheerder: aansluiting aanpassen","timing":"upfront","note":"Adres alleen bewijst niet welke aansluiting of verzwaring nodig is."},
-    {"key":"survey_permits","label":"Schouw, keuring, toestemming","timing":"upfront","note":"Alleen wat werkelijk nodig of geoffreerd is, bijvoorbeeld bij VvE of specifieke plaatsing."},
-    {"key":"delivery","label":"Levering, vervoer en voorrijkosten","timing":"upfront","note":"Controleer inbegrepen levering en eventuele toeslagen."},
-    {"key":"other_upfront","label":"Overige startkosten / financieringskosten","timing":"upfront","note":"Bijvoorbeeld afsluitkosten; geen leninghoofdsom opnieuw optellen."},
-    {"key":"contingency","label":"Begrotingsreserve voor onvoorzien","timing":"upfront","note":"Een expliciete conservatieve begrotingspost, geen vaststaand factuurbedrag."},
-    {"key":"subscription","label":"EMS/software/abonnement per jaar","timing":"annual","note":"Alleen extra kosten van het gekozen systeem."},
-    {"key":"maintenance","label":"Onderhoud en service per jaar","timing":"annual","note":"Geen automatische vaste marktprijs; gebruik contract of aanname."},
-    {"key":"insurance","label":"Extra verzekeringspremie per jaar","timing":"annual","note":"Tel alleen het verschil met de bestaande polis; soms is dit nul."},
-    {"key":"extra_grid_fees","label":"Extra vaste netbeheerkosten per jaar","timing":"annual","note":"Verschil na eventuele verzwaring, niet de al bestaande volledige netrekening."},
-    {"key":"extra_contract_fees","label":"Extra contractkosten per jaar","timing":"annual","note":"Verschil in vaste leverings-/dienstkosten. Terugleverkosten staan bij tarieven."},
-    {"key":"tax_administration","label":"Extra aangifte/administratie per jaar","timing":"annual","note":"Bijvoorbeeld bij btw-ondernemerschap; zonder toepasselijkheid nul."},
-    {"key":"tax_private_use","label":"Btw privégebruik / overige extra belasting per jaar","timing":"annual","note":"Alleen op basis van eigen bevestigde fiscale berekening; de tool bepaalt geen btw-recht."},
-    {"key":"other_annual","label":"Overige extra jaarkosten","timing":"annual","note":"Denk aan contractuele servicekosten; geen niet-gemodelleerde handelsopbrengsten aftrekken."},
-    {"key":"inverter_replacement","label":"Omvormer vervangen na jaar","timing":"event","note":"Kosteninschatting, geen automatische vervanging bij garantie-einde."},
-    {"key":"battery_replacement","label":"Accu vervangen na jaar","timing":"event","note":"Vervangt door dezelfde technische capaciteit vanaf het volgende jaar; extra/gegroeide capaciteit apart modelleren."},
-    {"key":"removal_recycling","label":"Verwijderen en recycling na jaar","timing":"event","note":"Neem een eventuele verwijderings-/afvoerofferte mee."},
-    {"key":"grant","label":"Bevestigde subsidie / korting (aftrek)","timing":"upfront","note":"Geen automatische landelijke subsidie. Alleen vastleggen als de eigen regeling/toekenning bevestigd is."},
-    {"key":"vat_refund","label":"Bevestigde btw-teruggave (aftrek)","timing":"upfront","note":"Niet automatisch 21% aftrekken; privégebruik, voorwaarden en administratie kunnen gevolgen hebben."},
-    {"key":"residual_value","label":"Restwaarde aan einde (aftrek)","timing":"event","note":"Onzekere verkoop-/restwaarde; alleen met een expliciete aanname."}
-  ]
+  "categories": [
+    {
+      "key": "battery",
+      "label": "Accu of complete pakketprijs",
+      "timing": "upfront",
+      "note": "Voer bij een all-in offerte de pakketprijs hier in; zet inbegrepen onderdelen niet nogmaals als extra kosten."
+    },
+    {
+      "key": "inverter",
+      "label": "Extra/hybride omvormer",
+      "timing": "upfront",
+      "note": "Alleen een extra omvormer die voor deze accu nodig is."
+    },
+    {
+      "key": "ems_metering",
+      "label": "EMS, meter, CT-klemmen, gateway",
+      "timing": "upfront",
+      "note": "Controleer wat in het systeem of installatiepakket zit."
+    },
+    {
+      "key": "backup",
+      "label": "Noodstroomkast en omschakeling",
+      "timing": "upfront",
+      "note": "Back-up is niet standaard bij elke accu; financiële noodstroomwaarde wordt niet berekend."
+    },
+    {
+      "key": "installation",
+      "label": "Installatie, arbeid en inbedrijfstelling",
+      "timing": "upfront",
+      "note": "Inclusief ontwerp/instellen/testen voor zover geoffreerd."
+    },
+    {
+      "key": "cabling_protection",
+      "label": "Kabels, beveiliging, doorvoer, montage",
+      "timing": "upfront",
+      "note": "Extra lengte, graafwerk, brandwerende doorvoer en montage kunnen buiten pakketten vallen."
+    },
+    {
+      "key": "meter_cabinet",
+      "label": "Aanpassing groepenkast",
+      "timing": "upfront",
+      "note": "Groep, hoofdschakelaar, aardlek en aanpassing naar 3-fase; aparte installateurskosten."
+    },
+    {
+      "key": "grid_connection",
+      "label": "Netbeheerder: aansluiting aanpassen",
+      "timing": "upfront",
+      "note": "Adres alleen bewijst niet welke aansluiting of verzwaring nodig is."
+    },
+    {
+      "key": "survey_permits",
+      "label": "Schouw, keuring, toestemming",
+      "timing": "upfront",
+      "note": "Alleen wat werkelijk nodig of geoffreerd is, bijvoorbeeld bij VvE of specifieke plaatsing."
+    },
+    {
+      "key": "delivery",
+      "label": "Levering, vervoer en voorrijkosten",
+      "timing": "upfront",
+      "note": "Controleer inbegrepen levering en eventuele toeslagen."
+    },
+    {
+      "key": "other_upfront",
+      "label": "Overige startkosten / financieringskosten",
+      "timing": "upfront",
+      "note": "Bijvoorbeeld afsluitkosten; geen leninghoofdsom opnieuw optellen."
+    },
+    {
+      "key": "contingency",
+      "label": "Begrotingsreserve voor onvoorzien",
+      "timing": "upfront",
+      "note": "Een expliciete conservatieve begrotingspost, geen vaststaand factuurbedrag."
+    },
+    {
+      "key": "subscription",
+      "label": "EMS/software/abonnement per jaar",
+      "timing": "annual",
+      "note": "Alleen extra kosten van het gekozen systeem."
+    },
+    {
+      "key": "maintenance",
+      "label": "Onderhoud en service per jaar",
+      "timing": "annual",
+      "note": "Geen automatische vaste marktprijs; gebruik contract of aanname."
+    },
+    {
+      "key": "insurance",
+      "label": "Extra verzekeringspremie per jaar",
+      "timing": "annual",
+      "note": "Tel alleen het verschil met de bestaande polis; soms is dit nul."
+    },
+    {
+      "key": "extra_grid_fees",
+      "label": "Extra vaste netbeheerkosten per jaar",
+      "timing": "annual",
+      "note": "Verschil na eventuele verzwaring, niet de al bestaande volledige netrekening."
+    },
+    {
+      "key": "extra_contract_fees",
+      "label": "Extra contractkosten per jaar",
+      "timing": "annual",
+      "note": "Verschil in vaste leverings-/dienstkosten. Terugleverkosten staan bij tarieven."
+    },
+    {
+      "key": "tax_administration",
+      "label": "Extra aangifte/administratie per jaar",
+      "timing": "annual",
+      "note": "Bijvoorbeeld bij btw-ondernemerschap; zonder toepasselijkheid nul."
+    },
+    {
+      "key": "tax_private_use",
+      "label": "Btw privégebruik / overige extra belasting per jaar",
+      "timing": "annual",
+      "note": "Alleen op basis van eigen bevestigde fiscale berekening; de tool bepaalt geen btw-recht."
+    },
+    {
+      "key": "other_annual",
+      "label": "Overige extra jaarkosten",
+      "timing": "annual",
+      "note": "Denk aan contractuele servicekosten; geen niet-gemodelleerde handelsopbrengsten aftrekken."
+    },
+    {
+      "key": "inverter_replacement",
+      "label": "Omvormer vervangen na jaar",
+      "timing": "event",
+      "note": "Kosteninschatting, geen automatische vervanging bij garantie-einde."
+    },
+    {
+      "key": "battery_replacement",
+      "label": "Accu vervangen na jaar",
+      "timing": "event",
+      "note": "Vervangt door dezelfde technische capaciteit vanaf het volgende jaar; extra/gegroeide capaciteit apart modelleren."
+    },
+    {
+      "key": "removal_recycling",
+      "label": "Verwijderen en recycling na jaar",
+      "timing": "event",
+      "note": "Neem een eventuele verwijderings-/afvoerofferte mee."
+    },
+    {
+      "key": "grant",
+      "label": "Bevestigde subsidie / korting (aftrek)",
+      "timing": "upfront",
+      "note": "Geen automatische landelijke subsidie. Alleen vastleggen als de eigen regeling/toekenning bevestigd is."
+    },
+    {
+      "key": "vat_refund",
+      "label": "Bevestigde btw-teruggave (aftrek)",
+      "timing": "upfront",
+      "note": "Niet automatisch 21% aftrekken; privégebruik, voorwaarden en administratie kunnen gevolgen hebben."
+    },
+    {
+      "key": "residual_value",
+      "label": "Restwaarde aan einde (aftrek)",
+      "timing": "event",
+      "note": "Onzekere verkoop-/restwaarde; alleen met een expliciete aanname."
+    }
+  ],
+  "estimates": {
+    "researched_on": "2026-10-24",
+    "explanation": "Indicaties per kostenpost voor wie nog geen offerte heeft. Elk bedrag heeft een bron of is een benoemde aanname; een offerte voor de eigen woning gaat altijd voor. Bedragen zijn inclusief btw.",
+    "amounts": {
+      "installation_basic": {
+        "amount_eur": 1349,
+        "label": "Installatie thuisbatterij basis t/m 10 kW (vanaf-prijs)",
+        "detail": "Plaatsing in de woning bij de meterkast, montage van batterij en omvormer, aparte groep met beveiliging, meting via P1 of CT-klem, instellen en testen. Schouw vooraf inbegrepen.",
+        "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      },
+      "installation_extended": {
+        "amount_eur": 2049,
+        "label": "Installatie thuisbatterij uitgebreid t/m 10 kW (vanaf-prijs)",
+        "detail": "Plaatsing in schuur, garage of aan buitenmuur, langere kabelroute, doorvoer en extra beveiliging.",
+        "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      },
+      "backup_extra": {
+        "amount_eur": 500,
+        "label": "Meerprijs noodstroompakket",
+        "detail": "Noodstroom basis € 1.849 − basis € 1.349, en uitgebreid € 2.549 − € 2.049: noodstroomkast en omschakelwerk.",
+        "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      },
+      "meter_cabinet_three_phase": {
+        "amount_eur": 239,
+        "label": "Meterkast geschikt maken voor 3-fase bij een batterij (vanaf-prijs)",
+        "detail": "Groepenkast vervangen kost vanaf € 919 (6 groepen); alleen nodig bij een verouderde kast en hier niet meegeteld.",
+        "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      },
+      "grid_one_to_three_phase": {
+        "amount_eur": 368.77,
+        "label": "Liander: 1-fase naar 3-fasen (eenmalig tarief 2026)",
+        "detail": "Van 1x10A t/m 1x35A naar 3x25A of zwaarder; tarieven inclusief 21% btw. Andere netbeheerders hebben eigen tarieven.",
+        "url": "https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf"
+      },
+      "contingency_pct": {
+        "amount_pct": 10,
+        "label": "Reserve voor onvoorzien bij een vaste installatie",
+        "detail": "Begrotingskeuze, geen marktprijs: 10% van installatie, noodstroom, meterkast en netaansluiting. Meerwerk zoals hak- en breekwerk wordt volgens de installateur achteraf berekend.",
+        "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      }
+    },
+    "meters": [
+      {
+        "manufacturer": "HomeWizard",
+        "amount_eur": 24.95,
+        "label": "HomeWizard P1 Meter",
+        "detail": "Vereist voor de Plug-In Battery (of een kWh Meter op de hoofdaansluiting).",
+        "url": "https://www.homewizard.com/nl/plug-in-battery/"
+      },
+      {
+        "manufacturer": "Marstek",
+        "amount_eur": 99.95,
+        "label": "Marstek CT002 slimme energiemeter",
+        "detail": "Realtime meting voor nul-op-de-meter-regeling; volgens de verkoper geïntegreerd met de Venus E 2.0 en 3.0.",
+        "url": "https://www.wattuneed.com/nl/batterij-accessoires/27111-slimme-meter-marstek-ct002-compatibel-met-venus-e-batterijen-0768563822537.html"
+      },
+      {
+        "manufacturer": "Zendure",
+        "amount_eur": 99.99,
+        "label": "Zendure Smart Meter P1",
+        "detail": "Prijs inclusief btw, exclusief Bebat-bijdrage (België). Wordt als bundel met de SolarFlow 2400 AC+ verkocht.",
+        "url": "https://be.zendure.com/en/products/slimme-meter-p1"
+      }
+    ],
+    "facts": {
+      "software_free": [
+        {
+          "manufacturer": "HomeWizard",
+          "detail": "‘Gratis app, software en updates’; Energy+ is optioneel.",
+          "url": "https://www.homewizard.com/nl/plug-in-battery/"
+        },
+        {
+          "manufacturer": "Sessy",
+          "detail": "‘geen abonnementskosten’.",
+          "url": "https://www.sessy.nl/specificaties/"
+        }
+      ],
+      "delivery_free": [
+        {
+          "manufacturer": "HomeWizard",
+          "detail": "‘Gratis thuisbezorgd’.",
+          "url": "https://www.homewizard.com/nl/plug-in-battery/"
+        }
+      ],
+      "insurance": {
+        "detail": "Voorbeeld: Centraal Beheer noemt ‘Zonnepanelen, laadpaal en thuisbatterij standaard meeverzekerd’ in de opstalverzekering. Controleer je eigen polis.",
+        "url": "https://www.centraalbeheer.nl/verzekeringen/opstalverzekering"
+      },
+      "grid_fees": {
+        "detail": "Liander: ‘De typen stroomaansluitingen 1x25A, 1x35A en 1x40A vallen in de zelfde tariefgroep als 3x25A.’ Een overstap naar 3x25A verandert de jaarlijkse netbeheerkosten dus niet.",
+        "url": "https://www.liander.nl/tarieven"
+      },
+      "grant": {
+        "detail": "Zonneplan (30 september 2026): ‘Op dit moment (2026) is er voor particulieren geen directe landelijke subsidie voor thuisaccu’s beschikbaar.’ Sommige gemeenten en provincies hebben een eigen regeling, bijvoorbeeld Flevoland tot € 1.250.",
+        "url": "https://www.zonneplan.nl/thuisbatterij/subsidie/"
+      },
+      "vat": {
+        "detail": "Belastingdienst: bij alleen privégebruik ben je voor de thuisbatterij geen btw-ondernemer en kun je geen btw terugvragen; teruggave vraagt onder meer handel in stroom met een dynamisch contract. Dan vervallen ook btw-aangifte en btw over privégebruik voor de accu.",
+        "url": "https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw"
+      },
+      "recycling": {
+        "detail": "Voor thuisbatterijen bestaat nog geen collectief inzamelsysteem; de producent is verantwoordelijk. Inzameling via Stichting OPEN wordt verwacht vanaf 1 juli 2027.",
+        "url": "https://solarmagazine.nl/nieuws-zonne-energie/i44777/recycling-thuisbatterijen-krijgt-eindelijk-collectieve-aanpak-systeem-moet-klaar-zijn-in-2027"
+      }
+    }
+  }
 }

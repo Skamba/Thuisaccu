@@ -76,7 +76,7 @@ Onderzochte Nederlandse prijsvoorbeelden laten zien waarom een accuprijs geen to
 | [Liander tarieven](https://www.liander.nl/tarieven) | Controleer ook het verschil in jaarlijkse vaste netbeheerkosten bij een zwaardere aansluiting |
 | [Centraal Beheer opstalverzekering](https://www.centraalbeheer.nl/verzekeringen/opstalverzekering) | Voorbeeld van dekking voor een thuisbatterij. Eigen polis en eventuele extra premie controleren |
 
-Deze voorbeelden worden niet automatisch ingevuld of bij elkaar opgeteld. De werkelijke prijs hangt af van uitvoering, installateur, plaatsing, aansluiting en contract. Het kostencatalogusbestand bevat bronlinks, toelichtingen en onderzoeksdatum en is ook in de interface beschikbaar.
+Deze voorbeelden worden niet stilzwijgend ingevuld. De keuzehulp en de knop ‘Vul open posten met indicaties’ zetten ze, met bron of benoemde aanname per post, pas na een expliciete gebruikersactie in een kostenregel; zie [keuzehulp](keuzehulp.md#kosten-en-indicaties). De werkelijke prijs hangt af van uitvoering, installateur, plaatsing, aansluiting en contract. Het kostencatalogusbestand bevat bronlinks, toelichtingen en onderzoeksdatum en is ook in de interface beschikbaar.
 
 Btw-teruggave is voorwaardelijk; uitsluitend privégebruik geeft geen recht. Handelsgebruik, EMS, dynamisch contract en KOR zijn relevant. Btw over privégebruik en aangifte kunnen extra lasten veroorzaken. Daarom trekt de tool geen btw automatisch af. Zie [Belastingdienst](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw). De tool bepaalt geen fiscaal recht of herzieningsberekening. Jaarposten lopen de volledige horizon; een tijdelijk fiscaal effect moet als expliciet begrote gebeurtenis via de API of als passende scenario-aanname worden vastgelegd. Handelsopbrengsten worden in dit model niet berekend.
 
@@ -111,6 +111,6 @@ Gunstige en ongunstige varianten combineren de opgegeven afwijking in inkoop-/te
 
 Een analyse bewaart de volledige invoer, gebruikte importmetadata, SHA-256 van het genormaliseerde profiel, onderzoeksdatum, modelversie en resultaat in SQLite. De bronintervallen blijven gekoppeld via import-ID. Historie toont de oorspronkelijke invoer, onafhankelijk van de huidige editor. Een hash detecteert veranderingen maar is geen reservekopie van alle intervallen of een onveranderbaar auditlog.
 
-De referentietests controleren energiebehoud, AC-verliezen, vermogensgrenzen, standby, degradatie, de tariefomslag in 2027, analytisch narekenbare NPV/ROI, financieringsrente, vervanging, keuzecriteria, budget en de optie geen accu. Het fictieve demojaar is alleen een softwarevoorbeeld.
+De referentietests controleren energiebehoud, AC-verliezen, vermogensgrenzen, standby, degradatie, de tariefomslag in 2027, analytisch narekenbare NPV/ROI, financieringsrente, vervanging, keuzecriteria, budget en de optie geen accu.
 
 Nog buiten de berekening vallen dynamische uur-/kwartierprijzen en optimale aansturing, netladen/handel, onbalansdiensten, fiscale automatisering, cyclusafhankelijke slijtage, temperatuur- en vermogensafhankelijke rendementscurves, variabele fysieke installaties en gegarandeerde back-upduur. Het model beoordeelt ook geen certificaten, vergunningplicht, fasebelasting of elektrische veiligheid voor een adres. Gebruik daarvoor de afzonderlijke productclaims en installateursgegevens.

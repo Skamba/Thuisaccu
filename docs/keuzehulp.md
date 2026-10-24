@@ -46,16 +46,39 @@ Uitvoeringen met een niet doorrekenbaar gegeven of een harde mismatch (bijvoorbe
 
 ## Kosten en indicaties
 
-Per accu worden alle 26 kostenposten ingevuld. De aanschafprijs komt uit een gepubliceerde aanbieding (inclusief btw, met bron) of uit eigen invoer. Installatie is bij een stekkerbatterij ‘niet van toepassing’. Bij een vaste installatie is het een offertebedrag of, na expliciete keuze, een indicatie. Alle overige posten staan op ‘niet van toepassing’ met de bron ‘Keuzehulp: niet meegenomen in deze indicatie’; de interface noemt ze één voor één. Wie ze wil beoordelen, dupliceert de analyse naar de scenariotool.
+Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Keuzehulp.estimateCosts` uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont ‘Bron’ met link of ‘Aanname’ met reden, en is in de keuzehulp aan te passen; een ingevuld bedrag vervangt de indicatie en wordt als eigen invoer vastgelegd. De scenariotool heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
 
-Indicaties, geraadpleegd op 24 oktober 2026:
+| Post | Stekkerbatterij | Vaste installatie | Bron of aanname |
+| --- | --- | --- | --- |
+| Accu | Gepubliceerde prijs of eigen invoer | idem | Prijsbron in de catalogus |
+| Omvormer | Inbegrepen | Inbegrepen als de bronclaim `inverter_included` dat zegt; anders zelf in te vullen | Fabrikantclaim |
+| Meter / EMS | HomeWizard P1 Meter € 24,95; Marstek CT002 € 99,95; Zendure Smart Meter P1 € 99,99; anders aanname vergelijkbare P1-meter | Inbegrepen (‘meting via P1 of CT-klem’) | [HomeWizard](https://www.homewizard.com/nl/plug-in-battery/), [Wattuneed](https://www.wattuneed.com/nl/batterij-accessoires/27111-slimme-meter-marstek-ct002-compatibel-met-venus-e-batterijen-0768563822537.html), [Zendure](https://be.zendure.com/en/products/slimme-meter-p1), [Batterij-Outlet](https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/) |
+| Installatie | Niet van toepassing | € 1.349 binnen, € 2.049 buiten (schuur, garage, gevel) | Batterij-Outlet vanaf-prijzen |
+| Kabels, beveiliging, schouw | Niet van toepassing | Inbegrepen in het pakket | Batterij-Outlet |
+| Noodstroom | Niet van toepassing | € 500 meerprijs als noodstroom gevraagd is (€ 1.849 − € 1.349) | Batterij-Outlet |
+| Groepenkast | Niet van toepassing | Inbegrepen; € 239 bij een 3-fasenaccu. Groepenkast vervangen (vanaf € 919) niet meegeteld | Batterij-Outlet |
+| Netaansluiting | Niet van toepassing | € 368,77 alleen bij een 3-fasenaccu op een 1-fase-aansluiting | [Liander eenmalige tarieven 2026](https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf) |
+| Levering | Inbegrepen bij HomeWizard (‘Gratis thuisbezorgd’); anders aanname | Aanname: in pakket- of productprijs | HomeWizard |
+| Reserve onvoorzien | Niet van toepassing | 10% van installatie, noodstroom, groepenkast en netaansluiting | Aanname (begrotingskeuze) |
+| Abonnement | Gratis volgens HomeWizard en Sessy; anders aanname | idem | HomeWizard, [Sessy](https://www.sessy.nl/specificaties/) |
+| Onderhoud, extra contractkosten, overige | Niet van toepassing | idem | Aanname |
+| Verzekering | Niet van toepassing | idem | Voorbeeld [Centraal Beheer](https://www.centraalbeheer.nl/verzekeringen/opstalverzekering): standaard meeverzekerd |
+| Extra vaste netbeheerkosten | Niet van toepassing | idem | [Liander](https://www.liander.nl/tarieven): 1x35A/1x40A en 3x25A in dezelfde tariefgroep |
+| Btw-administratie, btw privégebruik, btw-teruggave | Niet van toepassing | idem | [Belastingdienst](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw): bij alleen privégebruik geen btw-ondernemer |
+| Omvormer- en accuvervanging | Niet van toepassing | idem | Aanname: het model stopt de accu na de aangenomen levensduur |
+| Verwijderen en recycling | Niet van toepassing | idem | [Solar Magazine](https://solarmagazine.nl/nieuws-zonne-energie/i44777/recycling-thuisbatterijen-krijgt-eindelijk-collectieve-aanpak-systeem-moet-klaar-zijn-in-2027): producent verantwoordelijk, collectief systeem verwacht vanaf juli 2027 |
+| Subsidie | Niet van toepassing | idem | [Zonneplan](https://www.zonneplan.nl/thuisbatterij/subsidie/): geen landelijke subsidie in 2026; lokale regelingen zelf invullen |
+| Restwaarde | Niet van toepassing | idem | Aanname (voorzichtig) |
+
+Tegenstrijdigheid: Zonneplan schrijft dat je 21% btw terugkrijgt. Dat geldt volgens de Belastingdienst alleen bij handel in stroom als btw-ondernemer, niet bij alleen eigen gebruik; de keuzehulp volgt de Belastingdienst. Meerwerk dat pas bij de schouw blijkt (hak- en breekwerk, verouderde groepenkast, aanvraag bij de netbeheerder) is niet meegeteld.
+
+Tariefindicaties, geraadpleegd op 24 oktober 2026:
 
 | Waarde | Indicatie | Onderbouwing |
 | --- | --- | --- |
 | All-in stroomprijs | € 0,2596/kWh | [CBS](https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026): gemiddeld variabel leveringstarief september 2026 € 0,1487 incl. btw, exclusief energiebelasting; plus [energiebelasting 2026](https://www.anwb.nl/huis/energie/energiebelasting) € 0,11085 incl. btw |
 | Terugleververgoeding vanaf 2027 | € 0,0744/kWh | Wettelijk minimaal 50% van de kale leveringsprijs tot 2030 ([Solar Magazine](https://solarmagazine.nl/nieuws-zonne-energie/i39030/salderingsregeling-hoogte-terugleververgoeding-en-verlaging-terugleverkosten-in-wet-vastgelegd-door-tweede-kamer)); 50% × € 0,1487 = € 0,07435, naar boven afgerond. Niet geverifieerd of de grens incl. of excl. btw geldt |
 | Terugleverkosten | € 0 | Alleen als je contract er geen noemt; hogere kosten maken een accu gunstiger |
-| Installatie vaste accu | € 1.349 | Vanaf-prijs basisinstallatie van één aanbieder ([Batterij-Outlet](https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/)) |
 
 Overige projectie-aannames komen uit de standaardaannames in Instellingen (anders 4% discontovoet, 2% kostenstijging, 0% PV-afname, verbruiksgroei en prijsverandering, 20% en 15% gevoeligheid). Startjaar is 2027, het eerste jaar zonder salderen. Een adres is optioneel; zonder adres wordt ‘Nederland (keuzehulp, geen adres opgegeven)’ vastgelegd.
 

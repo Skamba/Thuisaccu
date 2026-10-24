@@ -1,25 +1,14 @@
+// Catalogus, vergelijking, eigen dossiers en bestandsimport.
+(() => {
 "use strict";
 
-const $ = id => document.getElementById(id);
+const { $, el: node, api } = UI;
 const selected = new Set();
 let dataset = null;
-let history = [];
 let previewSignature = null;
 const fmt = (value, digits = 2) => UI.formatNumber(value, digits);
 const date = (seconds, timeZone = "UTC") => new Date(seconds * 1000).toLocaleString("nl-NL", { timeZone, timeZoneName: "short" });
-function node(tag, text, cls) {
-  const n = document.createElement(tag);
-  if (text !== undefined && text !== null) n.textContent = String(text);
-  if (cls) n.className = cls;
-  return n;
-}
 function notice(message, error = false) { UI.toast(message, error); }
-async function api(url, options) {
-  const response = await fetch(url, options);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || body.error || `Verzoek mislukt (${response.status}).`);
-  return body;
-}
 async function busy(button, work) {
   button.disabled = true;
   try { return await work(); } catch (error) { notice(error.message, true); if ($("candidate-dialog").open) $("candidate-error").textContent = error.message; return null; }
@@ -170,7 +159,7 @@ function renderCatalog() {
   if (!configs.length) {
     catalog.append(node("p", dataset.configurations.length ? "Geen uitvoeringen bij deze filters." : "Je catalogus is nog leeg. Laad onderzochte uitvoeringen of voeg een eigen accu toe.", "empty"));
     if (!dataset.configurations.length) catalog.append(UI.button("Laad onderzochte uitvoeringen", () => $("references").click()));
-  } else catalog.append(UI.table(["Kies", "Fabrikant", "Product", "Uitvoering", "Type", "Markt", "Bruikbare energie", "Bronnen", "Review"], configs.map(c => {
+  } else catalog.append(UI.table(["Vergelijk", "Accu", "Bruikbare energie", "Prijs", "Bronnen", "Status"], configs.map(c => {
     const checkbox = node("input"); checkbox.type = "checkbox"; checkbox.checked = selected.has(c.id); checkbox.setAttribute("aria-label", `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked && selected.size >= 4) { checkbox.checked = false; notice("Je kunt maximaal vier uitvoeringen tegelijk vergelijken. Verwijder eerst een keuze.", true); return; }
@@ -179,8 +168,13 @@ function renderCatalog() {
     });
     const claims = ["numbers", "features", "texts", "warranties", "offers"].flatMap(k => dataset[k].filter(v => v.configuration_id === c.id));
     const capacities = dataset.numbers.filter(v => v.configuration_id === c.id && v.metric_key === "usable_energy_wh");
-    const capacity = capacities.length === 1 && capacities[0].qualifier === "exact" ? `${fmt(capacities[0].value / 1000)} kWh · ${boundaries[capacities[0].boundary]}` : capacities.length > 1 ? "Meerdere claims: zie vergelijking" : "Onbekend";
-    return [checkbox, c.manufacturer_name, c.product_name, c.name, c.product_kind === "battery_module" ? "Accumodule" : "Accusysteem", [...new Set(claims.map(v => v.market))].filter(Boolean).join(" · ") || "Onbekend", capacity, String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size), UI.badge(claims.length && claims.every(v => v.review_status === "reviewed") ? "Gecontroleerd" : "Niet gecontroleerd", "warning")];
+    const nominal = dataset.numbers.find(v => v.configuration_id === c.id && v.metric_key === "nominal_energy_wh");
+    const capacity = capacities.length === 1 ? `${qualifiers[capacities[0].qualifier] ?? ""}${fmt(capacities[0].value / 1000)} kWh · ${boundaries[capacities[0].boundary]}` : capacities.length > 1 ? "Meerdere claims: zie vergelijking" : nominal ? `Onbekend (nominaal ${fmt(nominal.value / 1000)} kWh)` : "Onbekend";
+    const name = node("div"); name.append(node("strong", `${c.manufacturer_name} ${c.product_name}`), node("small", `${c.name} · ${c.product_kind === "battery_module" ? "accumodule" : "accusysteem"}`));
+    const offer = dataset.offers.filter(o => o.configuration_id === c.id).sort((a, b) => b.observed_at_unix_s - a.observed_at_unix_s)[0];
+    const price = offer ? node("span", `${offer.currency === "EUR" ? UI.formatMoney(offer.upfront_amount_minor / 10 ** offer.minor_unit_exponent, { decimals: 0 }) : `${offer.currency} ${fmt(offer.upfront_amount_minor / 10 ** offer.minor_unit_exponent)}`}${offer.tax_basis === "included" ? " incl. btw" : offer.tax_basis === "excluded" ? " excl. btw" : ""}`) : node("span", "Geen prijs", "unknown");
+    const reviewed = claims.length && claims.every(v => v.review_status === "reviewed");
+    return [checkbox, name, capacity, price, String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size), UI.badge(reviewed ? "Bronnen nagekeken" : "Bronnen niet nagekeken", reviewed ? "success" : "warning")];
   })));
   renderTray();
 }
@@ -200,7 +194,7 @@ document.querySelectorAll("[data-group]").forEach(e => e.addEventListener("chang
 $("references").addEventListener("click", () => busy($("references"), async () => {
   const result = await api("/api/v1/references", { method: "POST" }); await reloadCatalog(); notice(result.imported ? "Drie onderzochte uitvoeringen toegevoegd. Controleer bron, regio en installatieomvang." : "Deze referentiemomentopname is al geladen.");
 }));
-$("add-open").addEventListener("click", () => { $("candidate-error").textContent = ""; $("candidate-dialog").showModal(); });
+function openCandidate() { $("candidate-error").textContent = ""; window.dispatchEvent(new Event("candidate:open")); $("candidate-dialog").showModal(); }
 $("add-close").addEventListener("click", () => $("candidate-dialog").close());
 function exactMoney(raw, exponent) {
   const normalized = raw.trim().replace(",", ".");
@@ -333,15 +327,10 @@ $("solar-form").addEventListener("submit", event => {
     renderSolar(result); previewSignature = sentSignature; $("save-file").disabled = false; window.dispatchEvent(new Event("solar:previewed")); notice("Preview gecontroleerd. Bewaar het overzicht als de interpretatie klopt.");
   });
 });
-async function reloadHistory() {
-  const result = await api("/api/v1/solar/imports"); history = result.imports;
-  $("solar-history").replaceChildren(); const empty = node("option", "Kies een bewaard overzicht…"); empty.value = ""; $("solar-history").append(empty);
-  for (const item of history) { const option = node("option", `${item.filename} · ${fmt(item.summary.production_kwh)} kWh`); option.value = String(item.id); $("solar-history").append(option); }
-}
 $("save-file").addEventListener("click", () => busy($("save-file"), async () => {
   if (!previewSignature || previewSignature !== signature()) throw new Error("Controleer eerst opnieuw de preview.");
-  const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen in SQLite"); await reloadHistory(); $("solar-history").value = String(result.id); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard."); location.hash = `/opwek/${result.id}`;
+  const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen"); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard."); location.hash = `/opwek/${result.id}`;
 }));
-$("solar-history").addEventListener("change", () => { const item = history.find(i => String(i.id) === $("solar-history").value); if (item) renderSolar(item.summary, `Bewaard: ${item.filename} · ${item.options.timezone}`, item.options.timezone); });
-window.Research = { acceptFilename() { if (previewSignature) previewSignature = signature(); }, renderSolar, renderCatalog, renderComparison, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
-Research.ready = Promise.all([reloadCatalog(), reloadHistory()]).catch(error => notice(error.message, true));
+window.Research = { acceptFilename() { if (previewSignature) previewSignature = signature(); }, renderSolar, renderCatalog, renderComparison, reloadCatalog, openCandidate, get dataset() { return dataset; }, selected };
+Research.ready = reloadCatalog().catch(error => notice(error.message, true));
+})();

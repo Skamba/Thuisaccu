@@ -31,11 +31,7 @@ pub fn app(catalog: Catalog) -> Router {
             "/api/v1/analysis/runs",
             get(scenario_api::history).post(scenario_api::run),
         )
-        .route("/api/v1/analysis/demo", post(scenario_api::demo))
         .route("/api/v1/locations/search", post(scenario_api::address))
-        .route("/samples/solar.csv", get(sample_csv))
-        .route("/samples/solar.json", get(sample_json))
-        .route("/samples/solar.xlsx", get(sample_xlsx))
         .route("/api/v1/health", get(health))
         .route("/api/v1/products", get(products))
         .route("/api/v1/comparison", get(api::comparison))
@@ -110,48 +106,6 @@ async fn keuzehulp_script() -> ([(header::HeaderName, &'static str); 1], &'stati
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         include_str!("../../../web/keuzehulp.js"),
-    )
-}
-
-async fn sample_csv() -> ([(header::HeaderName, &'static str); 2], &'static str) {
-    (
-        [
-            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=solar-example.csv",
-            ),
-        ],
-        include_str!("../resources/solar-example.csv"),
-    )
-}
-
-async fn sample_xlsx() -> ([(header::HeaderName, &'static str); 2], &'static [u8]) {
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            ),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=solar-example.xlsx",
-            ),
-        ],
-        include_bytes!("../resources/solar-example.xlsx"),
-    )
-}
-
-async fn sample_json() -> ([(header::HeaderName, &'static str); 2], &'static str) {
-    (
-        [
-            (header::CONTENT_TYPE, "application/json"),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=solar-example.json",
-            ),
-        ],
-        include_str!("../resources/solar-example.json"),
     )
 }
 

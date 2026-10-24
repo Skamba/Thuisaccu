@@ -172,9 +172,8 @@ window.UI = (() => {
     const main = $("main"), header = el("header", null, "page-header"), titleGroup = el("div"), title = el("h1"); title.id = "page-title"; title.tabIndex = -1; const sub = el("p", null, "muted"); sub.id = "page-subtitle"; titleGroup.append(title, sub); const actions = el("div", null, "actions"); actions.id = "page-actions"; header.append(titleGroup, actions); main.prepend(header);
     document.querySelector(".skip").addEventListener("click", event => { event.preventDefault(); title.focus(); title.scrollIntoView(); });
     document.addEventListener("invalid", event => { if (event.target.matches("input,select,textarea")) invalid(event.target, event.target.validationMessage); }, true);
-    const old = { accus: $("compare"), "opwek/import": $("solar"), "scenarios/nieuw": $("analysis") };
-    routes.forEach(([key]) => { const section = old[key] || el("section"); section.dataset.screen = key; section.hidden = true; screens.set(key, section); main.append(section); });
-    document.querySelectorAll("a[href='#analysis']").forEach(a => a.href = "#/scenarios/nieuw");
+    // Schermen met vaste opmaak staan in index.html; de overige worden door de scripts gevuld.
+    routes.forEach(([key]) => { const section = main.querySelector(`:scope > section[data-screen="${key}"]`) || el("section"); section.dataset.screen = key; section.hidden = true; screens.set(key, section); main.append(section); });
     window.addEventListener("hashchange", route); route();
     api("/api/v1/health").then(() => { status.firstChild.textContent = "● Lokale service actief"; status.classList.add("online"); }).catch(() => { status.firstChild.textContent = "● Service onbereikbaar"; status.classList.add("offline"); });
     resolve();

@@ -33,7 +33,7 @@ window.Workspace = (() => {
     hero.append(heroText, link("Start de keuzehulp", "#/keuzehulp", "button")); out.append(hero);
     const last = data.runs[0], rec = last && recommended(last), tiles = el("div", null, "kpis"); tiles.append(kpi("Accu-uitvoeringen", n(data.configurations.length, 0)), kpi("Opwekimports", n(data.imports.length, 0), `${data.imports.filter(i => suitability(i).ok === true).length} geschikt voor ROI`), kpi("Bewaarde analyses", n(data.runs.length, 0), data.runs.length === 100 ? "API toont de laatste 100" : "Oorspronkelijke invoer bewaard"), kpi("Laatste aanbeveling", last ? rec?.name || (last.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend") : "Nog geen analyse", last ? date(last.created_at_unix_s) : "Begin met een energieprofiel")); out.append(tiles);
     const next = el("div", null, "panel next-step"); next.append(el("p", "JE VOLGENDE STAP", "eyebrow"));
-    if (!data.configurations.length) next.append(el("h2", "Begin je onderzoek"), el("p", "Laad onderzochte uitvoeringen of leg een eigen offerte vast."), actionBar(button("Laad onderzochte uitvoeringen", () => $("references").click(), ""), button("+ Eigen accu", () => $("add-open").click())));
+    if (!data.configurations.length) next.append(el("h2", "Begin je onderzoek"), el("p", "Laad onderzochte uitvoeringen of leg een eigen offerte vast."), actionBar(button("Laad onderzochte uitvoeringen", () => $("references").click(), ""), button("+ Eigen accu", () => Research.openCandidate())));
     if (!data.imports.some(i => suitability(i).ok === true)) next.append(el("h2", "Breng opwek en verbruik samen"), el("p", "Voor ROI heb je één volledig aaneengesloten jaar nodig."), actionBar(link("Importeer opwek + verbruik", "#/opwek/import", "button")));
     else next.append(el("h2", data.runs.length ? "Vergelijk een nieuwe aanname" : "Je profiel is klaar voor een scenario"), actionBar(link("Start scenario", "#/scenarios/nieuw", "button")));
     out.append(next, el("h2", "Recente analyses"));
@@ -42,7 +42,7 @@ window.Workspace = (() => {
   }
   function lists(key) {
     if (key === "opwek") { const out = screen(key); out.replaceChildren(); $("page-actions").append(link("+ Importeer bestand", "#/opwek/import", "button")); out.append(data.imports.length ? table(["Bestand", "Periode", "Intervallen", "Resolutie", "Opwek", "Verbruik", "ROI-geschiktheid"], importRows(data.imports)) : empty("Nog geen energieprofielen", "Controleer je bestand stap voor stap voordat je het bewaart.", link("Importeer bestand", "#/opwek/import", "button"))); }
-    if (key === "scenarios") { $("analysis-history").parentElement.hidden = true; const out = screen(key); out.replaceChildren(); $("page-actions").append(link("+ Nieuw scenario", "#/scenarios/nieuw", "button")); out.append(data.runs.length ? table(["Scenario", "Adres", "Profiel", "Doel", "Horizon", "Aanbevolen", "NPV", "Datum", "Acties"], runRows(data.runs)) : empty("Nog geen bewaarde analyses", "Vergelijk accu-opties met geen accu, met expliciete aannames.", link("Nieuw scenario", "#/scenarios/nieuw", "button"))); }
+    if (key === "scenarios") { const out = screen(key); out.replaceChildren(); $("page-actions").append(link("+ Nieuw scenario", "#/scenarios/nieuw", "button")); out.append(data.runs.length ? table(["Scenario", "Adres", "Profiel", "Doel", "Horizon", "Aanbevolen", "NPV", "Datum", "Acties"], runRows(data.runs)) : empty("Nog geen bewaarde analyses", "Vergelijk accu-opties met geen accu, met expliciete aannames.", link("Nieuw scenario", "#/scenarios/nieuw", "button"))); }
   }
   async function refresh() {
     const [comparison, profiles, runs] = await Promise.all([api("/api/v1/comparison"), api("/api/v1/solar/imports"), api("/api/v1/analysis/runs")]);
@@ -53,45 +53,19 @@ window.Workspace = (() => {
     else UI.toast("Dupliceren wordt voorbereid.");
   }
   function researchScreens() {
-    const compare = screen("accus/vergelijk"), controls = document.querySelector(".comparison-controls");
-    let item = controls;
-    while (item) { const next = item.nextElementSibling; compare.append(item); item = next; }
-    controls.querySelector("fieldset").remove();
-    for (const [id, text] of [["differences-only", "Alleen verschillen"], ["known-only", "Verberg rijen zonder bekende waarde"]]) { const label = el("label", null, "inline"), check = el("input"); check.type = "checkbox"; check.id = id; check.addEventListener("change", () => Research.renderComparison()); label.append(check, text); controls.prepend(label); }
-    const toolbar = screen("accus").querySelector(".toolbar");
-    for (const [id, labelText, options] of [["kind-filter", "Type", [["", "Alle typen"], ["battery_system", "Accusysteem"], ["battery_module", "Accumodule"]]], ["maker-filter", "Fabrikant", [["", "Alle fabrikanten"]]]]) {
-      const label = el("label", labelText), select = el("select"); select.id = id;
-      for (const [value, text] of options) { const option = el("option", text); option.value = value; select.append(option); }
-      select.addEventListener("change", () => Research.renderCatalog()); label.append(select); toolbar.append(label);
-    }
-    const menu = el("details", null, "catalog-menu"); menu.append(el("summary", "⋯ Meer"), $("references")); toolbar.append(menu);
-    $("add-open").hidden = true;
-    screen("accus").append(el("p", "Het aantal herkenbare bronnen gebruikt unieke brontitel/URL-combinaties; de API levert geen bron-ID’s.", "muted"));
-    const tray = el("div", null, "compare-tray"); tray.id = "compare-tray"; screen("accus").append(tray);
+    for (const id of ["differences-only", "known-only"]) $(id).addEventListener("change", () => Research.renderComparison());
+    for (const id of ["kind-filter", "maker-filter"]) $(id).addEventListener("change", () => Research.renderCatalog());
     const updateMakers = () => { const select = $("maker-filter"), selected = select.value; select.replaceChildren(); for (const name of ["", ...new Set(Research.dataset?.configurations.map(c => c.manufacturer_name))]) { const option = el("option", name || "Alle fabrikanten"); option.value = name; select.append(option); } select.value = selected; };
     Research.ready.then(() => { updateMakers(); Research.renderCatalog(); Research.renderComparison(); }); window.addEventListener("app:data", updateMakers);
-    const form = $("candidate-form"), fields = [...form.querySelectorAll(":scope > fieldset")], submit = form.querySelector('[type="submit"]').parentElement;
-    const steps = fields.map((panel, i) => ({ label: ["Uitvoering & bron", "Technische gegevens", "Prijsaanbieding"][i], panel })); steps[2].panel.append(submit);
+    const form = $("candidate-form"), steps = [...form.querySelectorAll(":scope > fieldset")].map((panel, i) => ({ label: ["Uitvoering & bron", "Technische gegevens", "Prijsaanbieding"][i], panel }));
     const wizard = UI.wizard(form, steps);
-    form.noValidate = true;
     form.addEventListener("submit", event => { if (wizard.current < steps.length - 1) { event.preventDefault(); event.stopImmediatePropagation(); wizard.next.click(); return; } for (let i = 0; i < steps.length; i++) { const invalid = [...steps[i].panel.querySelectorAll("input,select,textarea")].find(f => !f.checkValidity()); if (invalid) { event.preventDefault(); event.stopImmediatePropagation(); wizard.show(i); UI.validate(steps[i].panel); return; } } }, true);
-    $("add-open").addEventListener("click", () => wizard.show(0));
+    window.addEventListener("candidate:open", () => wizard.show(0));
     form.addEventListener("input", event => { if (event.target.matches("input,select,textarea")) UI.invalid(event.target, ""); });
   }
   function importWizard() {
-    const form = $("solar-form"), mapping = $("mapping"), section = screen("opwek/import"), panels = Array.from({ length: 4 }, () => el("div", null, "wizard-step"));
-    const historyLabel = $("solar-history").parentElement; historyLabel.hidden = true; section.append(historyLabel);
-    const originalChildren = [...form.children]; form.append(...panels);
-    for (const child of originalChildren) if (child !== mapping) panels[0].append(child);
-    panels[1].append(mapping); const examples = $("file-preview").parentElement; examples.before($("file-preview")); examples.remove();
-    const preview = $("preview-file"), save = $("save-file"), results = $("solar-result"); preview.textContent = "Controleer overzicht →"; save.textContent = "Bewaar energieprofiel";
-    panels[1].append(preview); panels[2].append(results); panels[3].append(el("h2", "Bewaren in de lokale database"), el("p", "De bestandsnaam wordt de titel. Het originele bestand wordt niet bewaard; de gecontroleerde intervallen en importinstellingen wel."));
-    const filename = el("input"); filename.id = "import-filename"; filename.required = true; filename.maxLength = 240; const label = el("label", "Naam van het bestand / profiel"); label.append(filename); panels[3].append(label, save);
-    const helper = el("aside", null, "panel import-help"); helper.append(el("h3", "Hulp bij je export"), $("profile-help"), $("profile-source")); panels[0].append(helper);
-    const fileFields = el("div"); panels[0].prepend(fileFields);
-    for (const child of [...panels[0].children]) if (child !== fileFields && child !== helper) fileFields.append(child);
-    panels[0].classList.add("import-file-layout");
-    section.querySelector(".solar-layout").before(form); section.querySelector(".solar-layout").remove(); form.classList.remove("panel"); form.append(...panels);
+    const form = $("solar-form"), mapping = $("mapping"), panels = [...form.querySelectorAll(":scope > .wizard-step")];
+    const preview = $("preview-file"), save = $("save-file"), filename = $("import-filename");
     let inspectedFingerprint;
     const fingerprint = () => JSON.stringify([$("solar-file").files[0]?.name, $("solar-file").files[0]?.size, $("solar-file").files[0]?.lastModified, ...["import-profile", "header-row", "delimiter", "sheet"].map(id => $(id).value)]);
     const wizard = UI.wizard(form, panels.map((panel, i) => ({ label: ["Bestand", "Kolommen & eenheden", "Controle", "Bewaren"][i], panel })), { validateStep: (panel, index) => {
@@ -137,34 +111,16 @@ window.Workspace = (() => {
       const value = UI.read(`thuisaccu-${key}`, options[0][0]); select.value = options.some(([v]) => v === value) ? value : options[0][0]; document.documentElement.dataset[key] = select.value;
       select.addEventListener("change", () => { document.documentElement.dataset[key] = select.value; if (!UI.write(`thuisaccu-${key}`, select.value)) UI.toast("Deze voorkeur kan niet worden bewaard.", true); }); label.append(select); appearance.append(label);
     }
-    const privacy = el("div", null, "panel settings-panel"); privacy.append(el("h2", "Gegevens & privacy"), el("p", "De database staat standaard in data/research.sqlite3. De procesvariabele DATABASE_PATH kan een ander pad instellen. Het actieve pad wordt niet door de API gepubliceerd."), el("p", "Maak regelmatig een back-up: stop de app en andere SQLite-clients voordat je het databasebestand kopieert."), el("p", "Alleen een expliciete klik op ‘Zoek adres via PDOK’ stuurt de zoekterm naar PDOK. Energieprofielen blijven op je eigen lokale server. Concepten in deze browser kunnen ook je ingevoerde adres bevatten."), actionBar(link("Servicestatus", "/api/v1/health")));
-    const model = el("div", null, "panel settings-panel"); model.append(el("h2", "Over het model"), el("p", "De rekenkern bewaart eigen zonnestroom voor later huishoudelijk gebruik, met vaste all-in contracttarieven. Dynamische handel, netladen en onbalansinkomsten zijn niet opgenomen."), el("p", "Vanaf 2027 wordt zonder salderen gerekend. Voor 2026 gebruikt het model vereenvoudigde jaarlijkse saldering. Gebruik één volledig aaneengesloten jaar met AC-zonneproductie en bruto huishoudelijk verbruik op uur- of fijnere basis."), el("p", "Een aanbeveling geldt alleen voor de doorgerekende opties en vastgelegde aannames. Geen accu is een volwaardige uitkomst. De tool beoordeelt geen installatiegeschiktheid of elektrische veiligheid."), el("p", "Lokale documentatie: README.md (gebruik), docs/architecture.md (opbouw), docs/roi-model.md (definities en grenzen), docs/solar-import.md (importafspraken).", "muted"));
+    const privacy = el("div", null, "panel settings-panel"); privacy.append(el("h2", "Gegevens & privacy"), el("p", "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."), el("p", "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en de scenariotool staan alleen in deze browser en kunnen je adres bevatten."), actionBar(link("Servicestatus", "/api/v1/health")));
+    const model = el("div", null, "panel settings-panel"); model.append(el("h2", "Over het model"), el("p", "De rekenkern bewaart eigen zonnestroom voor later huishoudelijk gebruik, met vaste all-in contracttarieven. Dynamische handel, netladen en onbalansinkomsten zijn niet opgenomen."), el("p", "Vanaf 2027 wordt zonder salderen gerekend. Voor 2026 gebruikt het model vereenvoudigde jaarlijkse saldering. Gebruik één volledig aaneengesloten jaar met AC-zonneproductie en bruto huishoudelijk verbruik op uur- of fijnere basis."), el("p", "Een aanbeveling geldt alleen voor de doorgerekende opties en vastgelegde aannames. Geen accu is een volwaardige uitkomst. De tool beoordeelt geen installatiegeschiktheid of elektrische veiligheid."));
     out.append(appearance, privacy, model); window.Settings = { applyDefaults };
     Analysis.ready.then(() => { if (!UI.read("thuisaccu-draft", null)) applyDefaults(); });
     document.addEventListener("click", event => { const a = event.target.closest('a[href="#/scenarios/nieuw"]'); if (a) { event.preventDefault(); startNew().catch(error => UI.toast(error.message, true)); } });
   }
   function scenarioWizard() {
-    $("analysis-history").parentElement.hidden = true;
-    const form = $("analysis-form"), section = screen("scenarios/nieuw"), panels = Array.from({ length: 4 }, () => el("div", null, "wizard-step"));
-    const originalChildren = [...form.children]; form.append(...panels);
-    const originalLayout = form.querySelector(".solar-layout"); panels[0].append(originalLayout.children[0]); panels[1].append(originalLayout.children[0]); originalLayout.remove();
-    const parameterPanel = panels[1].firstElementChild, oldGrid = parameterPanel.querySelector(".field-grid"), bands = parameterPanel.querySelector("details");
-    for (const [title, ids] of [["Contracttarieven", ["tariff-import", "tariff-export", "tariff-export-fee", "tariff-escalation"]], ["Horizon & disconto", ["analysis-start", "analysis-years", "analysis-discount", "cost-escalation", "pv-degradation", "load-growth"]], ["Gevoeligheid", ["price-uncertainty", "cost-uncertainty"]]]) {
-      const group = el("fieldset"), grid = el("div", null, "field-grid"); group.append(el("legend", title), grid); parameterPanel.append(group);
-      ids.forEach(id => grid.append($(id).closest("label")));
-      if (title === "Contracttarieven") group.append(bands);
-    }
-    oldGrid.remove();
-    const confirmations = form.querySelector(":scope > fieldset"), submit = $("analysis-run").parentElement;
-    for (const child of originalChildren) if (child !== originalLayout && child !== confirmations && child !== submit) panels[2].append(child);
-    const review = el("div", null, "panel scenario-review"); review.id = "scenario-review"; panels[3].append(review, confirmations, submit);
-    const sourcePanel = $("analysis-cost-sources").closest("details"), sourceDialog = el("dialog"); sourceDialog.id = "sources-dialog"; sourceDialog.setAttribute("aria-label", "Kostenonderzoek en bronnen"); sourceDialog.append(button("Sluiten", () => sourceDialog.close()), sourcePanel); sourcePanel.open = true; document.body.append(sourceDialog);
-    const sourceButton = button("ⓘ Bronnen en kostenonderzoek", () => sourceDialog.showModal(), "text-button"); panels[2].prepend(sourceButton);
-    const optionsSelectLabel = el("label", "Uit catalogus"); $("analysis-catalog").before(optionsSelectLabel); optionsSelectLabel.append($("analysis-catalog"));
-    const optionsList = el("div"); optionsList.id = "candidate-tabs"; panels[2].append(optionsList); optionsList.append($("analysis-candidates"));
-    form.append(...panels); form.noValidate = true;
-    const summary = el("aside", null, "panel scenario-summary"); summary.id = "scenario-summary"; summary.setAttribute("aria-label", "Samenvatting van je concept");
-    const layout = el("div", null, "scenario-layout"); form.before(layout); layout.append(form, summary);
+    const form = $("analysis-form"), panels = [...form.querySelectorAll(":scope > .wizard-step")];
+    const confirmations = $("scenario-confirmations"), review = $("scenario-review"), summary = $("scenario-summary"), sources = $("sources-dialog");
+    $("open-sources").addEventListener("click", () => sources.showModal()); $("close-sources").addEventListener("click", () => sources.close());
     const fieldStep = field => panels.findIndex(panel => panel.contains(field));
     const reveal = field => {
       const step = fieldStep(field); if (step >= 0) scenarioFlow.show(step);
@@ -221,7 +177,7 @@ window.Workspace = (() => {
     }
     function update() {
       const profile = data.imports.find(i => String(i.id) === $("analysis-profile").value), rows = [...form.querySelectorAll(".cost-row")], unknown = rows.filter(row => row.querySelector('[data-cost="status"]').value === "unknown").length;
-      summary.replaceChildren(el("p", "JOUW SCENARIO", "eyebrow"), el("h3", $("analysis-name").value), el("p", `${profile?.options.is_demo ? "FICTIEF · " : ""}${profile?.filename || "Kies een profiel"}`), el("p", objectives[$("analysis-objective").value]), el("p", `Inkoop: ${$("tariff-import").value || "Onbekend"} €/kWh`), el("p", `Teruglevering: ${$("tariff-export").value || "Onbekend"} €/kWh`), el("p", `${Analysis.candidateCards.size} opties · ${rows.length - unknown}/${rows.length} kostenposten beoordeeld`), badge(unknown ? `${unknown} onbekend` : "Kosten beoordeeld", unknown ? "warning" : "success"), el("small", "Concepten staan alleen in deze browser. Een geslaagde analyse legt haar eigen volledige invoer vast."));
+      summary.replaceChildren(el("p", "JOUW SCENARIO", "eyebrow"), el("h3", $("analysis-name").value), el("p", `${profile?.options.is_demo ? "FICTIEF · " : ""}${profile?.filename || "Kies een profiel"}`), el("p", objectives[$("analysis-objective").value]), el("p", `Inkoop: ${$("tariff-import").value || "Onbekend"} €/kWh`), el("p", `Teruglevering: ${$("tariff-export").value || "Onbekend"} €/kWh`), el("p", `${Analysis.candidateCards.size} opties · ${rows.length - unknown}/${rows.length} kostenposten beoordeeld`), !rows.length ? badge("Nog geen accu-opties", "warning") : badge(unknown ? `${unknown} onbekend` : "Kosten beoordeeld", unknown ? "warning" : "success"), el("small", "Concepten staan alleen in deze browser. Een geslaagde analyse legt haar eigen volledige invoer vast."));
       if (scenarioFlow.current === 3) updateReview();
     }
     let draftTimer;
@@ -234,8 +190,6 @@ window.Workspace = (() => {
     window.addEventListener("analysis:loaded", () => { enhanceOptions(); for (const card of Analysis.candidateCards.values()) card._updateProgress?.(); scenarioFlow.show(0); update(); });
     Analysis.ready.then(() => { const draft = UI.read("thuisaccu-draft", null); if (draft) { try { Analysis.restore(draft); UI.toast("Je concept is hersteld. Bevestigingen moet je opnieuw controleren."); } catch { UI.toast("Het concept kon niet worden hersteld.", true); } } update(); });
     window.addEventListener("app:route", () => update()); window.addEventListener("app:refreshed", () => update());
-    // Bestaande uitleg blijft contextueel beschikbaar boven de wizard.
-    const help = el("details", null, "context-help"); help.append(el("summary", "Over deze schatting en je gegevens")); for (const child of [...section.children]) if (child.tagName === "P") help.append(child); section.prepend(help);
   }
   let routeSequence = 0;
   async function onRoute({ detail: { key, id } }) {
@@ -246,7 +200,7 @@ window.Workspace = (() => {
       if (location.hash.slice(2) !== (id ? `${key.split("/")[0]}/${id}` : key)) return;
       if (key === "dashboard") dashboard();
       lists(key);
-      if (key === "accus") $("page-actions").append(button("+ Eigen accu of offerte", () => $("add-open").click(), ""));
+      if (key === "accus") $("page-actions").append(button("+ Eigen accu of offerte", () => Research.openCandidate(), ""));
       if (key === "scenarios/detail") { const run = data.runs.find(r => String(r.id) === id); const out = screen(key); out.replaceChildren(); if (run) { Results.render(run, out); } else out.append(empty("Analyse niet gevonden", "De API toont maximaal de laatste 100 analyses.", link("Terug naar scenario’s", "#/scenarios"))); }
       if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { const result = el("div"), fit = suitability(item); out.append(profileName(item), badge(fit.reason, fit.ok ? "success" : "warning"), result); Research.renderSolar(item.summary, item.filename, item.options.timezone, result); $("page-actions").append(button("Start scenario met dit profiel", () => startNew(item.id).catch(error => UI.toast(error.message, true)))); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
     } catch (error) { UI.toast(error.message, true); }

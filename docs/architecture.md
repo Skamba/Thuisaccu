@@ -22,7 +22,9 @@ De vaste app-shell heeft Keuzehulp, Dashboard en Scenario’s bovenaan; een lege
 - `keuzehulp.js`: begeleide keuzehulp in gewone taal; maakt zo nodig een geschat profiel, toont de capaciteitscurve, leidt rekengegevens met zichtbare aannames af uit bronclaims en verstuurt een gewone analyse. Zie [keuzehulp](keuzehulp.md).
 - `results.js`: resultaatdashboard met zes tabbladen, kasstromen, energie, gevoeligheid, oorspronkelijke invoer, alle waarschuwingen, CSV en afdrukweergave.
 
-De interface biedt uitsluitend acties voor onderzoek, eigen imports en scenario’s. Demo-acties en downloadlinks voor fictieve importvoorbeelden staan niet in de interface. Bestaande fictieve imports en resultaten blijven herkenbaar als FICTIEF. De bestaande demo- en sample-API-routes blijven beschikbaar voor synthetische testgegevens.
+De interface biedt uitsluitend acties voor de keuzehulp, onderzoek, eigen imports en scenario’s. Er zijn geen demo- of voorbeeldroutes meer. Fictieve imports en resultaten uit een oudere database (`is_demo`) blijven overal herkenbaar als FICTIEF.
+
+Schermen met vaste formulieren (catalogus, vergelijking, import en scenario-editor) staan in hun definitieve opbouw in `index.html` als `section[data-screen]`. De scripts verbinden die opmaak met gedrag en verplaatsen geen elementen tussen schermen. Elk script is een IIFE dat alleen een eigen `window`-object publiceert (`UI`, `Research`, `Analysis`, `Results`, `Workspace`, `Keuzehulp`).
 
 Alle zes scripts en het stijlblad worden via `include_str!` uit de binary geserveerd. Elke assetroute heeft een HTTP-test. Nieuwe webwijzigingen vereisen opnieuw bouwen en starten. Er zijn geen externe fonts, scripts of grafiekdiensten. API- en gebruikersgegevens worden uitsluitend via tekst-/DOM-methoden ingevoegd.
 

@@ -25,18 +25,42 @@ fn input(id: i64) -> Value {
         "costs_confirmed":true,"technical_assumptions_confirmed":true,"consumption_is_gross":true,"production_is_ac":true})
 }
 
+/// Synthetisch volledig jaar; `is_demo` bootst een demoprofiel uit een oudere database na.
+async fn legacy_demo_year(catalog: &Catalog) -> i64 {
+    let intervals: Vec<_> = (0..8760)
+        .map(|hour| SolarInterval {
+            start_unix_s: 1_735_689_600 + hour * 3600,
+            end_unix_s: 1_735_689_600 + (hour + 1) * 3600,
+            production_wh: if (10..16).contains(&(hour % 24)) {
+                1500.0
+            } else {
+                0.0
+            },
+            consumption_wh: Some(if (18..23).contains(&(hour % 24)) {
+                900.0
+            } else {
+                250.0
+            }),
+        })
+        .collect();
+    catalog
+        .save_solar(
+            "FICTIEF DEMOJAAR 2025",
+            &format!("{:064x}", 7),
+            r#"{"is_demo":true,"timezone":"UTC","data_kind":"synthetic","generator":"demo-v1"}"#,
+            "{}",
+            &intervals,
+            1,
+        )
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
-async fn full_demo_year_is_explicitly_fictitious_and_analysis_is_saved_with_input_and_model_version()
- {
+async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_model_version() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());
-    let response = app
-        .clone()
-        .oneshot(post("/api/v1/analysis/demo", json!({})))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let id = body(response).await["id"].as_i64().unwrap();
+    let id = legacy_demo_year(&catalog).await;
     let response = app
         .clone()
         .oneshot(post("/api/v1/analysis/runs", input(id)))
@@ -99,6 +123,30 @@ async fn cost_catalog_covers_every_cost_category() {
     let mut expected = COST_CATEGORIES.to_vec();
     expected.sort_unstable();
     assert_eq!(keys, expected);
+    // Iedere indicatie heeft een positief bedrag en een controleerbare HTTPS-bron.
+    let estimates = &data["estimates"];
+    assert_eq!(estimates["researched_on"], "2026-10-24");
+    let amounts = estimates["amounts"].as_object().unwrap();
+    let meters = estimates["meters"].as_array().unwrap();
+    assert!(!amounts.is_empty() && !meters.is_empty());
+    for value in amounts.values().chain(meters.iter()) {
+        let amount = value["amount_eur"]
+            .as_f64()
+            .or(value["amount_pct"].as_f64())
+            .unwrap();
+        assert!(amount > 0.0, "{value}");
+        assert!(value["url"].as_str().unwrap().starts_with("https://"));
+        assert!(!value["label"].as_str().unwrap().is_empty());
+    }
+    for fact in estimates["facts"].as_object().unwrap().values() {
+        for item in fact
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| vec![fact.clone()])
+        {
+            assert!(item["url"].as_str().unwrap().starts_with("https://"));
+        }
+    }
 }
 
 #[tokio::test]

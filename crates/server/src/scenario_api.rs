@@ -4,20 +4,16 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use chrono::{Datelike, TimeZone, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 use thuisaccu_core::{
     analysis::{self, Candidate, Parameters},
     sizing::{self, EnergyInterval},
 };
-use thuisaccu_storage::{
-    Catalog,
-    analysis::NewAnalysis,
-    solar::{SolarInterval, SolarPeriod, SolarSummary},
-};
+use thuisaccu_storage::{Catalog, analysis::NewAnalysis};
 
 fn invalid(message: impl Into<String>) -> ApiError {
     (
@@ -199,65 +195,6 @@ pub async fn history(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiE
     Ok(Json(
         json!({"runs":catalog.list_analyses().await.map_err(database_error)?}),
     ))
-}
-
-pub async fn demo(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
-    let first = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).single().unwrap();
-    let mut intervals = Vec::new();
-    for hour in 0..8760 {
-        let day = hour / 24;
-        let h = (hour % 24) as f64;
-        let seasonal = 0.6 + 0.4 * ((day as f64 - 172.0) * std::f64::consts::TAU / 365.0).cos();
-        let solar = ((h - 6.0) * std::f64::consts::PI / 12.0).sin().max(0.0) * seasonal;
-        let load = 0.25
-            + if (6.0..9.0).contains(&h) { 0.4 } else { 0.0 }
-            + if (17.0..23.0).contains(&h) { 0.7 } else { 0.0 };
-        intervals.push(SolarInterval {
-            start_unix_s: first.timestamp() + hour * 3600,
-            end_unix_s: first.timestamp() + (hour + 1) * 3600,
-            production_wh: solar,
-            consumption_wh: Some(load),
-        });
-    }
-    let solar_sum: f64 = intervals.iter().map(|i| i.production_wh).sum();
-    let load_sum: f64 = intervals.iter().map(|i| i.consumption_wh.unwrap()).sum();
-    for item in &mut intervals {
-        item.production_wh *= 4_500_000.0 / solar_sum;
-        item.consumption_wh = item.consumption_wh.map(|v| v * 4_200_000.0 / load_sum);
-    }
-    let mut months: BTreeMap<String, (f64, f64)> = BTreeMap::new();
-    for item in &intervals {
-        let timestamp = Utc.timestamp_opt(item.start_unix_s, 0).single().unwrap();
-        let total = months
-            .entry(format!("{}-{:02}", timestamp.year(), timestamp.month()))
-            .or_default();
-        total.0 += item.production_wh / 1000.0;
-        total.1 += item.consumption_wh.unwrap() / 1000.0;
-    }
-    let summary = SolarSummary { rows: intervals.len(), from_unix_s: first.timestamp(), to_unix_s: intervals.last().unwrap().end_unix_s,
-        coverage_hours: 8760.0, gaps: 0, production_kwh: 4500.0, consumption_kwh: Some(4200.0),
-        interval_surplus_kwh: Some(intervals.iter().map(|i| (i.production_wh - i.consumption_wh.unwrap()).max(0.0) /1000.0).sum()),
-        interval_deficit_kwh: Some(intervals.iter().map(|i| (i.consumption_wh.unwrap() - i.production_wh).max(0.0) /1000.0).sum()),
-        months: months.into_iter().map(|(label,(production_kwh,consumption_kwh))| SolarPeriod { label, production_kwh, consumption_kwh:Some(consumption_kwh) }).collect(),
-        warnings: vec!["Volledig fictief, synthetisch jaarprofiel voor softwaredemonstratie; niet gebaseerd op een adres, gemiddeld huishouden of weerschatting.".into()] };
-    let serialized = serde_json::to_vec(&intervals).map_err(|e| invalid(e.to_string()))?;
-    let hash = format!("{:x}", Sha256::digest(&serialized));
-    let options =
-        json!({"is_demo":true,"timezone":"UTC","data_kind":"synthetic","generator":"demo-v1"})
-            .to_string();
-    let summary_json = serde_json::to_string(&summary).map_err(|e| invalid(e.to_string()))?;
-    let id = catalog
-        .save_solar(
-            "FICTIEF DEMOJAAR 2025",
-            &hash,
-            &options,
-            &summary_json,
-            &intervals,
-            Utc::now().timestamp(),
-        )
-        .await
-        .map_err(database_error)?;
-    Ok(Json(json!({"id":id})))
 }
 
 #[derive(Deserialize)]

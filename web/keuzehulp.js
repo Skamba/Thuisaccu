@@ -12,13 +12,10 @@ window.Keuzehulp = (() => {
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
     export: 0.0744,
     exportText: "Indicatie € 0,07: vanaf 2027 tot 2030 is de terugleververgoeding wettelijk minimaal 50% van de kale leveringsprijs. Bij € 0,1487 is dat ongeveer € 0,07. Of de grens inclusief of exclusief btw geldt, is niet geverifieerd. Je contract kan hoger zijn.",
-    installation: 1349,
-    installationText: "Indicatie € 1.349: vanaf-prijs voor een basisinstallatie bij één aanbieder (Batterij-Outlet, incl. btw). Groepenkast en maatwerk zijn daar apart. Geen offerte voor jouw woning.",
     sources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)", "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
       ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"],
-      ["Solar Magazine: minimaal 50% terugleververgoeding tot 2030", "https://solarmagazine.nl/nieuws-zonne-energie/i39030/salderingsregeling-hoogte-terugleververgoeding-en-verlaging-terugleverkosten-in-wet-vastgelegd-door-tweede-kamer"],
-      ["Batterij-Outlet installatiepakketten", "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"]
+      ["Solar Magazine: minimaal 50% terugleververgoeding tot 2030", "https://solarmagazine.nl/nieuws-zonne-energie/i39030/salderingsregeling-hoogte-terugleververgoeding-en-verlaging-terugleverkosten-in-wet-vastgelegd-door-tweede-kamer"]
     ]
   };
   // Rekenaannames voor gegevens die een fabrikant niet opgeeft; zichtbaar per accu.
@@ -119,7 +116,7 @@ window.Keuzehulp = (() => {
     grid.append(field("Vergoeding voor teruglevering vanaf 2027 (€ per kWh)", "tariffExport", { min: "-1", max: "2", step: "0.0001" }, INDICATION.exportText));
     grid.append(field("Terugleverkosten (€ per kWh)", "exportFee", { min: "0", max: "2", step: "0.0001" }, "Sommige leveranciers rekenen kosten per teruggeleverde kWh. Staat dit niet in je contract, laat dan 0 staan. Hogere terugleverkosten maken een accu gunstiger."));
     box.append(grid, button("Gebruik de indicaties", () => { answers.tariffImport = String(INDICATION.import); answers.tariffExport = String(INDICATION.export); save(); render(); }));
-    box.append(sourceList(INDICATION.sources.slice(0, 3)));
+    box.append(sourceList(INDICATION.sources));
     return box;
   }
   function stepGoal() {
@@ -130,7 +127,7 @@ window.Keuzehulp = (() => {
       ["self_consumption", "Als ik zo veel mogelijk eigen zonnestroom gebruik", "Ook als dat financieel niet uitkomt."]
     ]));
     const grid = el("div", null, "field-grid");
-    grid.append(field("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" }, "Alleen de aanschaf en installatie."));
+    grid.append(field("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" }, "Alle startkosten samen: accu, installatie en eventuele extra’s."));
     grid.append(select("Hoe lang wil je vooruitkijken?", "horizon", [["10", "10 jaar"], ["15", "15 jaar"], ["20", "20 jaar"]]));
     box.append(grid);
     return box;
@@ -170,8 +167,65 @@ window.Keuzehulp = (() => {
     const phases = claim("phase_count")?.value ?? null;
     const offer = cmp.offers.filter(o => o.configuration_id === config.id && o.currency === "EUR" && o.minor_unit_exponent === 2 && o.tax_basis === "included").sort((a, b) => b.observed_at_unix_s - a.observed_at_unix_s)[0];
     const warranty = cmp.warranties.filter(w => w.configuration_id === config.id && w.product_months != null).map(w => w.product_months);
-    return { config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`, capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, phases, backup: feature("backup"), outdoor: feature("outdoor"), offer, warrantyYears: warranty.length ? Math.max(...warranty) / 12 : null };
+    return { config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`, capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, phases, backup: feature("backup"), outdoor: feature("outdoor"), inverterIncluded: feature("inverter_included")?.status === "supported", offer, warrantyYears: warranty.length ? Math.max(...warranty) / 12 : null };
   }
+  // Indicatie voor alle kostenposten. Elke regel noemt een bron of is als aanname benoemd; de
+  // accuprijs zelf vult de aanroeper in. `item`: { kind, manufacturer, phases, inverterIncluded }.
+  function estimateCosts(catalog, item, situation = {}) {
+    const est = catalog.estimates, amounts = est.amounts, facts = est.facts, fixed = item.kind !== "plug";
+    const byMaker = list => list.find(x => x.manufacturer === item.manufacturer);
+    const lines = new Map(catalog.categories.map(c => [c.key, { category: c.key, status: "not_applicable", amount_minor: 0, timing: c.timing, year: null, source: "Aanname", notes: "" }]));
+    const set = (key, status, source, notes, eur = 0) => Object.assign(lines.get(key), { status, amount_minor: status === "priced" ? Math.round(eur * 100) : 0, source, notes });
+    const priced = (key, ref, eur = ref.amount_eur) => set(key, "priced", ref.url, `${ref.label}. ${ref.detail}`, eur);
+    const assume = (key, notes, status = "not_applicable") => set(key, status, "Aanname", notes);
+    const fact = (key, f, status = "not_applicable") => set(key, status, f.url, f.detail);
+    set("battery", "unknown", "Nog in te vullen", "Aanschafprijs van de accu.");
+    if (item.inverterIncluded) set("inverter", "included", "Bronclaim van de fabrikant", "De omvormer zit in het product.");
+    else set("inverter", "unknown", "Nog in te vullen", "Dit product heeft een aparte of hybride omvormer nodig; vraag de prijs na.");
+    if (fixed) {
+      const outside = situation.place === "outside";
+      priced("installation", outside ? amounts.installation_extended : amounts.installation_basic);
+      fact("ems_metering", { url: amounts.installation_basic.url, detail: "Meting via P1 of CT-klem zit in het installatiepakket." }, "included");
+      fact("cabling_protection", { url: amounts.installation_basic.url, detail: outside ? "Langere kabelroute, doorvoer en extra beveiliging zitten in het uitgebreide pakket." : "Aparte groep met beveiliging zit in het basispakket." }, "included");
+      fact("survey_permits", { url: amounts.installation_basic.url, detail: "Een schouw vooraf is altijd inbegrepen." }, "included");
+      if (situation.backup === "yes") priced("backup", amounts.backup_extra); else assume("backup", "Geen noodstroom gevraagd.");
+      if (item.phases === 3) priced("meter_cabinet", amounts.meter_cabinet_three_phase);
+      else fact("meter_cabinet", { url: amounts.installation_basic.url, detail: "De aparte groep zit in het pakket. Een verouderde groepenkast vervangen (vanaf € 919) is niet meegeteld." }, "included");
+      if (item.phases === 3 && situation.phases === "1") priced("grid_connection", amounts.grid_one_to_three_phase);
+      else assume("grid_connection", item.phases === 3 ? "Uitgaande van een bestaande 3-fasenaansluiting." : "Geen wijziging van de netaansluiting nodig.");
+      assume("delivery", "Levering en voorrijkosten worden in de bron niet apart genoemd; aangenomen dat ze in pakket- of productprijs zitten.");
+      const base = [...lines.values()].filter(l => ["installation", "backup", "meter_cabinet", "grid_connection"].includes(l.category)).reduce((sum, l) => sum + l.amount_minor, 0);
+      set("contingency", "priced", "Aanname", `${amounts.contingency_pct.label}. ${amounts.contingency_pct.detail}`, base / 100 * amounts.contingency_pct.amount_pct / 100);
+    } else {
+      assume("installation", "Stekkerbatterij: zelf aan te sluiten in een gewoon stopcontact.");
+      assume("cabling_protection", "Geen eigen groep nodig bij 800 W via een stopcontact.");
+      assume("meter_cabinet", "Geen aanpassing van de meterkast nodig bij 800 W via een stopcontact.");
+      assume("survey_permits", "Geen schouw of keuring nodig voor een stekkerbatterij tot 800 W.");
+      assume("backup", "Een stekkerbatterij levert geen noodstroom aan de woning.");
+      assume("grid_connection", "Geen wijziging van de netaansluiting nodig.");
+      assume("contingency", "Geen installatiewerk, dus geen reserve aangenomen.");
+      const meter = byMaker(est.meters) || est.meters.find(m => m.manufacturer === "HomeWizard");
+      if (byMaker(est.meters)) priced("ems_metering", meter); else set("ems_metering", "priced", meter.url, `Aanname: een vergelijkbare P1-meter (${meter.label}) is nodig voor de regeling.`, meter.amount_eur);
+      const delivery = byMaker(facts.delivery_free);
+      if (delivery) fact("delivery", delivery, "included"); else assume("delivery", "Verzendkosten niet vermeld; aangenomen dat ze in de prijs zitten.");
+    }
+    const software = byMaker(facts.software_free);
+    if (software) fact("subscription", software); else assume("subscription", "Geen abonnement vermeld voor de basisfuncties; aangenomen dat de app gratis is.");
+    assume("maintenance", "Geen onderhoudskosten opgegeven; een LFP-accu met software-updates vraagt normaal geen periodiek onderhoud.");
+    fact("insurance", facts.insurance);
+    fact("extra_grid_fees", facts.grid_fees);
+    assume("extra_contract_fees", "Een vast of variabel contract rekent geen extra kosten voor een accu.");
+    fact("tax_administration", facts.vat); fact("tax_private_use", facts.vat); fact("vat_refund", facts.vat);
+    assume("other_upfront", "Geen overige startkosten bekend."); assume("other_annual", "Geen overige jaarkosten bekend.");
+    assume("inverter_replacement", "De omvormer is onderdeel van het product; vervanging valt binnen de aangenomen levensduur van het geheel.");
+    assume("battery_replacement", "Geen vervanging: het model stopt de accu na de aangenomen levensduur.");
+    fact("removal_recycling", facts.recycling);
+    fact("grant", facts.grant);
+    assume("residual_value", "Geen restwaarde aangenomen (voorzichtig).");
+    return [...lines.values()];
+  }
+  const isAssumption = line => line.source === "Aanname" || line.notes.startsWith("Aanname");
+
   function fit(p) {
     const no = [], notes = [];
     if (answers.install === "plug" && p.kind === "fixed") no.push("Moet door een installateur worden aangesloten.");
@@ -238,25 +292,23 @@ window.Keuzehulp = (() => {
       priceInput.value = p.offer ? String(p.offer.upfront_amount_minor / 100) : ""; priceInput.placeholder = "Offertebedrag"; price.append(priceInput);
       if (p.offer) { const a = link(`Prijs volgens ${p.offer.seller}`, p.offer.source_url), small = el("small", null, "muted"); a.target = "_blank"; a.rel = "noopener noreferrer"; small.append(a, p.offer.includes_installation === false ? " · exclusief installatie" : ""); price.append(small); }
       card.append(price);
+      const lines = estimateCosts(costs, { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases, inverterIncluded: p.inverterIncluded }, answers);
+      const editor = costEditor(lines, costs.categories, priceInput); card.append(editor.element);
       const assumptions = el("details"); assumptions.append(el("summary", "Zo rekenen we met deze accu"), table(["Rekengegeven", "Waarde"], [["Bruikbare capaciteit", p.capacity != null ? `${n(p.capacity, 2)} kWh` : "Onbekend"], ["Laden / ontladen (AC)", p.chargeKw != null && p.dischargeKw != null ? `${n(p.chargeKw, 2)} / ${n(p.dischargeKw, 2)} kW` : "Onbekend"], ["Rendement heen en terug", `${n(p.efficiency, 0)}%`], ["Sluimerverbruik", `${n(p.standby, 0)} W`]]));
       const ul = el("ul"); for (const note of p.notes) ul.append(el("li", note)); assumptions.append(ul, link("Bekijk alle bronclaims in de vergelijking", "#/accus")); card.append(assumptions);
-      selected.set(p.config.id, { p, check, priceInput }); cards.append(card);
+      selected.set(p.config.id, { p, check, priceInput, editor }); cards.append(card);
     }
     pick.append(cards); adviceHost.append(pick);
 
     const run = el("section", null, "panel"); run.append(el("p", "STAP 3 VAN HET ADVIES", "eyebrow"), el("h2", "Reken het door"));
-    const install = el("div", null, "field-grid"), installQuote = el("input"), installLabel = el("label", "Installatiekosten voor een vaste accu (€, uit je offerte)"); installQuote.type = "number"; installQuote.min = "0"; installQuote.step = "0.01"; installLabel.append(installQuote);
-    const useIndication = el("input"), useLabel = el("label", null, "inline"); useIndication.type = "checkbox"; useLabel.append(useIndication, ` Nog geen offerte: reken met de indicatie van ${money(INDICATION.installation, { decimals: 0 })}`);
-    install.append(installLabel, useLabel); run.append(install, el("p", INDICATION.installationText, "muted"));
-    const counted = el("details", null, "callout"); counted.append(el("summary", "Wat telt mee in deze indicatie?"));
-    counted.append(el("p", "Wel: de aanschafprijs, installatie (bij een vaste accu), je besparing op de energierekening inclusief laadverliezen en sluimerverbruik, en capaciteitsverlies per jaar."));
-    const notCounted = el("ul"); for (const c of costs.categories.filter(c => !["battery", "installation"].includes(c.key))) notCounted.append(el("li", c.label));
-    counted.append(el("p", "Niet: onderstaande posten. Vraag in je offerte na of ze voor jou gelden, of beoordeel ze allemaal in een eigen scenario."), notCounted); run.append(counted);
+    const counted = el("details", null, "callout"); counted.append(el("summary", "Wat telt mee?"));
+    counted.append(el("p", "Alle kostenposten hebben een indicatie: aanschaf, installatie, meter, noodstroom, meterkast en netaansluiting waar nodig, en de jaarlijkse en latere posten. Bij elke post staat de bron of de aanname; pas bedragen aan zodra je een offerte hebt. Je besparing op de energierekening rekent laadverliezen, sluimerverbruik en capaciteitsverlies al mee."));
+    counted.append(el("p", "Niet meegeteld: meerwerk dat een installateur pas bij de schouw ziet (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract.")); run.append(counted);
     const confirm = el("fieldset"); confirm.append(el("legend", "Bevestig"));
     const boxes = [
       answers.data === "file" ? "Mijn bestand bevat de opwek van mijn omvormer en het totale verbruik van het huis (of P1-afname en -teruglevering waaruit dat is afgeleid), zonder bestaande accu." : "Ik begrijp dat mijn verbruik en opwek zijn geschat uit jaartotalen met standaardprofielen.",
       "Ik begrijp dat de accugegevens uit de bronnen komen, aangevuld met de genoemde aannames, en dat de keuzehulp niet controleert of een accu in mijn meterkast past.",
-      "Ik begrijp dat alleen aanschaf en installatie zijn meegenomen; andere kosten staan op ‘niet meegenomen’."
+      "Ik begrijp dat de kosten indicaties zijn uit de genoemde bronnen en aannames, en dat een offerte voor mijn woning daarvoor in de plaats komt."
     ].map(text => { const label = el("label", null, "inline"), input = el("input"); input.type = "checkbox"; input.required = true; label.append(input, ` ${text}`); confirm.append(label); return input; });
     run.append(confirm);
     const status = el("p", null, "muted"); status.setAttribute("aria-live", "polite");
@@ -266,8 +318,7 @@ window.Keuzehulp = (() => {
         const chosen = [...selected.values()].filter(s => s.check.checked);
         if (!chosen.length) throw new Error("Kies minstens één accu om mee te vergelijken.");
         if (chosen.length > 12) throw new Error("Kies maximaal twaalf accu’s.");
-        const quote = number(installQuote.value), install = quote != null ? { amount: quote, quoted: true } : useIndication.checked ? { amount: INDICATION.installation, quoted: false } : null;
-        const request = buildRequest(importId, chosen, install, costs);
+        const request = buildRequest(importId, chosen);
         go.disabled = true; status.textContent = "Bezig met rekenen…";
         const response = await api("/api/v1/analysis/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) });
         await window.Analysis?.refreshData?.(); location.hash = `/scenarios/${response.id}`;
@@ -276,20 +327,62 @@ window.Keuzehulp = (() => {
     run.append(go, status); adviceHost.append(run);
   }
 
-  function buildRequest(importId, chosen, install, costs) {
+  // Bewerkbare kostenopbouw per accu; een ingevuld bedrag vervangt de indicatie.
+  function costEditor(lines, categories, priceInput) {
+    const labels = Object.fromEntries(categories.map(c => [c.key, c.label])), inputs = new Map();
+    const box = el("details", null, "kh-costs"), summary = el("summary"), totals = el("p", null, "muted"); box.append(summary);
+    const statusText = { included: "Inbegrepen", not_applicable: "Niet van toepassing", unknown: "Nog in te vullen" };
+    const item = line => {
+      const row = el("div", null, "kh-cost"), head = el("div", null, "kh-cost-head"), name = el("span", labels[line.category]);
+      if (line.timing === "event" || ["grant", "vat_refund"].includes(line.category)) head.append(name, el("span", line.status === "priced" ? money(line.amount_minor / 100) : statusText[line.status], "kh-cost-status"));
+      else {
+        const amount = el("input"); Object.assign(amount, { type: "number", min: "0", step: "0.01", inputMode: "decimal", placeholder: statusText[line.status] || "" });
+        amount.value = line.status === "priced" ? String(line.amount_minor / 100) : ""; amount.setAttribute("aria-label", `${labels[line.category]} in euro`);
+        amount.addEventListener("input", update); inputs.set(line.category, amount); head.append(name, amount);
+      }
+      const basis = el("p", null, "kh-cost-basis"); basis.append(badge(isAssumption(line) ? "Aanname" : "Bron", isAssumption(line) ? "warning" : "success"), " ", line.notes.replace(/^Aanname: /, ""));
+      if (/^https:\/\//.test(line.source)) { const a = link("bron", line.source); a.target = "_blank"; a.rel = "noopener noreferrer"; basis.append(" · ", a); }
+      row.append(head, basis); return row;
+    };
+    box.append(totals);
+    const groups = [["Startkosten", l => l.timing === "upfront" && !["grant", "vat_refund"].includes(l.category)], ["Per jaar", l => l.timing === "annual"], ["Later en aftrekposten", l => l.timing === "event" || ["grant", "vat_refund"].includes(l.category)]];
+    for (const [title, match] of groups) {
+      const group = lines.filter(l => l.category !== "battery" && match(l)), shown = group.filter(l => l.status !== "not_applicable"), rest = group.filter(l => l.status === "not_applicable");
+      const section = el("div", null, "kh-cost-group"); section.append(el("h4", title), ...shown.map(item));
+      if (rest.length) { const more = el("details"); more.append(el("summary", `${rest.length} ${rest.length === 1 ? "post" : "posten"} niet van toepassing`), ...rest.map(item)); section.append(more); }
+      box.append(section);
+    }
+    priceInput.addEventListener("input", update);
+    function collect() {
+      return lines.map(line => {
+        const input = inputs.get(line.category); if (!input) return { ...line };
+        const value = number(input.value), original = line.status === "priced" ? line.amount_minor : null;
+        if (value != null && value > 0) return Math.round(value * 100) === original ? { ...line } : { ...line, status: "priced", amount_minor: Math.round(value * 100), source: "Eigen invoer in de keuzehulp", notes: `Aangepast; indicatie was: ${line.notes}` };
+        if (original != null) return { ...line, status: "not_applicable", amount_minor: 0, source: "Eigen invoer in de keuzehulp", notes: "Door de gebruiker op nul gezet." };
+        return { ...line };
+      });
+    }
+    function update() {
+      const all = collect(), start = all.filter(l => l.timing === "upfront" && l.status === "priced" && !["grant", "vat_refund"].includes(l.category)).reduce((t, l) => t + l.amount_minor, 0) / 100 + (number(priceInput.value) || 0);
+      const yearly = all.filter(l => l.timing === "annual" && l.status === "priced").reduce((t, l) => t + l.amount_minor, 0) / 100, open = all.filter(l => l.status === "unknown" && l.category !== "battery").length;
+      summary.textContent = `Kosten: ${money(start, { decimals: 0 })} bij de start${yearly ? ` + ${money(yearly, { decimals: 0 })} per jaar` : ""}${open ? ` · ${open} nog in te vullen` : ""}`;
+      totals.textContent = `Startkosten inclusief accu: ${money(start, { decimals: 0 })}. Jaarlijkse extra kosten: ${money(yearly, { decimals: 0 })}. Vul een offertebedrag in om een indicatie te vervangen.`;
+    }
+    update();
+    return { element: box, collect, label: key => labels[key] };
+  }
+
+  function buildRequest(importId, chosen) {
     const defaults = UI.read("thuisaccu-defaults", {}), d = (id, fallback) => { const v = Number(defaults[id]); return defaults[id] !== undefined && defaults[id] !== "" && Number.isFinite(v) ? v : fallback; };
     const tariffImport = number(answers.tariffImport), tariffExport = number(answers.tariffExport), exportFee = number(answers.exportFee) ?? 0, horizon = Number(answers.horizon);
     if (tariffImport == null || tariffExport == null) throw new Error("Vul in stap 3 je stroomprijs en terugleververgoeding in, of kies ‘Gebruik de indicaties’.");
-    const candidates = chosen.map(({ p, priceInput }) => {
+    const candidates = chosen.map(({ p, priceInput, editor }) => {
       const price = number(priceInput.value); if (!(price > 0)) throw new Error(`Vul een aanschafprijs in voor ${p.name}.`);
-      const fixed = p.kind !== "plug";
-      if (fixed && install == null) throw new Error(`Vul installatiekosten in voor ${p.name}, of kies de indicatie.`);
       const fromOffer = p.offer && Math.round(price * 100) === p.offer.upfront_amount_minor;
-      const lines = costs.categories.map(c => ({ category: c.key, status: "not_applicable", amount_minor: 0, timing: c.timing, year: null, source: "Keuzehulp: niet meegenomen in deze indicatie", notes: "Controleer in een offerte of deze post voor jouw situatie geldt." }));
-      const set = (key, values) => Object.assign(lines.find(l => l.category === key), values);
-      set("battery", { status: "priced", amount_minor: Math.round(price * 100), source: fromOffer ? `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${RESEARCHED_ON})` : "Eigen invoer in de keuzehulp", notes: fromOffer ? "Gepubliceerde prijs inclusief btw, exclusief installatie." : "Door de gebruiker ingevoerd bedrag." });
-      if (fixed) set("installation", { status: "priced", amount_minor: Math.round(install.amount * 100), source: install.quoted ? "Eigen offertebedrag in de keuzehulp" : `Indicatie: ${INDICATION.sources[3][1]}`, notes: install.quoted ? "Door de gebruiker ingevoerd bedrag." : INDICATION.installationText });
-      else set("installation", { source: "Stekkerbatterij: zelf aan te sluiten volgens de fabrikant", notes: "Een eigen groep voor meer dan 800 W is niet meegenomen." });
+      const lines = editor.collect();
+      const open = lines.find(l => l.status === "unknown" && l.category !== "battery");
+      if (open) throw new Error(`Vul bij ${p.name} een bedrag in voor ‘${editor.label(open.category)}’.`);
+      Object.assign(lines.find(l => l.category === "battery"), { status: "priced", amount_minor: Math.round(price * 100), source: fromOffer ? `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${RESEARCHED_ON})` : "Eigen invoer in de keuzehulp", notes: fromOffer ? "Gepubliceerde prijs inclusief btw, exclusief installatie." : "Door de gebruiker ingevoerd bedrag." });
       return { key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id, battery: { usable_capacity_kwh: p.capacity, charge_power_kw: p.chargeKw, discharge_power_kw: p.dischargeKw, ac_round_trip_efficiency_pct: p.efficiency, standby_w: p.standby, annual_capacity_loss_pct: FALLBACK.degradation, operating_life_years: FALLBACK.life }, costs: lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 }, assumptions: `Keuzehulp. ${p.notes.join(" ")}` };
     });
     const objective = answers.objective, budget = number(answers.budget);
@@ -336,5 +429,5 @@ window.Keuzehulp = (() => {
   // Opbrengst per kWp voor de schatting uit kWp; zonder dit blijft de afgeleide som onbekend.
   api("/api/v1/solar/typical").then(s => { latest = { yields: s.pv.annual_kwh_per_kwp }; refreshDerived(); }).catch(() => {});
   UI.ready.then(() => { mount(); window.addEventListener("app:route", ({ detail }) => { if (detail.key === "keuzehulp") render(); }); });
-  return { get answers() { return answers; } };
+  return { get answers() { return answers; }, estimateCosts, describe: product };
 })();

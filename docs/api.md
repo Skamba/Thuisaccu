@@ -13,7 +13,6 @@ De volgende routes bestaan:
 | `/workspace.js` | `200`, JavaScript | Dashboard, lijsten, wizards en instellingen |
 | `/results.js` | `200`, JavaScript | Resultaatdashboard, grafieken en export |
 | `/keuzehulp.js` | `200`, JavaScript | Begeleide keuzehulp voor consumenten |
-| `/samples/solar.csv`, `/samples/solar.json`, `/samples/solar.xlsx` | `200`, download | Fictieve voorbeelddata |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
@@ -25,8 +24,7 @@ De volgende routes bestaan:
 | `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens |
 | `POST /api/v1/solar/typical` | `201`, JSON met `id`, `filename`, `summary` | Geschat uurjaar uit jaartotalen opslaan als gemodelleerde import |
 | `GET /api/v1/solar/typical` | `200`, JSON | Bronnen van de ingebakken profielvormen en PV-opbrengst per kWp per ligging |
-| `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen en gedateerde bronlinks |
-| `POST /api/v1/analysis/demo` | `200`, JSON met `id` | Expliciet synthetisch volledig demojaar aanmaken of hergebruiken |
+| `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen, gedateerde bronlinks en `estimates` (bronnen en bedragen voor kostenindicaties) |
 | `POST /api/v1/analysis/runs` | `201`, JSON met `id` en `result` | Valideren, simuleren, vergelijken en met invoer opslaan |
 | `GET /api/v1/analysis/runs` | `200`, JSON met `runs` | Laatste 100 analyses met oorspronkelijke `input` en `result` |
 | `POST /api/v1/locations/search` | `200`, JSON met `results` en `source` | Expliciet een Nederlands adres opzoeken bij PDOK |
@@ -86,7 +84,7 @@ Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfd
 
 De rekenkern bepaalt energiestromen per meetperiode en projecteert jaarlijkse rekeningen en extra kasstromen. `result` bevat `model_version`, `recommended_key`, `recommendation`, `baseline_first_year`, `candidates` en `warnings`. Iedere kandidaat bevat onder meer NPV, ROI, nettowinst, blijvende en gedisconteerde terugverdientijd, kosten/besparing, jaarlijkse resultaten en twee gevoeligheidsvarianten. `recommended_key: "no_battery"` betekent dat geen accu onder dit criterium beter scoort. De [rekenmethode](roi-model.md) definieert formules en beperkingen.
 
-De opgeslagen `input` bevat `request`, `profile` (importmetadata), `profile_sha256` en de kostenonderzoeksdatum. Resultaten worden niet automatisch aangepast als de catalogus of editor verandert. De API bewaart een nieuwe rij per geslaagde analyse; een ongeldige analyse wordt niet opgeslagen. `POST /analysis/demo` maakt alleen een fictief profiel; fictieve accu's/kosten in de browser blijven scenario-invoer. Het demo-profiel wordt in iedere afgeleide analyse zichtbaar gemarkeerd.
+De opgeslagen `input` bevat `request`, `profile` (importmetadata), `profile_sha256` en de kostenonderzoeksdatum. Resultaten worden niet automatisch aangepast als de catalogus of editor verandert. De API bewaart een nieuwe rij per geslaagde analyse; een ongeldige analyse wordt niet opgeslagen. Een fictief profiel uit een oudere database (`is_demo`) wordt in iedere afgeleide analyse als FICTIEF gemarkeerd.
 
 ## Adresopzoeken
 

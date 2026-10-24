@@ -33,7 +33,7 @@ Fronius documenteert [Solar.web-productierapporten](https://www.fronius.com/~/do
 - JSON: array van objecten, `data`-array, SolarEdge `energy.values` of PVGIS 5 `outputs.hourly`. Ontbrekende velden worden als ontbrekend behandeld, niet als nul.
 - Maximaal 10 MB, 250.000 gegevensrijen en 200 kolommen. Dit biedt ruimte voor een jaar met 5-minutenwaarden. PDF, afbeeldingen, ZIP-bundels en niet-tabulaire rapporten worden niet uitgelezen.
 
-Download de fictieve [CSV](../crates/server/resources/solar-example.csv), [JSON](../crates/server/resources/solar-example.json) of [XLSX](../crates/server/resources/solar-example.xlsx), ook beschikbaar in de webinterface. De voorbeeldbestanden zijn geen echte huishoudgegevens. Het XLSX-voorbeeld gebruikt naïeve UTC-datums; de CSV/JSON-voorbeelden bevatten expliciete offsets.
+De fictieve voorbeeldbestanden [CSV](../crates/server/resources/solar-example.csv), [JSON](../crates/server/resources/solar-example.json) en [XLSX](../crates/server/resources/solar-example.xlsx) staan in de repository als testfixtures. De voorbeeldbestanden zijn geen echte huishoudgegevens. Het XLSX-voorbeeld gebruikt naïeve UTC-datums; de CSV/JSON-voorbeelden bevatten expliciete offsets.
 
 ## Interpretatie en controles
 
