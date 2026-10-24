@@ -1,0 +1,48 @@
+[
+  {
+    "manufacturer": "BYD", "product": "Battery-Box Premium HVS BCU 2.0", "model_code": "HVS", "product_kind": "battery_system",
+    "configuration": "HVS 5.1 · 2 modules · externe omvormer", "market": "Zie internationale datasheet; controleer lokale toelating",
+    "source_url": "https://site.bydbatterybox.com/uploads/downloads/BCU2.0_BBOX_HVS_Datasheet_EN_V1.0_250328-67ee42d4ced21.pdf",
+    "source_title": "BYD HVS BCU 2.0 datasheet", "source_kind":"datasheet", "locator": "Pagina 2, technische parameters en voetnoten", "document_revision": "V1.0 250328", "published_on": "2025-03-28",
+    "conditions": "Onderzocht 2026-10-24. Accuconfiguratie zonder externe omvormer. DC-bruikbare energie bij 100% DoD, 0.2C en 25 °C. Systeemenergie hangt van omvormer af. De rendementmeetgrens is niet expliciet benoemd.",
+    "numbers": [
+      {"metric":"usable_energy_wh","qualifier":"exact","value":5120,"boundary":"battery_dc","reported_value":"5.12 kWh"},
+      {"metric":"module_count","qualifier":"exact","value":2,"boundary":"unspecified","reported_value":"2 modules"},
+      {"metric":"nominal_voltage_v","qualifier":"exact","value":204.8,"boundary":"battery_dc","reported_value":"204.8 V"},
+      {"metric":"continuous_discharge_current_a","qualifier":"at_most","value":25,"boundary":"battery_dc","reported_value":"Max output current 25 A"},
+      {"metric":"round_trip_efficiency_pct","qualifier":"at_least","value":96,"boundary":"unspecified","reported_value":"≥96%","conditions":"Geen rendement van de complete AC-installatie."},
+      {"metric":"weight_kg","qualifier":"exact","value":91,"boundary":"unspecified","reported_value":"91 kg"}
+    ],
+    "features": [{"metric":"inverter_included","status":"unsupported"},{"metric":"outdoor","status":"supported"}],
+    "texts": [{"metric":"chemistry","value":"LFP"},{"metric":"coupling","value":"DC; externe omvormer nodig"},{"metric":"ip_rating","value":"IP55"}],
+    "product_warranty_months":120
+  },
+  {
+    "manufacturer":"Enphase", "product":"IQ Battery 5P with FlexPhase", "model_code":"IQBATTERY-5P-3P-INT", "product_kind":"battery_system",
+    "configuration":"FlexPhase · 1 fase · maximaal 3,84 kVA", "market":"EMEA; model- en landafhankelijke vermogenslimieten",
+    "source_url":"https://enphase.com/nl-nl/media/22099", "source_title":"Enphase IQ Battery 5P FlexPhase datasheet", "source_kind":"datasheet", "locator":"Pagina 1, key specifications en modelvoetnoot", "document_revision":"DSH-00477-6.0-EN-2025-11-26", "published_on":"2025-11-26",
+    "conditions":"Onderzocht 2026-10-24 via de openbare fabrikantindex. Eén unit, 1-fase-uitvoering; modelafhankelijke limieten. kVA wordt niet gelijkgesteld aan kW. Controleer volledige garantie en configuratievereisten.",
+    "numbers":[
+      {"metric":"usable_energy_wh","qualifier":"exact","value":5000,"boundary":"unspecified","reported_value":"Usable capacity 5.0 kWh","conditions":"Datasheet noemt geen expliciete energie-meetgrens in deze tabel."},
+      {"metric":"apparent_power_va","qualifier":"at_most","value":3840,"boundary":"system_ac","reported_value":"Up to 3.84 kVA, single phase","conditions":"Modelafhankelijk. Geen claim van 3,84 kW werkelijk vermogen."},
+      {"metric":"phase_count","qualifier":"exact","value":1,"boundary":"system_ac","reported_value":"Single-phase configuration"}
+    ],
+    "features":[{"metric":"inverter_included","status":"supported"},{"metric":"backup","status":"conditional","conditions":"Full Backup vereist een passende Enphase-systeemconfiguratie; controleer controller en planning guide."}],
+    "texts":[{"metric":"chemistry","value":"LFP"},{"metric":"coupling","value":"AC"},{"metric":"cooling","value":"Passieve koeling"}],
+    "product_warranty_months":180
+  },
+  {
+    "manufacturer":"Tesla", "product":"Powerwall 3P", "model_code":"", "product_kind":"battery_system",
+    "configuration":"Powerwall 3P · Nederlandse productpagina", "market":"Nederlandse productpagina; controleer aansluitvoorwaarden",
+    "source_url":"https://www.tesla.com/nl_NL/powerwall", "source_title":"Tesla Nederland Powerwall 3P", "source_kind":"product_page", "locator":"Sectie Specificaties Powerwall en voetnoten", "document_revision":null, "published_on":null,
+    "conditions":"Onderzocht 2026-10-24. Marketingpagina, geen volledige installatiespecificatie. Opgegeven energiecapaciteit is niet afzonderlijk als bruikbare AC-energie gespecificeerd. Het solar-feed-in-rendement wordt niet als round-trip-rendement overgenomen.",
+    "numbers":[
+      {"metric":"nominal_energy_wh","qualifier":"exact","value":13500,"boundary":"unspecified","reported_value":"Energiecapaciteit 13,5 kWh","conditions":"Opgegeven energiecapaciteit; bruikbare energie niet afzonderlijk vastgesteld."},
+      {"metric":"backup_power_w","qualifier":"at_most","value":15400,"boundary":"system_ac","reported_value":"Backup-stroom max. 15,4 kW"},
+      {"metric":"peak_discharge_power_w","qualifier":"at_most","value":21000,"boundary":"system_ac","reported_value":"Piekvermogen 21 kW (1s)","conditions":"Back-upcontext; geen continu vermogen."},
+      {"metric":"peak_duration_s","qualifier":"exact","value":1,"boundary":"system_ac","reported_value":"1 s"},
+      {"metric":"weight_kg","qualifier":"exact","value":138,"boundary":"unspecified","reported_value":"138 kg"}
+    ],
+    "features":[], "texts":[], "product_warranty_months":120
+  }
+]

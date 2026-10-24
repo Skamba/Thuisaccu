@@ -1,0 +1,29 @@
+[package]
+name = "thuisaccu-server"
+description = "Webinterface en HTTP API voor thuisaccukeuzes"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["multipart"] }
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thuisaccu-storage = { path = "../storage" }
+thuisaccu-core = { path = "../core" }
+serde_json.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+csv.workspace = true
+calamine.workspace = true
+sha2.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true
+

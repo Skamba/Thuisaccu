@@ -1,0 +1,167 @@
+use axum::{
+    body::{Body, to_bytes},
+    http::{Request, StatusCode},
+};
+use serde_json::{Value, json};
+use thuisaccu_storage::Catalog;
+use tower::ServiceExt;
+
+async fn response_json(response: axum::response::Response) -> Value {
+    serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn researched_references_are_optional_idempotent_and_keep_important_unknowns() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    assert!(
+        catalog
+            .comparison()
+            .await
+            .unwrap()
+            .configurations
+            .is_empty()
+    );
+    for expected in [true, false] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/references")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_json(response).await["imported"], expected);
+    }
+    let response = app
+        .oneshot(
+            Request::get("/api/v1/comparison")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let data = response_json(response).await;
+    assert_eq!(data["configurations"].as_array().unwrap().len(), 3);
+    assert_eq!(data["offers"], json!([]));
+    let enphase = data["configurations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["manufacturer_name"] == "Enphase")
+        .unwrap()["id"]
+        .clone();
+    assert!(
+        !data["numbers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["configuration_id"] == enphase
+                && n["metric_key"] == "continuous_discharge_power_w")
+    );
+    assert!(
+        data["numbers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["configuration_id"] == enphase && n["metric_key"] == "apparent_power_va")
+    );
+}
+
+fn candidate() -> Value {
+    json!({"manufacturer":"Fixture maker","product":"Fixture battery","model_code":"F1","product_kind":"battery_system","configuration":"1 unit","market":"unspecified","source_url":"","source_title":"Manual test entry","locator":"User declaration","numbers":[{"metric":"usable_energy_wh","qualifier":"exact","value":5000,"boundary":"battery_dc","reported_value":"5 kWh"}],"price":{"seller":"Fixture seller","currency":"EUR","minor_unit_exponent":2,"amount_minor":650099,"tax_basis":"included","includes_installation":true}})
+}
+
+#[tokio::test]
+async fn candidate_import_is_atomic_and_multiple_source_claims_are_not_overwritten() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let mut input = candidate();
+    input["numbers"][0]["value"] = json!(-1);
+    let request = |body: &Value| {
+        Request::post("/api/v1/candidates")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let response = app.clone().oneshot(request(&input)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(catalog.list_products().await.unwrap().is_empty());
+    for value in [5000, 4800] {
+        input["numbers"][0]["value"] = json!(value);
+        let response = app.clone().oneshot(request(&input)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+    let comparison = catalog.comparison().await.unwrap();
+    assert_eq!(comparison.configurations.len(), 1);
+    assert_eq!(comparison.numbers.len(), 2);
+    assert_eq!(comparison.offers[0].upfront_amount_minor, 650099);
+    assert!(
+        comparison.numbers[0]
+            .source_url
+            .starts_with("urn:thuisaccu:manual:")
+    );
+}
+
+fn upload(path: &str, content: &[u8], options: Value) -> Request<Body> {
+    let mut bytes = format!("--test-boundary\r\nContent-Disposition: form-data; name=\"options\"\r\n\r\n{}\r\n--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"solar.csv\"\r\nContent-Type: text/csv\r\n\r\n", options).into_bytes();
+    bytes.extend_from_slice(content);
+    bytes.extend_from_slice(b"\r\n--test-boundary--\r\n");
+    Request::post(path)
+        .header(
+            "content-type",
+            "multipart/form-data; boundary=test-boundary",
+        )
+        .body(Body::from(bytes))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn upload_inspection_and_preview_do_not_persist_until_save_and_repeat_save_is_idempotent() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let csv = b"time,production\n2026-06-01T10:00:00Z,1\n2026-06-01T11:00:00Z,2\n";
+    let inspected = app
+        .clone()
+        .oneshot(upload("/api/v1/solar/inspect", csv, json!({})))
+        .await
+        .unwrap();
+    assert_eq!(inspected.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(inspected).await["headers"],
+        json!(["time", "production"])
+    );
+    let preview = app
+        .clone()
+        .oneshot(upload("/api/v1/solar/preview", csv, json!({})))
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), StatusCode::OK);
+    assert_eq!(response_json(preview).await["production_kwh"], 3.0);
+    assert!(catalog.list_solar().await.unwrap().is_empty());
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let response = app
+            .clone()
+            .oneshot(upload("/api/v1/solar/imports", csv, json!({})))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        ids.push(response_json(response).await["id"].clone());
+    }
+    assert_eq!(ids[0], ids[1]);
+    assert_eq!(catalog.list_solar().await.unwrap().len(), 1);
+    let response = app
+        .oneshot(upload(
+            "/api/v1/solar/imports",
+            b"time,value\n2026-01-01,-1",
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(catalog.list_solar().await.unwrap().len(), 1);
+}

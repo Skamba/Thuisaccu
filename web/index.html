@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Thuisaccu — Vergelijk met inzicht</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+    <script src="/analysis.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Naar de inhoud</a>
+    <nav class="topbar" aria-label="Hoofdnavigatie"><a class="brand" href="/">▤ Thuisaccu</a><div><a href="#compare">Accu’s</a><a href="#solar">Opwek</a><a href="#analysis">ROI</a></div><span class="badge">Onderzoeksmodel</span></nav>
+    <main id="main">
+      <header class="hero">
+        <p class="eyebrow">Onderzoeken · Vergelijken · Onderbouwen</p>
+        <h1>Welke accu past<br>bij jouw situatie?</h1>
+        <p class="intro">Zet uitvoeringen naast elkaar. Bekijk wat een specificatie betekent, waar de gegevens vandaan komen en wat nog ontbreekt.</p>
+        <div class="actions"><a class="button" href="#analysis">Bereken jouw scenario <span aria-hidden="true">↗</span></a><a class="button secondary" href="#compare">Onderzoek accu’s</a></div>
+      </header>
+      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <section id="compare" aria-labelledby="compare-title">
+        <div class="section-heading"><div><p class="eyebrow">01 · Productonderzoek</p><h2 id="compare-title">Een vergelijking die je kunt controleren.</h2></div><button id="add-open" class="secondary">+ Eigen accu of offerte</button></div>
+        <div class="toolbar"><label class="search">Zoek fabrikant of uitvoering<input id="search" type="search" placeholder="Bijvoorbeeld: Enphase, HVS…"></label><button id="references" class="secondary">Laad onderzochte voorbeelden</button></div>
+        <p class="muted">De voorbeelden zijn bronmomentopnamen van 24 oktober 2026, zonder verzonnen prijzen. Kies maximaal vier uitvoeringen. Markt en installatieomvang kunnen verschillen.</p>
+        <div id="catalog" class="cards" aria-live="polite"><p>Catalogus laden…</p></div>
+        <div class="comparison-controls"><fieldset><legend>Zichtbare gegevens</legend><label class="inline"><input type="checkbox" data-group="performance" checked> Prestaties</label><label class="inline"><input type="checkbox" data-group="installation" checked> Installatie</label><label class="inline"><input type="checkbox" data-group="conditions" checked> Voorwaarden</label></fieldset><button id="export-comparison" class="text-button">Exporteer vergelijking als CSV ↓</button></div>
+        <p class="callout">Bruikbare energie, nominale energie en kVA zijn verschillende grootheden. Rendementen hebben een meetgrens. Open een bron voor de context; onbekend blijft onbekend.</p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Vergelijkingstabel"><table id="comparison-table"><caption>Selecteer uitvoeringen om ze te vergelijken.</caption></table></div>
+        <p class="muted">Prijzen kunnen een andere valuta, btw-basis of pakketomvang hebben. Prijs per kWh is een kengetal, geen terugverdientijd of complete kostenraming. Er wordt geen automatische winnaar gekozen.</p>
+      </section>
+      <section id="solar" aria-labelledby="solar-title">
+        <div class="section-heading"><div><p class="eyebrow">02 · Jouw zonne-opwek</p><h2 id="solar-title">Begin bij je eigen gegevens.</h2></div><span class="badge">CSV · Excel · JSON</span></div>
+        <p>Upload je productie-export en controleer de kolommen voordat je opslaat. Optioneel kun je gelijktijdig verbruik meenemen. De bestanden worden door je eigen lokale server verwerkt.</p>
+        <div class="solar-layout"><form id="solar-form" class="panel">
+          <label>Importprofiel<select id="import-profile"><option value="generic">Algemeen — eigen kolommen</option><option value="solaredge">SolarEdge Monitoring</option><option value="enphase">Enphase Enlighten</option><option value="sma">SMA Sunny Portal</option><option value="fronius">Fronius Solar.web</option><option value="pvgis">PVGIS — uurdata (CSV / 5.x JSON)</option></select></label>
+          <p id="profile-help" class="muted">Kies een exportprofiel voor hulp bij het selecteren van de juiste gegevens. De daadwerkelijke kolommen, eenheid en meetperiode blijven zichtbaar en aanpasbaar.</p>
+          <a id="profile-source" target="_blank" rel="noopener noreferrer" hidden>Exportuitleg van de aanbieder ↗</a>
+          <label class="upload">Zonne-opwekbestand<input id="solar-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods,.json" required><span>Maximaal 10 MB en 250.000 gegevensrijen. PDF en afbeeldingen worden niet uitgelezen.</span></label>
+          <div class="field-grid"><label>Regels vóór de kopregel<input id="header-row" type="number" min="0" max="1000" value="0"></label><label>CSV-scheiding<select id="delimiter"><option value="auto">Automatisch</option><option value="semicolon">Puntkomma ;</option><option value="comma">Komma ,</option><option value="tab">Tab</option></select></label></div>
+          <label id="sheet-label" hidden>Werkblad<select id="sheet"></select></label>
+          <button id="inspect-file" type="button" class="secondary">1. Lees kolommen</button>
+          <div id="mapping" hidden>
+            <div class="field-grid"><label>Datum / gecombineerd tijdstip<select id="time-column"></select></label><label>Aparte tijdkolom (optioneel)<select id="time-part-column"></select></label><label>Zonne-opwek<select id="production-column"></select></label><label>Verbruik (optioneel)<select id="consumption-column"></select></label><label>Eenheid<select id="unit"><option value="kwh">kWh — energie</option><option value="wh">Wh — energie</option><option value="kw">kW — gemiddeld vermogen</option><option value="w">W — gemiddeld vermogen</option></select></label>
+            <label>Soort waarden<select id="mode"><option value="interval">Opbrengst per meetperiode</option><option value="cumulative">Cumulatieve meterstanden</option></select></label><label>Meetperiode<select id="period"><option value="5min">5 minuten</option><option value="10min">10 minuten</option><option value="15min">15 minuten</option><option value="30min">30 minuten</option><option value="hour" selected>Uur</option><option value="day">Dag</option><option value="week">Week</option><option value="month">Maand</option><option value="year">Jaar</option></select></label>
+            <label>Tijdstempel markeert<select id="timestamp-position"><option value="start">Begin van de periode</option><option value="end">Einde van de periode</option></select></label><label>Decimaalteken<select id="decimal"><option value="dot">Punt (1.25)</option><option value="comma">Komma (1,25)</option></select></label>
+            <label>Tijdzone<input id="timezone" value="UTC" placeholder="Europe/Amsterdam" required></label><label>Herkomst gegevens<select id="data-kind"><option value="measured">Gemeten productie</option><option value="modelled">Gemodelleerde opwek</option></select></label></div>
+            <div class="field-grid"><label>Niet-ISO datumnotatie<select id="date-order"><option value="day_first">Dag / maand / jaar</option><option value="month_first">Maand / dag / jaar (VS)</option></select></label><label>Ontbrekende meetwaarden<select id="missing-rows"><option value="reject">Stop en meld de fout</option><option value="skip">Sla rij over en vermeld dit</option></select></label></div>
+            <p class="muted">Kies de tijdzone van de export, bijvoorbeeld Europe/Amsterdam. ISO-tijdstippen met offset blijven leidend. Cumulatieve standen worden van elkaar afgetrokken; de eerste is de beginstand. Vermogen moet een periodegemiddelde zijn.</p>
+            <details><summary>Voorbeeld van de ingelezen rijen</summary><div id="file-preview" class="table-scroll"></div></details>
+            <div class="actions"><button id="preview-file" type="submit">2. Controleer overzicht</button><button id="save-file" type="button" class="secondary" disabled>3. Bewaar in SQLite</button></div>
+          </div>
+          <p class="muted">Probeer een fictief <a href="/samples/solar.csv">CSV-voorbeeld</a>, <a href="/samples/solar.xlsx">Excel-voorbeeld</a> of <a href="/samples/solar.json">JSON-voorbeeld</a>. Deze bevatten uurwaarden in kWh met een punt als decimaalteken. Excel-datums in het voorbeeld gebruiken UTC.</p>
+        </form><div class="panel result-panel"><h3>Je opwek in beeld</h3><div id="solar-result"><p class="muted">Na de controle zie je de bestreken periode, totale opwek, eventuele ontbrekende perioden en een maandoverzicht.</p></div><label>Bewaarde overzichten<select id="solar-history"><option value="">Kies een overzicht…</option></select></label></div></div>
+        <p class="callout">Gebruik voor ROI hieronder een volledig jaar met AC-opwek én bruto huishoudelijk verbruik op uur- of fijnere basis. Dag- en maandtotalen missen het verloop binnen de dag. Vul daarnaast je contracttarieven en accukosten in.</p>
+      </section>
+      <section id="analysis" aria-labelledby="analysis-title">
+        <div class="section-heading"><div><p class="eyebrow">03 · Scenario en rendement</p><h2 id="analysis-title">Wat werkt het beste voor jou?</h2></div><span class="badge">Nederland · EUR</span></div>
+        <p>Simuleer zonnestroom opslaan voor eigen gebruik. Vergelijk accu-opties met geen accu, inclusief aanschaf, extra jaarkosten en vervanging. Kies zelf wat ‘beste’ betekent.</p>
+        <p class="callout">Dit model gebruikt ingevoerde vaste all-in tarieven. Het berekent geen dynamische handel of onbalansinkomsten. Gebruik één volledig, aaneengesloten jaar met uur- of fijnere waarden van AC-opwek en bruto huishoudelijk verbruik.</p>
+        <p id="analysis-message" role="status" aria-live="polite" hidden></p>
+        <form id="analysis-form">
+          <div class="solar-layout"><div class="panel">
+            <h3>Adres en energiegegevens</h3>
+            <label>Scenarionaam<input id="analysis-name" value="Mijn thuisaccu-scenario" required maxlength="200"></label>
+            <label>Adres in Nederland<input id="analysis-address" placeholder="Postcode + huisnummer of straat en plaats" required maxlength="500"></label>
+            <div class="actions"><button id="lookup-address" type="button" class="secondary">Zoek adres via PDOK</button></div>
+            <label id="address-results-label" hidden>Gevonden adressen — kies de juiste<select id="address-results"></select></label>
+            <p class="muted">Alleen de knop verstuurt je zoekterm naar PDOK. Zonder opzoeken kun je het adres handmatig gebruiken. Het adres is locatiecontext; aansluiting, contract en zonnepanelen worden er niet automatisch uit afgeleid.</p>
+            <label>Volledig jaar met opwek en bruto verbruik<select id="analysis-profile" required><option value="">Kies een bewaard overzicht…</option></select></label>
+            <div class="actions"><button id="refresh-analysis-data" type="button" class="text-button">Ververs overzichten ↻</button><button id="analysis-demo" type="button" class="secondary">Probeer fictief demojaar</button></div>
+            <p class="muted">Importeer je eigen gegevens hierboven met een verbruikskolom. De korte voorbeeldbestanden zijn onvoldoende voor ROI. Het demojaar bevat volledig fictieve gegevens en geeft geen advies voor een adres.</p>
+            <div class="field-grid"><label>Doel<select id="analysis-objective"><option value="net_present_value">Hoogste netto voordeel (NPV)</option><option value="roi">Hoogste ROI over de looptijd</option><option value="payback">Kortste blijvende terugverdientijd</option><option value="self_consumption">Meeste eigen zonnestroom gebruiken</option></select></label><label>Maximale netto startinvestering (€)<input id="analysis-budget" type="number" min="0" step="0.01" placeholder="Geen maximum"></label></div>
+          </div><div class="panel">
+            <h3>Tarieven en horizon</h3>
+            <p class="muted">Gebruik je contractbedragen, inclusief belastingen voor zover van toepassing. Het startjaar is het eerste volledige exploitatiejaar; de investering staat op het startmoment. Vanaf 2027 rekent het model zonder salderen.</p>
+            <div class="field-grid"><label>Startjaar<input id="analysis-start" type="number" min="2026" max="2100" value="2027" required></label><label>Analysehorizon (jaren)<input id="analysis-years" type="number" min="1" max="30" value="15" required></label>
+            <label>All-in inkoop (€/kWh)<input id="tariff-import" type="number" min="-10" max="10" step="0.0001" placeholder="Uit je contract" required></label><label>Bruto terugleververgoeding (€/kWh)<input id="tariff-export" type="number" min="-10" max="10" step="0.0001" placeholder="Vóór aparte terugleverkosten" required></label>
+            <label>Terugleverkosten per kWh (€)<input id="tariff-export-fee" type="number" min="0" max="10" step="0.0001" value="0" required></label><label>Prijsverandering per jaar (%)<input id="tariff-escalation" type="number" min="-20" max="30" step="0.1" value="0" required></label>
+            <label>Discontovoet per jaar (%)<input id="analysis-discount" type="number" min="0" max="30" step="0.1" value="4" required></label><label>Stijging extra jaarkosten (%)<input id="cost-escalation" type="number" min="-20" max="30" step="0.1" value="2" required></label>
+            <label>Afname PV-opwek per jaar (%)<input id="pv-degradation" type="number" min="0" max="10" step="0.1" value="0" required></label><label>Verandering verbruik per jaar (%)<input id="load-growth" type="number" min="-20" max="30" step="0.1" value="0" required></label>
+            <label>Tariefvariatie voor gevoeligheid (%)<input id="price-uncertainty" type="number" min="0" max="80" step="1" value="20" required></label><label>Kostenvariatie voor gevoeligheid (%)<input id="cost-uncertainty" type="number" min="0" max="80" step="1" value="15" required></label></div>
+            <details><summary>Terugleverkosten via vaste staffels</summary><p class="muted">Optioneel: maximum teruglevering in kWh ; jaarkosten in euro. Laat de laatste grens leeg. Geen duizendtalscheiding. Alleen aanvullende staffelkosten, anders worden kosten dubbel geteld.</p><label>Staffels<textarea id="export-fee-bands" rows="4" placeholder="1000;120&#10;2000;240&#10;;360"></textarea></label></details>
+            <p class="muted">Discontovoet, degradatie, groei en gevoeligheid zijn aanpasbare scenario-aannames; de standaardwaarden zijn geen voorspelling van marktprijzen of productlevensduur.</p>
+          </div></div>
+          <div class="section-heading analysis-options-heading"><h3>Accu-opties en alle extra kosten</h3><div class="actions"><select id="analysis-catalog"><option value="">Kies catalogusuitvoering…</option></select><button id="analysis-add-catalog" type="button" class="secondary">Neem over</button><button id="analysis-add" type="button" class="secondary">+ Eigen rekenoptie</button></div></div>
+          <p class="muted">De vergelijking neemt niet automatisch ontbrekende specificaties of verkoopprijzen aan. Controleer werkelijk AC-vermogen en AC-systeemrendement; kVA en DC-rendement zijn hiervoor onvoldoende. Per optie kun je een andere capaciteit en kostenopbouw invoeren.</p>
+          <div id="analysis-candidates"></div>
+          <details class="panel"><summary>Kostenonderzoek en geraadpleegde bronnen</summary><div id="analysis-cost-sources"></div><p class="muted">Een all-in pakket mag inbegrepen onderdelen niet dubbel tellen. Bestaande zonnepanelen en ongewijzigde vaste contract-/netkosten zijn geen extra accukosten. Energieverliezen en standby worden al via de energierekening verrekend. Subsidie en btw-teruggave zijn alleen aftrekposten na bevestiging van de eigen voorwaarden.</p></details>
+          <fieldset><legend>Controleer de invoer voor deze schatting</legend>
+            <label class="inline"><input id="confirm-gross" type="checkbox" required> Het profiel bevat bruto huishoudelijk verbruik en AC-zonneproductie, geen netafname of netteruglevering als vervanging daarvan.</label>
+            <label class="inline"><input id="confirm-technical" type="checkbox" required> De technische invoer is gecontroleerd of expliciet als scenario-aanname beschreven; installatiegeschiktheid is nog geen garantie.</label>
+            <label class="inline"><input id="confirm-costs" type="checkbox" required> Alle kostenposten zijn beoordeeld; bedragen, inbegrepen/niet-toepasselijke posten en fiscale aftrek zijn mijn offertegegevens of expliciete aannames.</label>
+          </fieldset>
+          <div class="actions"><button id="analysis-run" type="submit">Simuleer, vergelijk en bewaar</button></div>
+        </form>
+        <div id="analysis-result" aria-live="polite"></div>
+        <label>Bewaarde analyses<select id="analysis-history"><option value="">Kies een analyse…</option></select></label>
+      </section>
+    </main>
+    <footer>Thuisaccu · Lokale onderzoekscatalogus · <a href="/api/v1/health">Servicestatus</a></footer>
+    <dialog id="candidate-dialog" aria-labelledby="candidate-title"><form id="candidate-form">
+      <div class="section-heading"><h2 id="candidate-title">Eigen accu of offerte</h2><button id="add-close" type="button" class="text-button" aria-label="Sluiten">✕</button></div>
+      <p id="candidate-error" role="alert" class="warning"></p>
+      <p>Voeg de gegevens van één uitvoering en één bron toe. Lege velden blijven onbekend. Gebruik hetzelfde product en dezelfde uitvoering om een extra bron of offerte vast te leggen.</p>
+      <fieldset><legend>Uitvoering en herkomst</legend><div class="field-grid">
+        <label>Fabrikant<input name="manufacturer" required maxlength="200"></label><label>Productnaam<input name="product" required maxlength="200"></label><label>Modelcode (optioneel)<input name="model_code" maxlength="200"></label><label>Type<select name="product_kind"><option value="battery_system">Accusysteem</option><option value="battery_module">Accumodule</option></select></label>
+        <label>Concrete uitvoering<input name="configuration" required placeholder="Bijv. 2 modules met omvormer X" maxlength="200"></label><label>Markt / regio<input name="market" value="unspecified" required maxlength="200"></label>
+        <label>Brontitel<input name="source_title" value="Eigen invoer of offerte" required maxlength="200"></label><label>Bronlink (optioneel)<input name="source_url" type="url" placeholder="https://…"></label><label>Vindplaats<input name="locator" value="Handmatige invoer" required maxlength="200"></label><label>Documentrevisie (optioneel)<input name="document_revision"></label>
+      </div><label>Context en voorwaarden<textarea name="conditions" rows="2" placeholder="Meetcondities, firmware, benodigde accessoires of offerteomvang"></textarea></label></fieldset>
+      <fieldset><legend>Technische gegevens (optioneel)</legend><div class="field-grid">
+        <label>Bruikbare energie (kWh)<input name="usable_kwh" type="number" min="0.001" step="any"></label><label>Meetgrens energie<select name="energy_boundary"><option value="unspecified">Niet vastgesteld</option><option value="battery_dc">Accu DC</option><option value="system_ac">Systeem AC</option></select></label>
+        <label>Continu laden (kW)<input name="charge_kw" type="number" min="0" step="any"></label><label>Continu ontladen (kW)<input name="discharge_kw" type="number" min="0" step="any"></label><label>Meetgrens vermogen<select name="power_boundary"><option value="unspecified">Niet vastgesteld</option><option value="system_ac">Systeem AC</option><option value="battery_dc">Accu DC</option></select></label>
+        <label>Round-trip-rendement (%)<input name="efficiency_pct" type="number" min="0" max="100" step="any"></label><label>Rendementmeetgrens<select name="efficiency_boundary"><option value="unspecified">Niet vastgesteld</option><option value="ac_ac">AC → AC</option><option value="dc_dc">DC → DC</option><option value="pv_ac">PV → opslag → AC</option></select></label><label>Productgarantie (jaren)<input name="warranty_years" type="number" min="0.25" step="0.25"></label>
+        <label>Back-up<select name="backup"><option value="unknown">Niet bekend</option><option value="supported">Ondersteund</option><option value="unsupported">Niet ondersteund</option><option value="conditional">Onder voorwaarden</option></select></label><label>Cloud vereist<select name="cloud_required"><option value="unknown">Niet bekend</option><option value="supported">Ja</option><option value="unsupported">Nee</option><option value="conditional">Onder voorwaarden</option></select></label>
+      </div></fieldset>
+      <fieldset><legend>Prijsaanbieding (optioneel)</legend><div class="field-grid"><label>Aanschafbedrag<input name="price" inputmode="decimal" placeholder="Bijv. 6500,00"></label><label>Valuta<input name="currency" value="EUR" pattern="[A-Z]{3}" maxlength="3"></label><label>Decimalen van de valuta<select name="exponent"><option value="2">2 (bijv. EUR/USD)</option><option value="0">0 (bijv. JPY)</option><option value="3">3 (bijv. KWD)</option><option value="4">4</option></select></label><label>Verkoper<input name="seller"></label><label>Belastingbasis<select name="tax_basis"><option value="unknown">Niet bekend</option><option value="included">Inclusief belasting</option><option value="excluded">Exclusief belasting</option></select></label><label>Installatie inbegrepen<select name="includes_installation"><option value="">Niet bekend</option><option value="true">Ja</option><option value="false">Nee</option></select></label></div></fieldset>
+      <p class="muted">Nieuwe gegevens krijgen de status ‘nog niet gecontroleerd’. De garantie-invoer is een samenvatting; volledige prestatievoorwaarden blijven nodig.</p>
+      <div class="actions"><button type="submit">Bewaar onderzoeksgegevens</button></div>
+    </form></dialog>
+    <noscript>Deze vergelijkingstool vereist JavaScript. De Rust-server en SQLite-database draaien lokaal.</noscript>
+  </body>
+</html>
+
