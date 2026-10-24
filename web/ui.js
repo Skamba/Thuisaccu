@@ -73,6 +73,26 @@ window.UI = (() => {
     host.append(list, ...entries.map(e => e.panel)); activate(0); return { activate, list };
   }
   tabs.sequence = 0;
+  function invalid(field, text) {
+    field.id ||= `field-${++tabs.sequence}`;
+    const id = `${field.id}-error`; let message = $(id);
+    if (!message) { message = el("small", null, "field-error"); message.id = id; field.after(message); }
+    message.textContent = text; message.hidden = !text; field.setAttribute("aria-invalid", String(Boolean(text)));
+    field.setAttribute("aria-describedby", [...new Set([...(field.getAttribute("aria-describedby") || "").split(" ").filter(Boolean), id])].join(" "));
+  }
+  function validate(root) {
+    let first;
+    root.querySelectorAll("input,select,textarea").forEach(field => { const valid = field.checkValidity(); invalid(field, valid ? "" : field.validationMessage); if (!valid && !first) first = field; });
+    if (first) { first.focus(); first.reportValidity(); } return !first;
+  }
+  function wizard(host, entries, { validateStep = panel => validate(panel), onChange = () => {} } = {}) {
+    const stepper = el("ol", null, "stepper"), footer = el("div", null, "wizard-footer"); let current = 0;
+    const previous = button("← Vorige", () => show(current - 1)), next = button("Volgende →", () => { if (validateStep(entries[current].panel, current)) show(current + 1); }, "");
+    footer.append(previous, next);
+    const show = index => { current = Math.max(0, Math.min(entries.length - 1, index)); entries.forEach((e, i) => { e.panel.hidden = i !== current; if (i === current) e.control.setAttribute("aria-current", "step"); else e.control.removeAttribute("aria-current"); e.control.disabled = i > current; }); previous.disabled = current === 0; next.hidden = current === entries.length - 1; onChange(current); };
+    entries.forEach((entry, i) => { const li = el("li"), b = button(`${i + 1}. ${entry.label}`, () => show(i), "text-button"); entry.control = b; li.append(b); stepper.append(li); });
+    host.prepend(stepper); host.append(footer); show(0); return { show, next, previous, footer, get current() { return current; } };
+  }
   const screens = new Map(), routes = [
     ["dashboard", "Dashboard", "Onderbouwen, niet raden. Je onderzoek op één plek."],
     ["accus", "Accu’s", "Brongebonden uitvoeringen, zonder automatische winnaar."],
@@ -113,5 +133,5 @@ window.UI = (() => {
     api("/api/v1/health").then(() => { status.firstChild.textContent = "● Lokale service actief"; status.classList.add("online"); }).catch(() => { status.firstChild.textContent = "● Service onbereikbaar"; status.classList.add("offline"); });
     resolve();
   }));
-  return { $, el, button, link, badge, formatNumber, formatMoney, formatKwh, formatPct, formatYears, date, read, write, toast, api, table, csv, suitability, tabs, screens, route, ready };
+  return { $, el, button, link, badge, formatNumber, formatMoney, formatKwh, formatPct, formatYears, date, read, write, toast, api, table, csv, suitability, tabs, invalid, validate, wizard, screens, route, ready };
 })();

@@ -105,7 +105,7 @@ function priceCell(config, perKwh = false) {
     if (perKwh && capacities.length !== 1) { block.append(node("span", "Niet bepaald: bruikbare capaciteit ontbreekt of heeft meerdere claims", "unknown")); wrap.append(block); continue; }
     let amount = c.upfront_amount_minor / 10 ** c.minor_unit_exponent;
     if (perKwh) amount /= capacities[0].value / 1000;
-    block.append(node("strong", `${c.currency} ${fmt(amount)}${perKwh ? " / kWh" : ""}`));
+    block.append(node("strong", `${c.currency === "EUR" ? UI.formatMoney(amount) : `${c.currency} ${fmt(amount)}`}${perKwh ? " / kWh" : ""}`));
     block.append(node("small", `${({ included: "Incl. belasting", excluded: "Excl. belasting", unknown: "Belastingbasis onbekend" })[c.tax_basis]}; installatie ${c.includes_installation === null ? "onbekend" : c.includes_installation ? "inbegrepen" : "niet inbegrepen"}`));
     if (c.valid_until_unix_s && c.valid_until_unix_s < Date.now() / 1000) block.append(node("small", "Aanbieding verlopen", "warning"));
     if (c.recurring_amount_minor !== null) block.append(node("small", `Plus ${c.currency} ${fmt(c.recurring_amount_minor / 10 ** c.minor_unit_exponent)} per ${c.recurring_period === "month" ? "maand" : "jaar"}`));
@@ -123,12 +123,23 @@ function renderComparison() {
   const head = node("thead"), tr = node("tr"), first = node("th", "Eigenschap"); first.scope = "col"; tr.append(first);
   for (const c of configs) { const th = node("th"); th.scope = "col"; th.append(node("small", c.manufacturer_name), node("strong", c.product_name), node("small", c.name)); tr.append(th); }
   head.append(tr); table.append(head);
-  const body = node("tbody");
+  const groups = new Map();
+  const collapsed = window.comparisonCollapsed ||= new Set();
   const row = (label, factory, group) => {
-    if (group && !document.querySelector(`[data-group="${group}"]`).checked) return;
+    group ||= "performance";
+    const cells = configs.map(factory);
+    if ($("known-only")?.checked && cells.every(c => c.classList.contains("unknown"))) return;
+    const values = cells.map(c => { const clone = c.cloneNode(true); clone.querySelectorAll("details").forEach(d => d.remove()); return clone.textContent; });
+    if ($("differences-only")?.checked && new Set(values).size === 1) return;
+    if (!groups.has(group)) {
+      const body = node("tbody"), heading = node("tr"), th = node("th"); th.colSpan = configs.length + 1;
+      const toggle = UI.button(`${collapsed.has(group) ? "+" : "−"} ${{ performance: "Prestaties", installation: "Installatie", conditions: "Voorwaarden", prices: "Prijzen" }[group]}`, () => { if (collapsed.has(group)) collapsed.delete(group); else collapsed.add(group); renderComparison(); }, "text-button");
+      toggle.setAttribute("aria-expanded", String(!collapsed.has(group))); th.append(toggle); heading.append(th); body.append(heading); table.append(body); groups.set(group, body);
+    }
+    if (collapsed.has(group)) return;
     const tr = node("tr"), th = node("th", label); th.scope = "row"; tr.append(th);
-    for (const config of configs) { const td = node("td"); td.append(factory(config)); tr.append(td); }
-    body.append(tr);
+    for (const cell of cells) { const td = node("td"); td.append(cell); tr.append(td); }
+    groups.get(group).append(tr);
   };
   row("Bruikbare energie", c => numberCell(c, "usable_energy_wh", 1000, "kWh"));
   row("Opgegeven / nominale energie", c => numberCell(c, "nominal_energy_wh", 1000, "kWh"));
@@ -149,28 +160,34 @@ function renderComparison() {
   row("Product- en prestatiegarantie", warrantyCell, "conditions");
   row("Cloud vereist", c => featureCell(c, "cloud_required"), "conditions");
   row("Abonnement vereist", c => featureCell(c, "subscription_required"), "conditions");
-  row("Aanschafaanbiedingen", c => priceCell(c), "conditions");
-  row("Prijs / opgegeven bruikbare kWh", c => priceCell(c, true), "conditions");
-  table.append(body);
+  row("Aanschafaanbiedingen", c => priceCell(c), "prices");
+  row("Prijs / opgegeven bruikbare kWh", c => priceCell(c, true), "prices");
 }
 function renderCatalog() {
-  const catalog = $("catalog"); catalog.replaceChildren();
+  const catalog = $("catalog"); catalog.replaceChildren(); catalog.className = "";
   const query = $("search").value.toLocaleLowerCase();
-  const configs = dataset.configurations.filter(c => `${c.manufacturer_name} ${c.product_name} ${c.name}`.toLocaleLowerCase().includes(query));
-  if (!configs.length) { catalog.append(node("p", dataset.configurations.length ? "Geen uitvoeringen bij deze zoekopdracht." : "Je catalogus is nog leeg. Laad de onderzochte voorbeelden of voeg een eigen accu toe.", "empty")); return; }
-  for (const c of configs) {
-    const card = node("article", null, "product-card"); card.classList.toggle("selected", selected.has(c.id));
-    const label = node("label", null, "select-card"), checkbox = node("input"); checkbox.type = "checkbox"; checkbox.checked = selected.has(c.id); checkbox.setAttribute("aria-label", `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`);
+  const configs = dataset.configurations.filter(c => `${c.manufacturer_name} ${c.product_name} ${c.name}`.toLocaleLowerCase().includes(query) && (!$("kind-filter")?.value || c.product_kind === $("kind-filter").value) && (!$("maker-filter")?.value || c.manufacturer_name === $("maker-filter").value));
+  if (!configs.length) {
+    catalog.append(node("p", dataset.configurations.length ? "Geen uitvoeringen bij deze filters." : "Je catalogus is nog leeg. Laad onderzochte voorbeelden of voeg een eigen accu toe.", "empty"));
+    if (!dataset.configurations.length) catalog.append(UI.button("Laad onderzochte voorbeelden", () => $("references").click()));
+  } else catalog.append(UI.table(["Kies", "Fabrikant", "Product", "Uitvoering", "Type", "Markt", "Bruikbare energie", "Bronnen", "Review"], configs.map(c => {
+    const checkbox = node("input"); checkbox.type = "checkbox"; checkbox.checked = selected.has(c.id); checkbox.setAttribute("aria-label", `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked && selected.size >= 4) { checkbox.checked = false; notice("Je kunt maximaal vier uitvoeringen tegelijk vergelijken."); return; }
+      if (checkbox.checked && selected.size >= 4) { checkbox.checked = false; notice("Je kunt maximaal vier uitvoeringen tegelijk vergelijken. Verwijder eerst een keuze.", true); return; }
       if (checkbox.checked) selected.add(c.id); else selected.delete(c.id);
-      card.classList.toggle("selected", checkbox.checked); renderComparison();
+      renderComparison(); renderTray();
     });
-    label.append(checkbox, node("span", c.manufacturer_name, "eyebrow")); card.append(label, node("h3", c.product_name), node("p", c.name), node("small", c.product_kind === "battery_module" ? "Accumodule" : "Accusysteem"));
-    const markets = [...new Set(dataset.numbers.filter(n => n.configuration_id === c.id).map(n => n.market))];
-    if (markets.length) card.append(node("small", markets.join(" · ")));
-    catalog.append(card);
-  }
+    const claims = ["numbers", "features", "texts", "warranties", "offers"].flatMap(k => dataset[k].filter(v => v.configuration_id === c.id));
+    const capacities = dataset.numbers.filter(v => v.configuration_id === c.id && v.metric_key === "usable_energy_wh");
+    const capacity = capacities.length === 1 && capacities[0].qualifier === "exact" ? `${fmt(capacities[0].value / 1000)} kWh · ${boundaries[capacities[0].boundary]}` : capacities.length > 1 ? "Meerdere claims: zie vergelijking" : "Onbekend";
+    return [checkbox, c.manufacturer_name, c.product_name, c.name, c.product_kind === "battery_module" ? "Accumodule" : "Accusysteem", [...new Set(claims.map(v => v.market))].filter(Boolean).join(" · ") || "Onbekend", capacity, String(new Set(claims.map(v => `${v.source_title}|${v.source_url}|${v.locator}`)).size), UI.badge(claims.length && claims.every(v => v.review_status === "reviewed") ? "Gecontroleerd" : "Niet gecontroleerd", "warning")];
+  })));
+  renderTray();
+}
+function renderTray() {
+  const tray = $("compare-tray"); if (!tray || !dataset) return; tray.replaceChildren(); tray.hidden = selected.size === 0;
+  for (const c of dataset.configurations.filter(c => selected.has(c.id))) { const chip = node("span", null, "compare-chip"); chip.append(node("span", `${c.product_name} · ${c.name}`), UI.button("×", () => { selected.delete(c.id); renderCatalog(); renderComparison(); }, "text-button")); chip.lastChild.setAttribute("aria-label", `Verwijder ${c.product_name} ${c.name}`); tray.append(chip); }
+  tray.append(UI.link(`Vergelijk (${selected.size})`, "#/accus/vergelijk", "button"));
 }
 async function reloadCatalog() {
   dataset = await api("/api/v1/comparison");
@@ -322,5 +339,5 @@ $("save-file").addEventListener("click", () => busy($("save-file"), async () => 
   const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen in SQLite"); await reloadHistory(); $("solar-history").value = String(result.id); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard.");
 }));
 $("solar-history").addEventListener("change", () => { const item = history.find(i => String(i.id) === $("solar-history").value); if (item) renderSolar(item.summary, `Bewaard: ${item.filename} · ${item.options.timezone}`, item.options.timezone); });
-window.Research = { renderSolar, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
+window.Research = { renderSolar, renderCatalog, renderComparison, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
 Research.ready = Promise.all([reloadCatalog(), reloadHistory()]).catch(error => notice(error.message, true));

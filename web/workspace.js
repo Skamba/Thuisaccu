@@ -51,6 +51,30 @@ window.Workspace = (() => {
     if (window.Analysis?.load) { await Analysis.load(run.input.request); location.hash = "/scenarios/nieuw"; UI.toast("Kopie geladen als nieuw scenario. Controleer en bevestig de invoer opnieuw."); }
     else UI.toast("Dupliceren wordt voorbereid.");
   }
+  function researchScreens() {
+    const compare = screen("accus/vergelijk"), controls = document.querySelector(".comparison-controls");
+    let item = controls;
+    while (item) { const next = item.nextElementSibling; compare.append(item); item = next; }
+    controls.querySelector("fieldset").remove();
+    for (const [id, text] of [["differences-only", "Alleen verschillen"], ["known-only", "Verberg rijen zonder bekende waarde"]]) { const label = el("label", null, "inline"), check = el("input"); check.type = "checkbox"; check.id = id; check.addEventListener("change", () => Research.renderComparison()); label.append(check, text); controls.prepend(label); }
+    const toolbar = screen("accus").querySelector(".toolbar");
+    for (const [id, labelText, options] of [["kind-filter", "Type", [["", "Alle typen"], ["battery_system", "Accusysteem"], ["battery_module", "Accumodule"]]], ["maker-filter", "Fabrikant", [["", "Alle fabrikanten"]]]]) {
+      const label = el("label", labelText), select = el("select"); select.id = id;
+      for (const [value, text] of options) { const option = el("option", text); option.value = value; select.append(option); }
+      select.addEventListener("change", () => Research.renderCatalog()); label.append(select); toolbar.append(label);
+    }
+    const menu = el("details", null, "catalog-menu"); menu.append(el("summary", "⋯ Meer"), $("references")); toolbar.append(menu);
+    const tray = el("div", null, "compare-tray"); tray.id = "compare-tray"; screen("accus").append(tray);
+    const updateMakers = () => { const select = $("maker-filter"), selected = select.value; select.replaceChildren(); for (const name of ["", ...new Set(Research.dataset?.configurations.map(c => c.manufacturer_name))]) { const option = el("option", name || "Alle fabrikanten"); option.value = name; select.append(option); } select.value = selected; };
+    Research.ready.then(() => { updateMakers(); Research.renderCatalog(); Research.renderComparison(); }); window.addEventListener("app:data", updateMakers);
+    const form = $("candidate-form"), fields = [...form.querySelectorAll(":scope > fieldset")], submit = form.querySelector('[type="submit"]').parentElement;
+    const steps = fields.map((panel, i) => ({ label: ["Uitvoering & bron", "Technische gegevens", "Prijsaanbieding"][i], panel })); steps[2].panel.append(submit);
+    const wizard = UI.wizard(form, steps);
+    form.noValidate = true;
+    form.addEventListener("submit", event => { for (let i = 0; i < steps.length; i++) { const invalid = [...steps[i].panel.querySelectorAll("input,select,textarea")].find(f => !f.checkValidity()); if (invalid) { event.preventDefault(); event.stopImmediatePropagation(); wizard.show(i); UI.validate(steps[i].panel); return; } } }, true);
+    $("add-open").addEventListener("click", () => wizard.show(0));
+    form.addEventListener("input", event => { if (event.target.matches("input,select,textarea")) UI.invalid(event.target, ""); });
+  }
   async function onRoute({ detail: { key, id } }) {
     try {
       await refresh();
@@ -61,6 +85,6 @@ window.Workspace = (() => {
       if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { out.append(profileName(item), $("solar-result")); Research.renderSolar(item.summary, item.filename, item.options.timezone); $("page-actions").append(button("Start scenario met dit profiel", () => { location.hash = "/scenarios/nieuw"; $("analysis-profile").value = String(item.id); })); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
     } catch (error) { UI.toast(error.message, true); }
   }
-  UI.ready.then(() => { window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
+  UI.ready.then(() => { researchScreens(); window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
   return { get data() { return data; }, screen, refresh, duplicate, objectives, kpi, empty, demo, resolution, profileName, actionBar };
 })();
