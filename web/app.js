@@ -75,7 +75,7 @@ function featureCell(config, metric) {
   if (!claims.length) return node("span", "Onbekend", "unknown");
   for (const claim of claims) {
     const block = node("div", null, "claim");
-    block.append(node("strong", ({ supported: "Ja", unsupported: "Nee", conditional: "Onder voorwaarden", unknown: "Onbekend" })[claim.status]), sourceDetails(claim)); wrap.append(block);
+    block.append(node("strong", ({ supported: "Ja", unsupported: "Nee", conditional: "Onder voorwaarden", unknown: "Onbekend" })[claim.status], claim.status === "unknown" ? "unknown" : undefined), sourceDetails(claim)); wrap.append(block);
   }
   return wrap;
 }
@@ -85,11 +85,11 @@ function warrantyCell(config) {
   const wrap = node("div");
   for (const c of claims) {
     const block = node("div", null, "claim");
-    block.append(node("strong", c.product_months ? `${fmt(c.product_months / 12)} jaar productgarantie` : "Productduur onbekend"));
-    if (c.performance_months) block.append(node("small", `Prestatie: ${fmt(c.performance_months / 12)} jaar`));
-    if (c.retained_capacity_pct !== null) block.append(node("small", `Capaciteitbehoud: ${fmt(c.retained_capacity_pct)}%`));
-    if (c.throughput_wh !== null) block.append(node("small", `Doorzetgrens: ${fmt(c.throughput_wh / 1000)} kWh`));
-    if (c.cycle_limit !== null) block.append(node("small", `Cyclusgrens: ${fmt(c.cycle_limit)}`));
+    block.append(node("strong", c.product_months ? `${fmt(c.product_months / 12)} jaar productgarantie` : "Productduur onbekend", c.product_months ? undefined : "unknown"));
+    if (c.performance_months) block.append(node("small", `Prestatie: ${fmt(c.performance_months / 12)} jaar`, "known-value"));
+    if (c.retained_capacity_pct !== null) block.append(node("small", `Capaciteitbehoud: ${fmt(c.retained_capacity_pct)}%`, "known-value"));
+    if (c.throughput_wh !== null) block.append(node("small", `Doorzetgrens: ${fmt(c.throughput_wh / 1000)} kWh`, "known-value"));
+    if (c.cycle_limit !== null) block.append(node("small", `Cyclusgrens: ${fmt(c.cycle_limit)}`, "known-value"));
     block.append(node("small", c.limit_rule === "first_reached" ? "Eerst bereikte grens geldt" : "Controleer de prestatievoorwaarden"));
     block.append(sourceDetails({ ...c, conditions: `${c.application}. ${c.exclusions}` })); wrap.append(block);
   }
@@ -128,7 +128,7 @@ function renderComparison() {
   const row = (label, factory, group) => {
     group ||= "performance";
     const cells = configs.map(factory);
-    if ($("known-only")?.checked && cells.every(c => c.classList.contains("unknown"))) return;
+    if ($("known-only")?.checked && cells.every(c => !c.querySelector("strong:not(.unknown), .known-value"))) return;
     const values = cells.map(c => { const clone = c.cloneNode(true); clone.querySelectorAll("details").forEach(d => d.remove()); return clone.textContent; });
     if ($("differences-only")?.checked && new Set(values).size === 1) return;
     if (!groups.has(group)) {

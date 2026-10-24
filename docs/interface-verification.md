@@ -43,11 +43,12 @@ PASS node --check web/results.js
 PASS git diff --check
 ```
 
-Aanvullend zijn veertien groepen DOM-gedragstests uitgevoerd met jsdom tegen de echte lokale HTTP-server. De testhulpmiddelen en databases staan in een tijdelijke map buiten de repo; er zijn geen projectdependencies toegevoegd. De server is na de webwijzigingen opnieuw gebouwd en gestart.
+Aanvullend zijn vijftien groepen DOM-gedragstests uitgevoerd met jsdom tegen de echte lokale HTTP-server. De testhulpmiddelen en databases staan in een tijdelijke map buiten de repo; er zijn geen projectdependencies toegevoegd. De server is na de webwijzigingen opnieuw gebouwd en gestart.
 
 ```text
 PASS leeg dashboard, formattering en lokale service
 PASS referenties, vergelijking, verschillenfilter en CSV aanmaken
+PASS bekendfilter verbergt onbekende prijzen/claims zonder claims te verwijderen
 PASS eigen accu in drie stappen en veilige DOM-weergave
 PASS CSV-importwizard, controle, bewaren en grafiek
 PASS demo, vier scenariostappen, verplichte bevestigingen en zes resultaattabs
