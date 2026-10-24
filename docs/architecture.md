@@ -17,9 +17,11 @@ De vaste app-shell heeft Dashboard, Accu’s, Opwek & verbruik, Scenario’s en 
 
 - `ui.js`: DOM-helpers, Nederlandse formatters (geld met vaste precisie en een echt minteken), toasts, hashrouter, toegankelijke tabbladen en steppers, en SVG-grafieken met onderliggende tabellen.
 - `app.js`: bronclaims, catalogus, selectie/vergelijking, CSV-export, kandidaat-invoer en bestandsinspectie/preview/opslag.
-- `analysis.js`: scenario-invoer en API-payloads, expliciete technische en kostenvalidatie, demo, onveranderlijke historie, dupliceren en conceptsnapshots.
+- `analysis.js`: scenario-invoer en API-payloads, expliciete technische en kostenvalidatie, onveranderlijke historie, dupliceren en conceptsnapshots.
 - `workspace.js`: dashboard en lijsten, vergelijkingsfilters, drie- en vierstapswizards, kostenvoortgang, contextuele hulp en browserinstellingen.
 - `results.js`: resultaatdashboard met zes tabbladen, kasstromen, energie, gevoeligheid, oorspronkelijke invoer, alle waarschuwingen, CSV en afdrukweergave.
+
+De interface biedt uitsluitend acties voor onderzoek, eigen imports en scenario’s. Demo-acties en downloadlinks voor fictieve importvoorbeelden staan niet in de interface. Bestaande fictieve imports en resultaten blijven herkenbaar als FICTIEF. De bestaande demo- en sample-API-routes blijven beschikbaar voor synthetische testgegevens.
 
 Alle vijf scripts en het stijlblad worden via `include_str!` uit de binary geserveerd. Elke assetroute heeft een HTTP-test. Nieuwe webwijzigingen vereisen opnieuw bouwen en starten. Er zijn geen externe fonts, scripts of grafiekdiensten. API- en gebruikersgegevens worden uitsluitend via tekst-/DOM-methoden ingevoegd.
 

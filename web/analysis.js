@@ -52,7 +52,6 @@
       row.append(sourceLabel); rows.append(row);
       amount.addEventListener("input", () => { status.value = amount.value.trim() ? "priced" : "unknown"; });
       status.addEventListener("change", () => { if (status.value !== "priced") amount.value = ""; });
-      if (initial.demo) { status.value = "not_applicable"; source.value = "Fictieve demo-aanname: geen extra kosten"; }
     }
     included.addEventListener("click", () => { for (const row of rows.querySelectorAll(".cost-row")) { if (["inverter", "ems_metering", "installation", "cabling_protection", "delivery", "survey_permits"].includes(row.dataset.category) && row.querySelector('[data-cost="status"]').value === "unknown") { row.querySelector('[data-cost="status"]').value = "included"; row.querySelector('[data-cost="source"]').value = "Volgens gebruiker inbegrepen in pakket; controleer offerte"; } } });
     notApplicable.addEventListener("click", () => { for (const row of rows.querySelectorAll(".cost-row")) { if (row.querySelector('[data-cost="status"]').value === "unknown") { row.querySelector('[data-cost="status"]').value = "not_applicable"; row.querySelector('[data-cost="source"]').value = "Door gebruiker niet van toepassing verklaard"; } } });
@@ -60,16 +59,9 @@
     const finance = make("details"); finance.append(make("summary", "Optionele financiering — economische projectbasis"), make("p", "De aanschaf wordt één keer als investering geteld. Financiering voegt de rente op een annuïtaire lening toe; hoofdsom en aflossing worden niet nogmaals als kosten gerekend. Dit is geen kasstroom- of rendementberekening van je eigen vermogen. Looptijd binnen de analysehorizon.", "muted"));
     const financeGrid = make("div", null, "field-grid"); field(financeGrid, "Leningbedrag (€)", "loan_amount_eur", 0); field(financeGrid, "Rente per jaar (%)", "annual_interest_pct", 0, { max: "30" }); field(financeGrid, "Looptijd lening (jaren)", "loan_years", 0, { step: "1", max: "30" }); finance.append(financeGrid); panel.append(finance);
     byId("analysis-candidates").append(panel); candidateCards.set(key, panel);
-    if (initial.demo) {
-      setCost(panel, "battery", initial.price, "Fictief demopakket; geen marktprijs");
-      setCost(panel, "maintenance", 50, "Fictieve onderhoudsaanname per jaar");
-      for (const category of ["inverter", "ems_metering", "installation", "cabling_protection", "delivery"]) panel.querySelector(`[data-category="${category}"] [data-cost="status"]`).value = "included";
-      setCost(panel, "inverter_replacement", 800, "Fictieve vervanging, geen garantieclaim", 8);
-    }
     window.dispatchEvent(new Event("analysis:candidates"));
     return panel;
   }
-  function setCost(panel, category, euros, source, year = null) { const row = panel.querySelector(`[data-category="${category}"]`); row.querySelector('[data-cost="amount"]').value = String(euros); row.querySelector('[data-cost="status"]').value = "priced"; row.querySelector('[data-cost="source"]').value = source; if (year !== null) row.querySelector('[data-cost="year"]').value = String(year); }
   function collectCandidate(key, card) {
     const get = name => card.querySelector(`[data-field="${name}"]`).value;
     const battery = {}; for (const name of ["usable_capacity_kwh", "charge_power_kw", "discharge_power_kw", "ac_round_trip_efficiency_pct", "standby_w", "annual_capacity_loss_pct", "operating_life_years"]) { if (get(name) === "") throw new Error("Vul alle technische rekenwaarden in; ontbrekende productspecificaties worden niet geraden."); battery[name] = Number(get(name)); }
@@ -107,15 +99,6 @@
     addCandidate({ configuration_id: c.id, name: `${c.manufacturer_name} ${c.name}`, capacity: kilo("usable_energy_wh", "battery_dc"), charge: kilo("continuous_charge_power_w", "system_ac"), discharge: kilo("continuous_discharge_power_w", "system_ac"), efficiency: unique("round_trip_efficiency_pct", "ac_ac"), standby: unique("standby_power_w", "system_ac"), assumptions: "Gekoppeld aan catalogusuitvoering; alleen eenduidige nominale claims met passende meetgrenzen overgenomen. Vul ontbrekende waarden en offertegegevens in. Degradatie en levensduur zijn scenario-aannames." });
   });
   byId("refresh-analysis-data").addEventListener("click", () => action(byId("refresh-analysis-data"), refreshData));
-  byId("analysis-demo").addEventListener("click", () => action(byId("analysis-demo"), async () => {
-    byId("analysis-form").reset(); candidateCards.clear(); byId("analysis-candidates").replaceChildren(); fixedAnnual = 0;
-    const result = await post("/api/v1/analysis/demo", {}); await refreshData(); byId("analysis-profile").value = String(result.id);
-    byId("analysis-name").value = "FICTIEVE demonstratie — geen adresadvies"; byId("analysis-address").value = "Fictieve demolocatie, Nederland"; selectedSite = null;
-    byId("tariff-import").value = "0.30"; byId("tariff-export").value = "0.08";
-    if (!candidateCards.size) { addCandidate({ name: "FICTIEVE accu 5 kWh", capacity: 5, charge: 2.5, discharge: 2.5, efficiency: 90, standby: 3, price: 4500, demo: true, assumptions: "Volledig fictief softwarevoorbeeld. Geen fabrikantclaim of offerte voor dit adres." }); addCandidate({ name: "FICTIEVE accu 10 kWh", capacity: 10, charge: 4, discharge: 4, efficiency: 90, standby: 5, price: 6500, demo: true, assumptions: "Volledig fictief softwarevoorbeeld. Geen fabrikantclaim of offerte voor dit adres." }); }
-    window.dispatchEvent(new Event("analysis:loaded")); UI.write("thuisaccu-draft", capture());
-    message("Fictief demojaar en voorbeeldopties geladen. Tarieven en kosten zijn demonstratie-aannames; controleer de drie verklaringen voordat je rekent.");
-  }));
   byId("analysis-address").addEventListener("input", () => { selectedSite = null; });
   byId("lookup-address").addEventListener("click", () => action(byId("lookup-address"), async () => {
     const result = await post("/api/v1/locations/search", { query: byId("analysis-address").value }); sites = result.results; byId("address-results").replaceChildren(); const empty = make("option", "Kies het juiste adres…"); empty.value = ""; byId("address-results").append(empty);

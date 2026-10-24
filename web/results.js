@@ -27,7 +27,7 @@ window.Results = (() => {
     out.replaceChildren(); out.classList.add("result-dashboard"); UI.$("page-title").textContent = run.title;
     const top = el("div", null, "result-meta"); top.append(el("p", `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`}`), el("p", `${Workspace.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${result.model_version} · ${UI.date(run.created_at_unix_s)}`, "muted")); out.append(top);
     const fictitious = run.input.profile?.options?.is_demo || result.warnings.some(w => /FICTIEF/i.test(w));
-    if (fictitious) out.append(el("p", "FICTIEF DEMOPROFIEL — uitsluitend een softwarevoorbeeld; geen advies voor het ingevoerde adres.", "demo-banner"));
+    if (fictitious) out.append(el("p", "FICTIEVE GEGEVENS — deze analyse gebruikt fictieve invoer. Gebruik eigen meetgegevens, tarieven en offertes voor een beoordeling van je situatie.", "demo-banner"));
     const recommendation = el("div", null, "recommendation panel"); recommendation.append(el("p", "BINNEN DIT SCENARIO", "eyebrow"), el("h2", result.recommendation), badge(options.find(c => c.key === result.recommended_key)?.name || "Onbekende optie", "accent")); out.append(recommendation);
     const actions = UI.$("page-actions"); actions.append(button("Dupliceer en pas aan", () => Workspace.duplicate(run)), button("Exporteer CSV", () => exportRun(run)), button("Afdrukken", () => window.print(), "text-button"));
     UI.$("service").lastChild.textContent = `Model ${result.model_version}`;

@@ -17,8 +17,8 @@
     <main id="main">
       <section hidden id="compare" aria-labelledby="compare-title">
         <div class="section-heading"><div><p class="eyebrow">01 · Productonderzoek</p><h2 id="compare-title">Een vergelijking die je kunt controleren.</h2></div><button id="add-open" class="secondary">+ Eigen accu of offerte</button></div>
-        <div class="toolbar"><label class="search">Zoek fabrikant of uitvoering<input id="search" type="search" placeholder="Bijvoorbeeld: Enphase, HVS…"></label><button id="references" class="secondary">Laad onderzochte voorbeelden</button></div>
-        <p class="muted">De voorbeelden zijn bronmomentopnamen van 24 oktober 2026, zonder verzonnen prijzen. Kies maximaal vier uitvoeringen. Markt en installatieomvang kunnen verschillen.</p>
+        <div class="toolbar"><label class="search">Zoek fabrikant of uitvoering<input id="search" type="search" placeholder="Bijvoorbeeld: Enphase, HVS…"></label><button id="references" class="secondary">Laad onderzochte uitvoeringen</button></div>
+        <p class="muted">De onderzochte uitvoeringen zijn bronmomentopnamen van 24 oktober 2026, zonder prijzen. Kies maximaal vier uitvoeringen. Markt en installatieomvang kunnen verschillen.</p>
         <div id="catalog" class="cards" aria-live="polite"><p>Catalogus laden…</p></div>
         <div class="comparison-controls"><fieldset><legend>Zichtbare gegevens</legend><label class="inline"><input type="checkbox" data-group="performance" checked> Prestaties</label><label class="inline"><input type="checkbox" data-group="installation" checked> Installatie</label><label class="inline"><input type="checkbox" data-group="conditions" checked> Voorwaarden</label></fieldset><button id="export-comparison" class="text-button">Exporteer vergelijking als CSV ↓</button></div>
         <p class="callout">Bruikbare energie, nominale energie en kVA zijn verschillende grootheden. Rendementen hebben een meetgrens. Open een bron voor de context; onbekend blijft onbekend.</p>
@@ -46,7 +46,6 @@
             <details><summary>Voorbeeld van de ingelezen rijen</summary><div id="file-preview" class="table-scroll"></div></details>
             <div class="actions"><button id="preview-file" type="submit">2. Controleer overzicht</button><button id="save-file" type="button" class="secondary" disabled>3. Bewaar in SQLite</button></div>
           </div>
-          <p class="muted">Probeer een fictief <a href="/samples/solar.csv">CSV-voorbeeld</a>, <a href="/samples/solar.xlsx">Excel-voorbeeld</a> of <a href="/samples/solar.json">JSON-voorbeeld</a>. Deze bevatten uurwaarden in kWh met een punt als decimaalteken. Excel-datums in het voorbeeld gebruiken UTC.</p>
         </form><div class="panel result-panel"><h3>Je opwek in beeld</h3><div id="solar-result"><p class="muted">Na de controle zie je de bestreken periode, totale opwek, eventuele ontbrekende perioden en een maandoverzicht.</p></div><label>Bewaarde overzichten<select id="solar-history"><option value="">Kies een overzicht…</option></select></label></div></div>
         <p class="callout">Gebruik voor ROI hieronder een volledig jaar met AC-opwek én bruto huishoudelijk verbruik op uur- of fijnere basis. Dag- en maandtotalen missen het verloop binnen de dag. Vul daarnaast je contracttarieven en accukosten in.</p>
       </section>
@@ -63,8 +62,8 @@
             <label id="address-results-label" hidden>Gevonden adressen — kies de juiste<select id="address-results"></select></label>
             <p class="muted">Alleen de knop verstuurt je zoekterm naar PDOK. Zonder opzoeken kun je het adres handmatig gebruiken. Het adres is locatiecontext; aansluiting, contract en zonnepanelen worden er niet automatisch uit afgeleid.</p>
             <label>Volledig jaar met opwek en bruto verbruik<select id="analysis-profile" required><option value="">Kies een bewaard overzicht…</option></select></label>
-            <div class="actions"><button id="refresh-analysis-data" type="button" class="text-button">Ververs overzichten ↻</button><button id="analysis-demo" type="button" class="secondary">Probeer fictief demojaar</button></div>
-            <p class="muted">Importeer je eigen gegevens hierboven met een verbruikskolom. De korte voorbeeldbestanden zijn onvoldoende voor ROI. Het demojaar bevat volledig fictieve gegevens en geeft geen advies voor een adres.</p>
+            <div class="actions"><button id="refresh-analysis-data" type="button" class="text-button">Ververs overzichten ↻</button></div>
+            <p class="muted">Importeer je opwek en bruto huishoudelijk verbruik voor dezelfde intervallen. Voor ROI is één volledig, aaneengesloten jaar met uur- of fijnere waarden vereist.</p>
             <div class="field-grid"><label>Doel<select id="analysis-objective"><option value="net_present_value">Hoogste netto voordeel (NPV)</option><option value="roi">Hoogste ROI over de looptijd</option><option value="payback">Kortste blijvende terugverdientijd</option><option value="self_consumption">Meeste eigen zonnestroom gebruiken</option></select></label><label>Maximale netto startinvestering (€)<input id="analysis-budget" type="number" min="0" step="0.01" placeholder="Geen maximum"></label></div>
           </div><div class="panel">
             <h3>Tarieven en horizon</h3>

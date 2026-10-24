@@ -168,8 +168,8 @@ function renderCatalog() {
   const query = $("search").value.toLocaleLowerCase();
   const configs = dataset.configurations.filter(c => `${c.manufacturer_name} ${c.product_name} ${c.name}`.toLocaleLowerCase().includes(query) && (!$("kind-filter")?.value || c.product_kind === $("kind-filter").value) && (!$("maker-filter")?.value || c.manufacturer_name === $("maker-filter").value));
   if (!configs.length) {
-    catalog.append(node("p", dataset.configurations.length ? "Geen uitvoeringen bij deze filters." : "Je catalogus is nog leeg. Laad onderzochte voorbeelden of voeg een eigen accu toe.", "empty"));
-    if (!dataset.configurations.length) catalog.append(UI.button("Laad onderzochte voorbeelden", () => $("references").click()));
+    catalog.append(node("p", dataset.configurations.length ? "Geen uitvoeringen bij deze filters." : "Je catalogus is nog leeg. Laad onderzochte uitvoeringen of voeg een eigen accu toe.", "empty"));
+    if (!dataset.configurations.length) catalog.append(UI.button("Laad onderzochte uitvoeringen", () => $("references").click()));
   } else catalog.append(UI.table(["Kies", "Fabrikant", "Product", "Uitvoering", "Type", "Markt", "Bruikbare energie", "Bronnen", "Review"], configs.map(c => {
     const checkbox = node("input"); checkbox.type = "checkbox"; checkbox.checked = selected.has(c.id); checkbox.setAttribute("aria-label", `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`);
     checkbox.addEventListener("change", () => {

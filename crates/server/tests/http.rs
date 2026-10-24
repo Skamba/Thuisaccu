@@ -42,6 +42,8 @@ async fn home_and_stylesheet_are_served_without_external_services() {
     assert!(html.contains("/styles.css"));
     assert!(html.contains("Zonne-opwekbestand"));
     assert!(html.contains("/app.js"));
+    assert!(!html.contains("analysis-demo"));
+    assert!(!html.contains("/samples/"));
 
     let response = app
         .oneshot(Request::get("/styles.css").body(Body::empty()).unwrap())
