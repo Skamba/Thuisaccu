@@ -8,13 +8,13 @@
 
   // Gedateerde indicaties uit openbare bronnen; alleen na een klik ingevuld.
   const INDICATION = {
-    import: 0.2596, export: 0.0744,
+    import: 0.2596, export: 0.0615,
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
-    exportText: "Indicatie € 0,07: vanaf 2027 tot 2030 is de terugleververgoeding wettelijk minimaal 50% van de kale leveringsprijs; bij € 0,1487 is dat ongeveer € 0,07. Of die grens inclusief of exclusief btw geldt, is niet geverifieerd. Je contract kan hoger zijn.",
+    exportText: "Indicatie € 0,06: van 2027 tot 2030 is de terugleververgoeding volgens de ACM minstens 50% van je stroomprijs zonder energiebelasting en btw. Bij het gemiddelde variabele tarief van september 2026 (€ 0,1229 zonder btw, CBS) is dat ongeveer € 0,06. Je contract kan hoger zijn; terugleverkosten kunnen volgens de ACM ook hoger uitvallen dan de vergoeding.",
     sources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)", "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
       ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"],
-      ["Solar Magazine: minimaal 50% terugleververgoeding tot 2030", "https://solarmagazine.nl/nieuws-zonne-energie/i39030/salderingsregeling-hoogte-terugleververgoeding-en-verlaging-terugleverkosten-in-wet-vastgelegd-door-tweede-kamer"]
+      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)", "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"]
     ]
   };
   const BLANK = {

@@ -77,8 +77,8 @@ Tariefindicaties, geraadpleegd op 24 oktober 2026:
 | Waarde | Indicatie | Onderbouwing |
 | --- | --- | --- |
 | All-in stroomprijs | € 0,2596/kWh | [CBS](https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026): gemiddeld variabel leveringstarief september 2026 € 0,1487 incl. btw, exclusief energiebelasting; plus [energiebelasting 2026](https://www.anwb.nl/huis/energie/energiebelasting) € 0,11085 incl. btw |
-| Terugleververgoeding vanaf 2027 | € 0,0744/kWh | Wettelijk minimaal 50% van de kale leveringsprijs tot 2030 ([Solar Magazine](https://solarmagazine.nl/nieuws-zonne-energie/i39030/salderingsregeling-hoogte-terugleververgoeding-en-verlaging-terugleverkosten-in-wet-vastgelegd-door-tweede-kamer)); 50% × € 0,1487 = € 0,07435, naar boven afgerond. Niet geverifieerd of de grens incl. of excl. btw geldt |
-| Terugleverkosten | € 0 | Alleen als je contract er geen noemt; hogere kosten maken een accu gunstiger |
+| Terugleververgoeding vanaf 2027 | € 0,0615/kWh | Tot 1 januari 2030 minstens 50% van de stroomprijs zonder energiebelasting en btw ([ACM](https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen)); 50% × € 0,1229 (CBS, september 2026, excl. btw) = € 0,06145, naar boven afgerond. Tegenstrijdig: Zonneplan noemt ‘zo’n 0,25 cent per kWh’ bij de meeste vaste contracten ([10 juni 2026](https://www.zonneplan.nl/blog/zijn-zonnepanelen-nu-en-na-2027-rendabel/)); de keuzehulp volgt de toezichthouder |
+| Terugleverkosten | € 0 | Alleen als je contract er geen noemt. Volgens de ACM kunnen terugleverkosten hoger uitvallen dan de vergoeding; hogere kosten maken een accu gunstiger |
 
 Overige projectie-aannames komen uit de standaardaannames in Instellingen (anders 4% discontovoet, 2% kostenstijging, 0% PV-afname, verbruiksgroei en prijsverandering, 20% en 15% gevoeligheid). Startjaar is 2027, het eerste jaar zonder salderen. Een adres is optioneel; zonder adres wordt ‘Nederland (keuzehulp, geen adres opgegeven)’ vastgelegd.
 
