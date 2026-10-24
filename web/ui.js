@@ -123,7 +123,7 @@ window.UI = (() => {
       }
     });
     text(width - right, height - 5, unit, "end"); figure.append(svg);
-    const legend = el("div", null, "legend"); series.forEach((s, i) => { const item = el("span", s.label), dot = el("span", "●"); dot.style.color = s.color || colors[i % colors.length]; item.prepend(dot, " "); legend.append(item); }); figure.append(legend);
+    const legend = el("div", null, "legend"); series.forEach((s, i) => { const item = el("span", s.label), dot = el("span", type === "range" ? i === 1 ? "○" : "│" : "●"); dot.style.color = type === "range" ? "var(--ink)" : s.color || colors[i % colors.length]; item.prepend(dot, " "); legend.append(item); }); figure.append(legend);
     const details = el("details"); details.append(el("summary", "Toon als tabel"), table(["Reeks", ...series.map(s => `${s.label} (${unit})`)], rows.map(r => [r.label, ...r.values.map(v => v == null ? "Onbekend" : format(v))]))); figure.append(details); return figure;
   }
   const screens = new Map(), routes = [
