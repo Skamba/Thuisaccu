@@ -176,6 +176,7 @@ async function reloadCatalog() {
   dataset = await api("/api/v1/comparison");
   if (!selected.size) dataset.configurations.slice(0, 3).forEach(c => selected.add(c.id));
   renderCatalog(); renderComparison();
+  window.dispatchEvent(new Event("app:data"));
 }
 $("search").addEventListener("input", () => dataset && renderCatalog());
 document.querySelectorAll("[data-group]").forEach(e => e.addEventListener("change", () => dataset && renderComparison()));
@@ -321,4 +322,5 @@ $("save-file").addEventListener("click", () => busy($("save-file"), async () => 
   const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen in SQLite"); await reloadHistory(); $("solar-history").value = String(result.id); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard.");
 }));
 $("solar-history").addEventListener("change", () => { const item = history.find(i => String(i.id) === $("solar-history").value); if (item) renderSolar(item.summary, `Bewaard: ${item.filename} · ${item.options.timezone}`, item.options.timezone); });
-Promise.all([reloadCatalog(), reloadHistory()]).catch(error => notice(error.message, true));
+window.Research = { renderSolar, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
+Research.ready = Promise.all([reloadCatalog(), reloadHistory()]).catch(error => notice(error.message, true));

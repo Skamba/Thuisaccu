@@ -139,7 +139,8 @@
     const response = await post("/api/v1/analysis/runs", input); renderResult(response.result, input); await refreshData(); byId("analysis-history").value = String(response.id); message("Scenario doorgerekend en met invoer en modelversie in SQLite bewaard.");
   }); });
   byId("analysis-history").addEventListener("change", () => { const run = savedRuns.find(r => String(r.id) === byId("analysis-history").value); if (run) renderResult(run.result, run.input.request); });
-  (async () => {
+  window.Analysis = { renderResult, refreshData, get savedRuns() { return savedRuns; } };
+  Analysis.ready = (async () => {
     costCatalog = await request("/api/v1/analysis/costs"); const sources = byId("analysis-cost-sources"); sources.append(make("p", `Onderzocht op ${costCatalog.researched_on}. ${costCatalog.notes}`));
     for (const source of costCatalog.sources) { const p = make("p"), link = make("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer"; p.append(link, make("small", source.note)); sources.append(p); }
     await refreshData();

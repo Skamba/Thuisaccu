@@ -177,3 +177,23 @@ async fn shared_browser_helpers_are_embedded() {
     let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     assert!(std::str::from_utf8(&body).unwrap().contains("formatMoney"));
 }
+
+#[tokio::test]
+async fn workspace_screens_are_embedded() {
+    let response = test_app()
+        .await
+        .oneshot(Request::get("/workspace.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/javascript; charset=utf-8"
+    );
+    let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
+    assert!(
+        std::str::from_utf8(&body)
+            .unwrap()
+            .contains("Recente analyses")
+    );
+}
