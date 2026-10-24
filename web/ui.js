@@ -153,8 +153,18 @@ window.UI = (() => {
   const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", () => {
     const sidebar = el("aside", null, "sidebar"); sidebar.append(link("▤ Thuisaccu", "#/dashboard", "brand"), el("p", "LOKAAL ONDERZOEK", "eyebrow"));
     const nav = el("nav", null, "app-nav"); nav.setAttribute("aria-label", "Hoofdnavigatie");
-    const icons = ["M3 10L12 3l9 7v11H3z M9 21v-8h6v8", "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6", "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0", "M4 20V10h4v10 M10 20V4h4v16 M16 20v-7h4v7", "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"];
-    ["dashboard", "accus", "opwek", "scenarios", "instellingen"].forEach((name, i) => { const a = link("", `#/${name}`), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(svg.namespaceURI, "path"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); p.setAttribute("d", icons[i]); svg.append(p); a.append(svg, el("span", routes.find(r => r[0] === name)[1])); nav.append(a); });
+    const icons = {
+      dashboard: "M3 10L12 3l9 7v11H3z M9 21v-8h6v8",
+      scenarios: "M4 20V10h4v10 M10 20V4h4v16 M16 20v-7h4v7",
+      accus: "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6",
+      opwek: "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0",
+      instellingen: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"
+    };
+    [["dashboard", "scenarios"], ["accus", "opwek", "instellingen"]].forEach((names, index) => {
+      const group = el("div", null, index === 0 ? "nav-group" : "nav-group nav-secondary");
+      names.forEach(name => { const a = link("", `#/${name}`), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(svg.namespaceURI, "path"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); p.setAttribute("d", icons[name]); svg.append(p); a.append(svg, el("span", routes.find(r => r[0] === name)[1])); group.append(a); });
+      nav.append(group);
+    });
     const status = el("div", null, "service"); status.id = "service"; status.append(el("p", "● Service controleren…"), el("small", "Modelversie na een berekening")); sidebar.append(nav, status); document.body.prepend(sidebar);
     const menu = button("☰ Menu", () => { const open = document.body.classList.toggle("menu-open"); menu.setAttribute("aria-expanded", String(open)); }); menu.id = "menu-toggle"; menu.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-controls", "app-navigation"); nav.id = "app-navigation"; document.body.prepend(menu);
     const main = $("main"), header = el("header", null, "page-header"), titleGroup = el("div"), title = el("h1"); title.id = "page-title"; title.tabIndex = -1; const sub = el("p", null, "muted"); sub.id = "page-subtitle"; titleGroup.append(title, sub); const actions = el("div", null, "actions"); actions.id = "page-actions"; header.append(titleGroup, actions); main.prepend(header);

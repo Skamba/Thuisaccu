@@ -13,7 +13,7 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 
 ### Webinterface
 
-De vaste app-shell heeft Dashboard, Accu’s, Opwek & verbruik, Scenario’s en Instellingen. De hashrouter gebruikt `#/dashboard`, `#/accus`, `#/accus/vergelijk`, `#/opwek`, `#/opwek/import`, `#/opwek/:id`, `#/scenarios`, `#/scenarios/nieuw`, `#/scenarios/:id` en `#/instellingen`. Onbekende hashes openen het dashboard; browsergeschiedenis blijft werken. Na een schermwissel krijgt de schermtitel focus. Op smalle schermen opent een menuknop de navigatie.
+De vaste app-shell heeft Dashboard en Scenario’s bovenaan. Accu’s, Opwek & verbruik en Instellingen staan als groep onderaan voor de (semi)statische gegevens, met de servicestatus daaronder. De toetsenbordvolgorde volgt deze indeling. De hashrouter gebruikt `#/dashboard`, `#/accus`, `#/accus/vergelijk`, `#/opwek`, `#/opwek/import`, `#/opwek/:id`, `#/scenarios`, `#/scenarios/nieuw`, `#/scenarios/:id` en `#/instellingen`. Onbekende hashes openen het dashboard; browsergeschiedenis blijft werken. Na een schermwissel krijgt de schermtitel focus. Op smalle schermen opent een menuknop dezelfde navigatie.
 
 - `ui.js`: DOM-helpers, Nederlandse formatters (geld met vaste precisie en een echt minteken), toasts, hashrouter, toegankelijke tabbladen en steppers, en SVG-grafieken met onderliggende tabellen.
 - `app.js`: bronclaims, catalogus, selectie/vergelijking, CSV-export, kandidaat-invoer en bestandsinspectie/preview/opslag.
