@@ -1,0 +1,696 @@
+[
+  {
+    "manufacturer": "HomeWizard",
+    "product": "Plug-In Battery",
+    "model_code": "HWE-BAT-11",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · stekker · 800 W",
+    "market": "Nederland; webshop fabrikant",
+    "source_url": "https://www.homewizard.com/plug-in-battery-technical-specifications",
+    "source_title": "HomeWizard Plug-In Battery technical specifications",
+    "source_kind": "datasheet",
+    "locator": "Pagina 2-3: General features, Inverter, Cells, Operating conditions",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. 'Capacity 2.688 kWh' zonder vermelding bruikbaar of nominaal. Vermogens zijn AC-bereiken van de ingebouwde omvormer. Volgens de productpagina werkt het op 1- en 3-fasenaansluitingen, maximaal vier units, alleen binnen, geen noodstroom en is een HomeWizard P1 Meter nodig.",
+    "numbers": [
+      {
+        "metric": "nominal_energy_wh",
+        "qualifier": "exact",
+        "value": 2688,
+        "boundary": "unspecified",
+        "reported_value": "Capacity 2.688 kWh (105 Ah)",
+        "conditions": "Niet gespecificeerd als bruikbare energie."
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "at_most",
+        "value": 800,
+        "boundary": "system_ac",
+        "reported_value": "AC charge range 50 - 800 W"
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 800,
+        "boundary": "system_ac",
+        "reported_value": "AC discharge range 30 - 800 W; Rated output power 800 W"
+      },
+      {
+        "metric": "apparent_power_va",
+        "qualifier": "at_most",
+        "value": 889,
+        "boundary": "system_ac",
+        "reported_value": "Maximum apparent output power 889 VA"
+      },
+      {
+        "metric": "standby_power_w",
+        "qualifier": "exact",
+        "value": 1,
+        "boundary": "unspecified",
+        "reported_value": "Standby consumption 1W"
+      },
+      {
+        "metric": "cycle_life_cycles",
+        "qualifier": "exact",
+        "value": 6000,
+        "boundary": "unspecified",
+        "reported_value": "6,000 cycles to 70% capacity",
+        "conditions": "Tot 70% capaciteit; geen garantie."
+      },
+      {
+        "metric": "weight_kg",
+        "qualifier": "exact",
+        "value": 25,
+        "boundary": "unspecified",
+        "reported_value": "25 kg"
+      },
+      {
+        "metric": "noise_db_a",
+        "qualifier": "exact",
+        "value": 34,
+        "boundary": "unspecified",
+        "reported_value": "34 dBm nom. 45 dBm max. (at 1 meter distance)",
+        "conditions": "Bron schrijft dBm; overgenomen als geluidsniveau op 1 meter."
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      },
+      {
+        "metric": "indoor",
+        "status": "supported"
+      },
+      {
+        "metric": "outdoor",
+        "status": "unsupported",
+        "conditions": "Productpagina: 'De thuisbatterij kan niet buiten worden geplaatst.'"
+      },
+      {
+        "metric": "backup",
+        "status": "unsupported",
+        "conditions": "Productpagina: niet te gebruiken als noodstroomvoorziening; schakelt uit bij netuitval."
+      },
+      {
+        "metric": "expandable",
+        "status": "supported",
+        "conditions": "Tot vier units; meer dan één unit vraagt een eigen groep volgens de productpagina."
+      }
+    ],
+    "texts": [
+      {
+        "metric": "chemistry",
+        "value": "LFP"
+      },
+      {
+        "metric": "coupling",
+        "value": "AC-gekoppeld (stekker)"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "1 fase per unit; werkt volgens de fabrikant op 1- en 3-fasenaansluitingen"
+      },
+      {
+        "metric": "required_accessories",
+        "value": "HomeWizard P1 Meter of kWh Meter op de hoofdaansluiting"
+      }
+    ],
+    "product_warranty_months": 24
+  },
+  {
+    "manufacturer": "HomeWizard",
+    "product": "Plug-In Battery",
+    "model_code": "HWE-BAT-11",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · stekker · 800 W",
+    "market": "Nederland; webshop fabrikant",
+    "source_url": "https://www.homewizard.com/nl/plug-in-battery/",
+    "source_title": "HomeWizard Plug-In Battery productpagina",
+    "source_kind": "product_page",
+    "locator": "Productpagina, prijsblok en veelgestelde vragen (rendement, garantie)",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. 'De efficiëntie van de Plug-In Battery ligt gemiddeld tussen de 70 en 85 procent', zonder meetgrens. Garantie: 2 jaar fabrieksgarantie plus Swap Service tot 7 jaar of 4000 laadcycli. Prijs '€1195'; btw niet expliciet vermeld; als inclusief vastgelegd omdat een consumentenprijs volgens EU-richtlijn 98/6/EG de eindprijs inclusief btw is. P1 Meter (€24,95) is apart.",
+    "numbers": [
+      {
+        "metric": "round_trip_efficiency_pct",
+        "qualifier": "range",
+        "value": 70,
+        "upper_value": 85,
+        "boundary": "unspecified",
+        "reported_value": "gemiddeld tussen de 70 en 85 procent"
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "HomeWizard webshop",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 119500,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Marstek",
+    "product": "Venus E Gen 3.0",
+    "model_code": "Venus E 3.0",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 5,12 kWh · stekker",
+    "market": "Duitsland (specificaties fabrikantwebshop); prijs Nederlandse webwinkel",
+    "source_url": "https://marstek.de/products/venus-e-3",
+    "source_title": "Marstek Venus E Gen 3.0 productpagina (Duitsland)",
+    "source_kind": "product_page",
+    "locator": "Technische Daten",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Ausgangsleistung 0,8 kW (Default) / 2,5 kW (Premium); voorwaarden voor Premium niet vermeld. Nederlandse webwinkel: 800 W via het stopcontact, tot 2400 W op een eigen groep. Rendement alleen 'Batterie zu AC > 93,5 %'; geen round-trip-rendement.",
+    "numbers": [
+      {
+        "metric": "nominal_energy_wh",
+        "qualifier": "exact",
+        "value": 5120,
+        "boundary": "battery_dc",
+        "reported_value": "Energieinhalt 5120 Wh (5,12 kWh)"
+      },
+      {
+        "metric": "depth_of_discharge_pct",
+        "qualifier": "exact",
+        "value": 90,
+        "boundary": "battery_dc",
+        "reported_value": "Entladetiefe (DOD) 90 %"
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "at_most",
+        "value": 2500,
+        "boundary": "system_ac",
+        "reported_value": "Nennleistung (Eingang) 2,5 kW"
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 800,
+        "boundary": "system_ac",
+        "reported_value": "Ausgangsleistung 0,8 kW (Default)",
+        "conditions": "2,5 kW in de Premium-modus; via een stopcontact 800 W."
+      },
+      {
+        "metric": "discharge_efficiency_pct",
+        "qualifier": "greater_than",
+        "value": 93.5,
+        "boundary": "unspecified",
+        "reported_value": "Max. Wirkungsgrad (Batterie zu AC) > 93,5 %",
+        "conditions": "Maximaal ontlaadrendement, geen round-trip."
+      },
+      {
+        "metric": "cycle_life_cycles",
+        "qualifier": "greater_than",
+        "value": 6000,
+        "boundary": "unspecified",
+        "reported_value": "> 6000 Zyklen (25 °C)"
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      },
+      {
+        "metric": "outdoor",
+        "status": "conditional",
+        "conditions": "IP65 en -20 tot 55 °C; plaatsing buiten niet expliciet vermeld."
+      }
+    ],
+    "texts": [
+      {
+        "metric": "chemistry",
+        "value": "LiFePO4"
+      },
+      {
+        "metric": "coupling",
+        "value": "AC-gekoppeld (stekker)"
+      },
+      {
+        "metric": "ip_rating",
+        "value": "IP65"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "1 fase, 230 V"
+      }
+    ],
+    "product_warranty_months": 120
+  },
+  {
+    "manufacturer": "Marstek",
+    "product": "Venus E Gen 3.0",
+    "model_code": "Venus E 3.0",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 5,12 kWh · stekker",
+    "market": "Nederland; webwinkel",
+    "source_url": "https://www.123accu.nl/Marstek-Venus-E-3-0-plug-in-thuisbatterij-i57624.html",
+    "source_title": "123accu: Marstek Venus E 3.0 plug-in thuisbatterij",
+    "source_kind": "offer",
+    "locator": "Productpagina, prijs en specificatietabel",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. €1.199,00 inclusief 21% btw (€990,91 exclusief). Specificatietabel: '800 watt via het stopcontact, tot 2400 watt op een eigen groep.' Geen installatie.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "123accu B.V.",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 119900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Zendure",
+    "product": "SolarFlow 2400 AC+",
+    "model_code": "SolarFlow 2400 AC+",
+    "product_kind": "battery_system",
+    "configuration": "Basisunit · 2,4 kWh · stekker",
+    "market": "EU-webshop fabrikant; prijs Nederlandse webwinkel",
+    "source_url": "https://zendure.com/products/zendure-solarflow-2400-ac-plus",
+    "source_title": "Zendure SolarFlow 2400 AC+ productpagina",
+    "source_kind": "product_page",
+    "locator": "Productpagina, specificatieoverzicht",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Basis 2,4 kWh, niet vermeld of dit bruikbaar is; uitbreidbaar tot 16,8 kWh. '2400W Bi-Directional AC' met standaard 800 W; een hoger vermogen vraagt volgens Nederlandse verkopers een eigen groep en keuring door een installateur. Laadvermogen, rendement en standby niet vermeld. 3200 W off-grid-uitgang. Webshopprijs fabrikant €839,00.",
+    "numbers": [
+      {
+        "metric": "nominal_energy_wh",
+        "qualifier": "exact",
+        "value": 2400,
+        "boundary": "unspecified",
+        "reported_value": "2.4 kWh",
+        "conditions": "Niet gespecificeerd als bruikbare energie."
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 800,
+        "boundary": "system_ac",
+        "reported_value": "Default 800 W",
+        "conditions": "Tot 2400 W na installatie op een eigen groep."
+      },
+      {
+        "metric": "max_system_energy_wh",
+        "qualifier": "exact",
+        "value": 16800,
+        "boundary": "unspecified",
+        "reported_value": "16.8 kWh Max Capacity"
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      },
+      {
+        "metric": "expandable",
+        "status": "supported",
+        "conditions": "Met AB3000L-uitbreidingsaccu's van 2,88 kWh."
+      },
+      {
+        "metric": "backup",
+        "status": "conditional",
+        "conditions": "3200 W off-grid-uitgang op het apparaat; geen noodstroom voor de hele woning."
+      }
+    ],
+    "texts": [
+      {
+        "metric": "coupling",
+        "value": "AC-gekoppeld (stekker)"
+      },
+      {
+        "metric": "ip_rating",
+        "value": "IP65"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "1 fase, 230 V"
+      }
+    ],
+    "product_warranty_months": 120
+  },
+  {
+    "manufacturer": "Zendure",
+    "product": "SolarFlow 2400 AC+",
+    "model_code": "SolarFlow 2400 AC+",
+    "product_kind": "battery_system",
+    "configuration": "Basisunit · 2,4 kWh · stekker",
+    "market": "Nederland; webwinkel",
+    "source_url": "https://www.anwb.nl/webwinkel/p/252181/zendure-solarflow-2400-ac-thuisbatterij",
+    "source_title": "ANWB Webwinkel: Zendure SolarFlow 2400 AC+ Thuisbatterij",
+    "source_kind": "offer",
+    "locator": "Productpagina, prijsblok",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Prijs €829,00; btw niet expliciet vermeld; als inclusief vastgelegd omdat een consumentenprijs volgens EU-richtlijn 98/6/EG de eindprijs inclusief btw is. Online uitverkocht op het onderzoeksmoment. Garantie '10 jaar fabrieksgarantie'.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "ANWB Webwinkel",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 82900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Sessy",
+    "product": "Thuisbatterij",
+    "model_code": "Sessy 2.0",
+    "product_kind": "battery_system",
+    "configuration": "5 kWh",
+    "market": "Nederland",
+    "source_url": "https://www.sessy.nl/specificaties/",
+    "source_title": "Sessy specificaties",
+    "source_kind": "product_page",
+    "locator": "Specificatietabel 5 kWh",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Eigen AC-omvormer per unit; 'werkt op 1-fase én 3-fase omvormers van elk merk' en 'Past op bestaande omvormer en groep'. Rendement 85% zonder meetgrens. Noodstroom en IP-klasse niet vermeld. Garantie: 5 jaar omvormer, 10 jaar batterij.",
+    "numbers": [
+      {
+        "metric": "usable_energy_wh",
+        "qualifier": "exact",
+        "value": 5000,
+        "boundary": "unspecified",
+        "reported_value": "5 kWh bruikbare capaciteit"
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "exact",
+        "value": 2200,
+        "boundary": "system_ac",
+        "reported_value": "2,2 kW laden"
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 1700,
+        "boundary": "system_ac",
+        "reported_value": "1,7 kW ontladen"
+      },
+      {
+        "metric": "round_trip_efficiency_pct",
+        "qualifier": "exact",
+        "value": 85,
+        "boundary": "unspecified",
+        "reported_value": "85%"
+      },
+      {
+        "metric": "standby_power_w",
+        "qualifier": "exact",
+        "value": 3,
+        "boundary": "unspecified",
+        "reported_value": "3W"
+      },
+      {
+        "metric": "cycle_life_cycles",
+        "qualifier": "greater_than",
+        "value": 6000,
+        "boundary": "unspecified",
+        "reported_value": "6000+ cycli"
+      },
+      {
+        "metric": "weight_kg",
+        "qualifier": "exact",
+        "value": 46,
+        "boundary": "unspecified",
+        "reported_value": "46 kg"
+      },
+      {
+        "metric": "noise_db_a",
+        "qualifier": "exact",
+        "value": 40,
+        "boundary": "unspecified",
+        "reported_value": "40 dB nominaal"
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      }
+    ],
+    "texts": [
+      {
+        "metric": "chemistry",
+        "value": "IJzerfosfaat (LFP)"
+      },
+      {
+        "metric": "coupling",
+        "value": "AC-gekoppeld (vaste installatie)"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "1 fase per unit; werkt volgens de fabrikant met 1- en 3-fase-omvormers"
+      }
+    ],
+    "product_warranty_months": 60
+  },
+  {
+    "manufacturer": "Sessy",
+    "product": "Thuisbatterij",
+    "model_code": "Sessy 2.0",
+    "product_kind": "battery_system",
+    "configuration": "5 kWh",
+    "market": "Nederland",
+    "source_url": "https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/",
+    "source_title": "Sessy: wat kost een Sessy thuisbatterij?",
+    "source_kind": "offer",
+    "locator": "Antwoord op de prijsvraag",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. 'De standaardprijzen zijn €3.550 (5 kWh) en €5.500 (10 kWh), inclusief btw en exclusief installatie.' Collectieve inkoopkorting mogelijk; niet meegenomen.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Sessy (standaardprijs)",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 355000,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Sessy",
+    "product": "Thuisbatterij",
+    "model_code": "Sessy 2.0",
+    "product_kind": "battery_system",
+    "configuration": "10 kWh",
+    "market": "Nederland",
+    "source_url": "https://www.sessy.nl/specificaties/",
+    "source_title": "Sessy specificaties",
+    "source_kind": "product_page",
+    "locator": "Specificatietabel 10 kWh",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Eigen AC-omvormer; zelfde vermogen als 5 kWh. Rendement 85% zonder meetgrens. Garantie: 5 jaar omvormer, 10 jaar batterij.",
+    "numbers": [
+      {
+        "metric": "usable_energy_wh",
+        "qualifier": "exact",
+        "value": 10000,
+        "boundary": "unspecified",
+        "reported_value": "10 kWh bruikbare capaciteit"
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "exact",
+        "value": 2200,
+        "boundary": "system_ac",
+        "reported_value": "2,2 kW laden"
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 1700,
+        "boundary": "system_ac",
+        "reported_value": "1,7 kW ontladen"
+      },
+      {
+        "metric": "round_trip_efficiency_pct",
+        "qualifier": "exact",
+        "value": 85,
+        "boundary": "unspecified",
+        "reported_value": "85%"
+      },
+      {
+        "metric": "standby_power_w",
+        "qualifier": "exact",
+        "value": 3,
+        "boundary": "unspecified",
+        "reported_value": "3W"
+      },
+      {
+        "metric": "cycle_life_cycles",
+        "qualifier": "greater_than",
+        "value": 6000,
+        "boundary": "unspecified",
+        "reported_value": "6000+ cycli"
+      },
+      {
+        "metric": "weight_kg",
+        "qualifier": "exact",
+        "value": 96,
+        "boundary": "unspecified",
+        "reported_value": "96 kg"
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      }
+    ],
+    "texts": [
+      {
+        "metric": "chemistry",
+        "value": "IJzerfosfaat (LFP)"
+      },
+      {
+        "metric": "coupling",
+        "value": "AC-gekoppeld (vaste installatie)"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "1 fase per unit; werkt volgens de fabrikant met 1- en 3-fase-omvormers"
+      }
+    ],
+    "product_warranty_months": 60
+  },
+  {
+    "manufacturer": "Sessy",
+    "product": "Thuisbatterij",
+    "model_code": "Sessy 2.0",
+    "product_kind": "battery_system",
+    "configuration": "10 kWh",
+    "market": "Nederland",
+    "source_url": "https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/",
+    "source_title": "Sessy: wat kost een Sessy thuisbatterij?",
+    "source_kind": "offer",
+    "locator": "Antwoord op de prijsvraag",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. 'De standaardprijzen zijn €3.550 (5 kWh) en €5.500 (10 kWh), inclusief btw en exclusief installatie.' Collectieve inkoopkorting mogelijk; niet meegenomen.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Sessy (standaardprijs)",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 550000,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Tesla",
+    "product": "Powerwall 3P",
+    "model_code": "",
+    "product_kind": "battery_system",
+    "configuration": "Powerwall 3P · Nederlandse productpagina",
+    "market": "Nederland (Nederlandstalig datablad)",
+    "source_url": "https://energylibrary.tesla.com/docs/Public/EnergyStorage/Powerwall/3P/Datasheet/nl-nl/Powerwall-3P-Datasheet-NL.pdf",
+    "source_title": "Powerwall 3P Datablad NL",
+    "source_kind": "datasheet",
+    "locator": "Pagina 2, Systeemtechnische specificaties en voetnoten 1-6",
+    "document_revision": "2026",
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-24. Driefasen 230/400 V, model 1988000-xx-y. 13,5 kWh AC is het minimum gegarandeerd bij begin van de levensduur, 25 °C en 5 kW. Hybride systeem met PV-ingang tot 20,4 kWp. Backup alleen met Backup Gateway 2. Geen openbare Nederlandse prijs gevonden.",
+    "numbers": [
+      {
+        "metric": "usable_energy_wh",
+        "qualifier": "at_least",
+        "value": 13500,
+        "boundary": "system_ac",
+        "reported_value": "Bruikbare batterij-energy (AC) 13,5 kWh"
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "at_most",
+        "value": 5000,
+        "boundary": "unspecified",
+        "reported_value": "Maximaal continu laadvermogen, alleen Powerwall 3P: 5 kW"
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 11500,
+        "boundary": "system_ac",
+        "reported_value": "Tot 11,5 kW AC-uitgangsvermogen wanneer zonne-energie niet beschikbaar is",
+        "conditions": "15,4 kW met voldoende zonneopwekking bij ≤ 25 °C."
+      },
+      {
+        "metric": "round_trip_efficiency_pct",
+        "qualifier": "exact",
+        "value": 90,
+        "boundary": "pv_ac",
+        "reported_value": "Zonne-energie naar Batterij naar Huis/Net Efficiëntie 90%"
+      },
+      {
+        "metric": "phase_count",
+        "qualifier": "exact",
+        "value": 3,
+        "boundary": "system_ac",
+        "reported_value": "Nettype Driefasen"
+      },
+      {
+        "metric": "pv_input_power_w",
+        "qualifier": "at_most",
+        "value": 20400,
+        "boundary": "unspecified",
+        "reported_value": "Maximale STC-ingang zonne-energie 20,4 kWp"
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported"
+      },
+      {
+        "metric": "backup",
+        "status": "conditional",
+        "conditions": "Backup Gateway 2 vereist voor backupconfiguratie."
+      },
+      {
+        "metric": "expandable",
+        "status": "supported",
+        "conditions": "Expansion-units in stappen van 13,5 kWh."
+      }
+    ],
+    "texts": [
+      {
+        "metric": "coupling",
+        "value": "Hybride omvormer (DC en AC)"
+      },
+      {
+        "metric": "phase_topology",
+        "value": "Driefasen, 4-geleider (L1, L2, L3, N)"
+      }
+    ],
+    "product_warranty_months": 120
+  }
+]

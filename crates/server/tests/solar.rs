@@ -278,3 +278,34 @@ fn enphase_report_style_us_dates_do_not_silently_use_european_date_order() {
     assert_eq!(summary.production_kwh, 3.0);
     assert_eq!(summary.months[0].label, "2026-06");
 }
+
+#[test]
+fn p1_import_and_export_derive_gross_consumption_from_the_energy_balance() {
+    let options = ImportOptions {
+        consumption_column: Some(2),
+        consumption_source: "net_meter".into(),
+        export_column: Some(3),
+        ..Default::default()
+    };
+    // Uur 1: 2 kWh opwek, 1,5 kWh terug → 0,5 kWh zelf gebruikt. Uur 2: 1 kWh van het net.
+    let summary = analyze(
+        "time,production,import,export\n2026-06-01T10:00:00Z,2,0,1.5\n2026-06-01T11:00:00Z,0,1,0\n",
+        &options,
+    )
+    .unwrap();
+    assert_eq!(summary.consumption_kwh, Some(1.5));
+    assert!((summary.interval_surplus_kwh.unwrap() - 1.5).abs() < 1e-9);
+    assert!(summary.warnings.iter().any(|w| w.contains("afgeleid")));
+    // Teruglevering groter dan opwek plus afname wijst op een tijd- of eenheidsfout.
+    let error = analyze(
+        "time,production,import,export\n2026-06-01T10:00:00Z,0,0,2\n2026-06-01T11:00:00Z,0,1,0\n",
+        &options,
+    )
+    .unwrap_err();
+    assert!(error.contains("teruglevering"));
+    let missing_export = ImportOptions {
+        export_column: None,
+        ..options
+    };
+    assert!(analyze("time,p,i\n2026-06-01T10:00:00Z,1,1\n", &missing_export).is_err());
+}

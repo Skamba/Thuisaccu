@@ -52,4 +52,12 @@ Na bevestiging worden de SHA-256 van het bestand, bestandsnaam, importinstelling
 
 Het overzicht toont totale productie, eventuele consumptie, dekking, gaten en maandtotalen. Met verbruik worden ook positieve productie-/verbruiksverschillen per gekozen interval getoond. Dit zijn aggregaten op die resolutie, geen gemeten accubesparing of nauwkeurige momentane gelijktijdigheid.
 
+## Slimme meter (P1)
+
+Bevat één bestand per tijdstip de opwek, de netafname en de teruglevering, kies dan bij ‘Wat staat in die kolom?’ de optie netafname en daarnaast de terugleverkolom. Bruto verbruik is dan per interval opwek + netafname − teruglevering: alles wat het huis in kwam, minus wat eruit ging. Dat klopt alleen zonder bestaande accu en als omvormer- en meterdata dezelfde perioden beschrijven. Is het afgeleide verbruik in meer dan 1% van de perioden negatief, dan stopt de import met een melding over tijd, eenheid of een bestaande accu; kleine negatieve meetafwijkingen worden op 0 gezet en in de waarschuwingen geteld. Aparte bestanden voor meter en omvormer worden nog niet samengevoegd.
+
+## Geschat profiel uit jaartotalen
+
+Zonder meetbestand kan de [keuzehulp](keuzehulp.md) een geschat uurjaar maken uit jaartotalen. Dat profiel is gemodelleerd en draagt overal het label GESCHAT PROFIEL.
+
 De aparte [ROI-tool](roi-model.md) gebruikt een bewaarde import met een volledig aaneengesloten jaar, intervallen van maximaal een uur, AC-zonneproductie en bruto huishoudelijk verbruik. Netafname is alleen het resterende verbruik na directe zonnestroom; invoeren als bruto verbruik zou de accubesparing vertekenen. Wanneer alleen netmetingen en productie beschikbaar zijn, moeten eerst correct uitgelijnde bruto verbruikswaarden worden bepaald. De huidige import voegt losse bestanden niet automatisch samen. Grove of korte overzichten blijven bruikbaar voor onderzoek, maar worden voor ROI geweigerd.

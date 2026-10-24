@@ -219,3 +219,34 @@ async fn result_dashboard_is_embedded() {
             .contains("Cumulatieve kasstroom")
     );
 }
+
+#[tokio::test]
+async fn guided_flow_is_embedded_and_linked() {
+    let app = test_app().await;
+    let response = app
+        .clone()
+        .oneshot(Request::get("/keuzehulp.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/javascript; charset=utf-8"
+    );
+    let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
+    assert!(
+        std::str::from_utf8(&body)
+            .unwrap()
+            .contains("Bereken mijn advies")
+    );
+    let home = app
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let body = to_bytes(home.into_body(), 32 * 1024).await.unwrap();
+    assert!(
+        std::str::from_utf8(&body)
+            .unwrap()
+            .contains("/keuzehulp.js")
+    );
+}

@@ -11,7 +11,10 @@ use thuisaccu_storage::{
     comparison::{CandidateDraft, Comparison},
 };
 
-use crate::solar_import::{self, ImportOptions};
+use crate::{
+    solar_import::{self, ImportOptions},
+    typical_profile::{self, TypicalRequest},
+};
 
 pub type ApiError = (StatusCode, Json<Value>);
 
@@ -66,19 +69,33 @@ pub async fn add_candidate(
     Ok((StatusCode::CREATED, Json(json!({"configuration_id":id}))))
 }
 
+/// Elke set heeft een eigen sleutel: een eerder geladen set wordt niet opnieuw ingevoegd.
+const REFERENCE_SETS: [(&str, &str); 2] = [
+    (
+        "research-2026-10-24-v1",
+        include_str!("../resources/references.json"),
+    ),
+    (
+        "research-2026-10-24-nl-v1",
+        include_str!("../resources/references-nl.json"),
+    ),
+];
+
 pub async fn references(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
-    let drafts: Vec<CandidateDraft> =
-        serde_json::from_str(include_str!("../resources/references.json")).map_err(|error| {
-            tracing::error!(%error, "Invalid reference resource");
+    let mut imported = false;
+    for (key, json) in REFERENCE_SETS {
+        let drafts: Vec<CandidateDraft> = serde_json::from_str(json).map_err(|error| {
+            tracing::error!(%error, key, "Invalid reference resource");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error":"reference_data_error"})),
             )
         })?;
-    let imported = catalog
-        .import_references("research-2026-10-24-v1", &drafts, Utc::now().timestamp())
-        .await
-        .map_err(database_error)?;
+        imported |= catalog
+            .import_references(key, &drafts, Utc::now().timestamp())
+            .await
+            .map_err(database_error)?;
+    }
     Ok(Json(json!({"imported":imported})))
 }
 
@@ -203,4 +220,41 @@ pub async fn save_solar(
 pub async fn list_solar(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let imports = catalog.list_solar().await.map_err(database_error)?;
     Ok(Json(json!({"imports":imports})))
+}
+
+/// Maakt een geschat jaarprofiel uit jaartotalen en bewaart het als gemodelleerde import.
+pub async fn save_typical(
+    State(catalog): State<Catalog>,
+    Json(request): Json<TypicalRequest>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let profile = tokio::task::spawn_blocking(move || typical_profile::build(&request))
+        .await
+        .map_err(|_| bad_request("Het geschatte profiel kon niet worden gemaakt."))?
+        .map_err(bad_request)?;
+    let serialized =
+        serde_json::to_vec(&profile.intervals).map_err(|e| bad_request(e.to_string()))?;
+    let sha256 = format!("{:x}", Sha256::digest(&serialized));
+    let options_json =
+        serde_json::to_string(&profile.options).map_err(|e| bad_request(e.to_string()))?;
+    let summary_json =
+        serde_json::to_string(&profile.summary).map_err(|e| bad_request(e.to_string()))?;
+    let id = catalog
+        .save_solar(
+            &profile.title,
+            &sha256,
+            &options_json,
+            &summary_json,
+            &profile.intervals,
+            Utc::now().timestamp(),
+        )
+        .await
+        .map_err(database_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"id":id, "filename":profile.title, "summary":profile.summary})),
+    ))
+}
+
+pub async fn typical_sources() -> Json<Value> {
+    Json(typical_profile::sources())
 }

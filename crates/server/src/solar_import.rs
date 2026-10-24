@@ -22,6 +22,11 @@ pub struct ImportOptions {
     pub time_part_column: Option<usize>,
     pub production_column: usize,
     pub consumption_column: Option<usize>,
+    /// `gross`: de verbruikskolom is bruto huishoudelijk verbruik. `net_meter`: de
+    /// verbruikskolom is netafname en `export_column` netteruglevering (bijvoorbeeld P1);
+    /// bruto verbruik = opwek + netafname − teruglevering.
+    pub consumption_source: String,
+    pub export_column: Option<usize>,
     pub unit: String,
     pub mode: String,
     pub period: String,
@@ -44,6 +49,8 @@ impl Default for ImportOptions {
             time_part_column: None,
             production_column: 1,
             consumption_column: None,
+            consumption_source: "gross".into(),
+            export_column: None,
             unit: "kwh".into(),
             mode: "interval".into(),
             period: "hour".into(),
@@ -338,6 +345,23 @@ pub fn normalize(
     {
         return Err("Onbekende tijdresolutie.".into());
     }
+    let net_meter = options.consumption_source == "net_meter";
+    if !["gross", "net_meter"].contains(&options.consumption_source.as_str())
+        || net_meter != options.export_column.is_some()
+        || (net_meter && options.consumption_column.is_none())
+    {
+        return Err(
+            "Kies voor P1-/meterdata zowel een kolom voor netafname als voor teruglevering.".into(),
+        );
+    }
+    if options.export_column.is_some_and(|c| {
+        c == options.time_column
+            || c == options.production_column
+            || Some(c) == options.consumption_column
+            || Some(c) == options.time_part_column
+    }) {
+        return Err("De terugleverkolom moet verschillen van de overige gekozen kolommen.".into());
+    }
     if options.time_column == options.production_column
         || options
             .consumption_column
@@ -380,7 +404,9 @@ pub fn normalize(
             && (cell(row, options.production_column).is_ok_and(|v| v.trim().is_empty())
                 || options
                     .consumption_column
-                    .is_some_and(|col| cell(row, col).is_ok_and(|v| v.trim().is_empty())))
+                    .into_iter()
+                    .chain(options.export_column)
+                    .any(|col| cell(row, col).is_ok_and(|v| v.trim().is_empty())))
         {
             skipped_rows += 1;
             continue;
@@ -398,6 +424,10 @@ pub fn normalize(
                     .consumption_column
                     .map(|col| cell(row, col).and_then(|raw| parse_number(raw, &options.decimal)))
                     .transpose()?,
+                options
+                    .export_column
+                    .map(|col| cell(row, col).and_then(|raw| parse_number(raw, &options.decimal)))
+                    .transpose()?,
             ))
         };
         readings.push(read().map_err(|e| format!("Gegevensrij {}: {e}", index + 1))?);
@@ -411,13 +441,17 @@ pub fn normalize(
     }
     let mut intervals: Vec<SolarInterval> = Vec::new();
     let mut gaps = 0;
-    for (index, (timestamp, production, consumption)) in readings.iter().enumerate() {
-        let (start, end, production, consumption) = if options.mode == "cumulative" {
+    let mut derived_negative = 0;
+    for (index, (timestamp, production, consumption, export)) in readings.iter().enumerate() {
+        let (start, end, production, consumption, export) = if options.mode == "cumulative" {
             if index == 0 {
                 continue;
             }
             let previous = &readings[index - 1];
-            if production < &previous.1 || consumption.zip(previous.2).is_some_and(|(a, b)| a < b) {
+            if production < &previous.1
+                || consumption.zip(previous.2).is_some_and(|(a, b)| a < b)
+                || export.zip(previous.3).is_some_and(|(a, b)| a < b)
+            {
                 return Err(format!(
                     "Meterreset of dalende cumulatieve stand bij {}. Splits het bestand rondom de reset.",
                     timestamp
@@ -428,6 +462,7 @@ pub fn normalize(
                 *timestamp,
                 production - previous.1,
                 consumption.zip(previous.2).map(|(a, b)| a - b),
+                export.zip(previous.3).map(|(a, b)| a - b),
             )
         } else {
             let (start, end) = if options.timestamp_position == "start" {
@@ -435,7 +470,19 @@ pub fn normalize(
             } else {
                 (period_end(*timestamp, &options.period, -1)?, *timestamp)
             };
-            (start, end, *production, *consumption)
+            (start, end, *production, *consumption, *export)
+        };
+        // Energiebalans zonder bestaande accu: wat het huis gebruikte is wat erin kwam
+        // (opwek + netafname) minus wat eruit ging (teruglevering).
+        let consumption = match (net_meter, consumption, export) {
+            (true, Some(import), Some(export)) => {
+                let gross = production + import - export;
+                if gross < -1e-9 {
+                    derived_negative += 1;
+                }
+                Some(gross.max(0.0))
+            }
+            _ => consumption,
         };
         let duration = (end - start).num_seconds();
         if duration <= 0 {
@@ -465,6 +512,11 @@ pub fn normalize(
             production_wh: production * factor,
             consumption_wh: consumption.map(|v| v * factor),
         });
+    }
+    if derived_negative > intervals.len() / 100 {
+        return Err(format!(
+            "In {derived_negative} meetperioden is teruglevering groter dan opwek plus netafname. Opwek en meterdata lopen waarschijnlijk niet gelijk in tijd, gebruiken verschillende eenheden, of er is al een accu. Controleer tijdzone, tijdstempelpositie en eenheid."
+        ));
     }
     if intervals.is_empty() {
         return Err(
@@ -507,6 +559,12 @@ pub fn normalize(
     }
     if ["kw", "w"].contains(&options.unit.as_str()) {
         warnings.push("Vermogen is geïntegreerd als gemiddelde over de gekozen periode. Piek- of momentwaarden zijn hiervoor ongeschikt.".into());
+    }
+    if net_meter {
+        warnings.push("Bruto verbruik is afgeleid als opwek + netafname − teruglevering. Dit klopt alleen zonder bestaande accu en als omvormer- en meterdata dezelfde tijdsperioden beschrijven.".into());
+        if derived_negative > 0 {
+            warnings.push(format!("{derived_negative} meetperiode(n) gaven een licht negatief afgeleid verbruik door meetafwijkingen; die zijn op 0 gezet."));
+        }
     }
     if options.data_kind == "modelled" {
         warnings.push("Dit bestand is gemodelleerde opwek, geen gemeten productie.".into());

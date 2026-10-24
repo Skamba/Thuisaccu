@@ -13,6 +13,7 @@ use thuisaccu_storage::Catalog;
 mod api;
 pub mod scenario_api;
 pub mod solar_import;
+pub mod typical_profile;
 
 /// Bouwt de routes zonder een netwerkpoort te openen.
 pub fn app(catalog: Catalog) -> Router {
@@ -24,6 +25,7 @@ pub fn app(catalog: Catalog) -> Router {
         .route("/workspace.js", get(workspace_script))
         .route("/results.js", get(results_script))
         .route("/analysis.js", get(analysis_script))
+        .route("/keuzehulp.js", get(keuzehulp_script))
         .route("/api/v1/analysis/costs", get(scenario_api::costs))
         .route(
             "/api/v1/analysis/runs",
@@ -42,8 +44,16 @@ pub fn app(catalog: Catalog) -> Router {
         .route("/api/v1/solar/inspect", post(api::inspect))
         .route("/api/v1/solar/preview", post(api::preview))
         .route(
+            "/api/v1/solar/typical",
+            get(api::typical_sources).post(api::save_typical),
+        )
+        .route(
             "/api/v1/solar/imports",
             get(api::list_solar).post(api::save_solar),
+        )
+        .route(
+            "/api/v1/solar/imports/{id}/capacity",
+            get(scenario_api::capacity_curve),
         )
         .layer(DefaultBodyLimit::max(11 * 1024 * 1024))
         .fallback(not_found)
@@ -93,6 +103,13 @@ async fn analysis_script() -> ([(header::HeaderName, &'static str); 1], &'static
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         include_str!("../../../web/analysis.js"),
+    )
+}
+
+async fn keuzehulp_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../../../web/keuzehulp.js"),
     )
 }
 

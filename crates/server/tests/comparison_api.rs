@@ -45,8 +45,31 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let data = response_json(response).await;
-    assert_eq!(data["configurations"].as_array().unwrap().len(), 3);
-    assert_eq!(data["offers"], json!([]));
+    // Drie internationale momentopnamen plus vijf Nederlandse uitvoeringen; de Powerwall-
+    // datasheet hangt als extra bron aan de bestaande uitvoering.
+    assert_eq!(data["configurations"].as_array().unwrap().len(), 8);
+    let offers = data["offers"].as_array().unwrap();
+    assert_eq!(offers.len(), 5);
+    assert!(offers.iter().all(|o| o["currency"] == "EUR"
+        && o["tax_basis"] == "included"
+        && o["includes_installation"] == false
+        && o["source_url"].as_str().unwrap().starts_with("https://")));
+    let tesla = data["configurations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["manufacturer_name"] == "Tesla")
+        .unwrap()["id"]
+        .clone();
+    assert!(!offers.iter().any(|o| o["configuration_id"] == tesla));
+    let usable: Vec<_> = data["numbers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n["configuration_id"] == tesla)
+        .map(|n| n["metric_key"].as_str().unwrap())
+        .collect();
+    assert!(usable.contains(&"nominal_energy_wh") && usable.contains(&"usable_energy_wh"));
     let enphase = data["configurations"]
         .as_array()
         .unwrap()

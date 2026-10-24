@@ -13,17 +13,18 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 
 ### Webinterface
 
-De vaste app-shell heeft Dashboard en Scenario’s bovenaan. Accu’s, Opwek & verbruik en Instellingen staan als groep onderaan voor de (semi)statische gegevens, met de servicestatus daaronder. De toetsenbordvolgorde volgt deze indeling. De hashrouter gebruikt `#/dashboard`, `#/accus`, `#/accus/vergelijk`, `#/opwek`, `#/opwek/import`, `#/opwek/:id`, `#/scenarios`, `#/scenarios/nieuw`, `#/scenarios/:id` en `#/instellingen`. Onbekende hashes openen het dashboard; browsergeschiedenis blijft werken. Na een schermwissel krijgt de schermtitel focus. Op smalle schermen opent een menuknop dezelfde navigatie.
+De vaste app-shell heeft Keuzehulp, Dashboard en Scenario’s bovenaan; een lege hash opent de keuzehulp. Accu’s, Opwek & verbruik en Instellingen staan als groep onderaan voor de (semi)statische gegevens, met de servicestatus daaronder. De toetsenbordvolgorde volgt deze indeling. De hashrouter gebruikt `#/dashboard`, `#/accus`, `#/accus/vergelijk`, `#/opwek`, `#/opwek/import`, `#/opwek/:id`, `#/scenarios`, `#/scenarios/nieuw`, `#/scenarios/:id` en `#/instellingen`. Onbekende hashes openen het dashboard; browsergeschiedenis blijft werken. Na een schermwissel krijgt de schermtitel focus. Op smalle schermen opent een menuknop dezelfde navigatie.
 
 - `ui.js`: DOM-helpers, Nederlandse formatters (geld met vaste precisie en een echt minteken), toasts, hashrouter, toegankelijke tabbladen en steppers, en SVG-grafieken met onderliggende tabellen.
 - `app.js`: bronclaims, catalogus, selectie/vergelijking, CSV-export, kandidaat-invoer en bestandsinspectie/preview/opslag.
 - `analysis.js`: scenario-invoer en API-payloads, expliciete technische en kostenvalidatie, onveranderlijke historie, dupliceren en conceptsnapshots.
 - `workspace.js`: dashboard en lijsten, vergelijkingsfilters, drie- en vierstapswizards, kostenvoortgang, contextuele hulp en browserinstellingen.
+- `keuzehulp.js`: begeleide keuzehulp in gewone taal; maakt zo nodig een geschat profiel, toont de capaciteitscurve, leidt rekengegevens met zichtbare aannames af uit bronclaims en verstuurt een gewone analyse. Zie [keuzehulp](keuzehulp.md).
 - `results.js`: resultaatdashboard met zes tabbladen, kasstromen, energie, gevoeligheid, oorspronkelijke invoer, alle waarschuwingen, CSV en afdrukweergave.
 
 De interface biedt uitsluitend acties voor onderzoek, eigen imports en scenario’s. Demo-acties en downloadlinks voor fictieve importvoorbeelden staan niet in de interface. Bestaande fictieve imports en resultaten blijven herkenbaar als FICTIEF. De bestaande demo- en sample-API-routes blijven beschikbaar voor synthetische testgegevens.
 
-Alle vijf scripts en het stijlblad worden via `include_str!` uit de binary geserveerd. Elke assetroute heeft een HTTP-test. Nieuwe webwijzigingen vereisen opnieuw bouwen en starten. Er zijn geen externe fonts, scripts of grafiekdiensten. API- en gebruikersgegevens worden uitsluitend via tekst-/DOM-methoden ingevoegd.
+Alle zes scripts en het stijlblad worden via `include_str!` uit de binary geserveerd. Elke assetroute heeft een HTTP-test. Nieuwe webwijzigingen vereisen opnieuw bouwen en starten. Er zijn geen externe fonts, scripts of grafiekdiensten. API- en gebruikersgegevens worden uitsluitend via tekst-/DOM-methoden ingevoegd.
 
 De vergelijking houdt maximaal vier uitvoeringen vast. Filters veranderen alleen de presentatie en CSV-export; claims worden niet samengevoegd. Het aantal herkenbare bronnen is gebaseerd op unieke brontitel/URL-combinaties: de bestaande vergelijking-API levert geen bron-ID’s. De ROI-badge gebruikt uitsluitend importmetadata. Voor cumulatieve standen is de maximale intervalduur niet eenduidig beschikbaar; daarom blijft geschiktheid daar onbekend. De server blijft de volledige meetreeks valideren vóór elke analyse.
 

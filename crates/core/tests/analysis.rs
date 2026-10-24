@@ -298,3 +298,33 @@ fn short_profiles_unknown_costs_and_invalid_physical_assumptions_are_rejected() 
     c.battery.ac_round_trip_efficiency_pct = 101.0;
     assert!(analysis::analyze(&profile, &p, &[c]).is_err());
 }
+
+#[test]
+fn capacity_curve_is_bounded_by_the_daily_surplus_and_evening_deficit() {
+    // Per dag één uur met 3 kWh overschot en één uur met 2 kWh tekort: een verliesvrije accu
+    // levert per dag hoogstens min(capaciteit, 2 kWh). Handmatig narekenbaar over 10 dagen.
+    let days: Vec<EnergyInterval> = (0..10)
+        .flat_map(|_| {
+            [
+                EnergyInterval {
+                    duration_hours: 1.0,
+                    production_kwh: 3.0,
+                    consumption_kwh: 0.0,
+                },
+                EnergyInterval {
+                    duration_hours: 1.0,
+                    production_kwh: 0.0,
+                    consumption_kwh: 2.0,
+                },
+            ]
+        })
+        .collect();
+    let points = sizing::capacity_curve(&days, &[0.0, 1.0, 2.0, 5.0]);
+    let delivered: Vec<f64> = points.iter().map(|p| p.battery_to_load_kwh).collect();
+    for (actual, expected) in delivered.iter().zip([0.0, 10.0, 20.0, 20.0]) {
+        close(*actual, expected);
+    }
+    close(points[0].self_consumption_pct, 0.0);
+    close(points[3].self_consumption_pct, 20.0 / 30.0 * 100.0);
+    close(points[3].self_sufficiency_pct, 100.0);
+}

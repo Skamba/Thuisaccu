@@ -21,6 +21,28 @@ window.Results = (() => {
     out.append(el("p", "Meetgrenzen AC-opwek/bruto verbruik, technische aannames en kosten zijn vóór deze berekening bevestigd."));
     const raw = el("details"); raw.append(el("summary", "Ruwe JSON van de vastgelegde invoer"), el("pre", JSON.stringify(input, null, 2))); out.append(raw); return out;
   }
+  // Samenvatting in gewone taal; gebruikt uitsluitend bewaarde uitkomsten.
+  function plainSummary(run) {
+    const result = run.result, p = run.input.request.parameters, box = el("section", null, "panel plain-summary"), list = el("ul");
+    const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
+    const byNpv = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const saving = c => c.years?.[0]?.energy_saving_eur;
+    box.append(el("h2", "Wat betekent dit voor jou?"));
+    if (!rec) {
+      list.append(el("li", `Met deze aannames is géén accu de beste keuze voor het gekozen doel over ${p.horizon_years} jaar.`));
+      if (byNpv) list.append(el("li", `Het dichtst in de buurt komt ${byNpv.name}: die kost ${money(byNpv.initial_investment_eur, { decimals: 0 })} en bespaart in het eerste jaar ongeveer ${money(saving(byNpv), { decimals: 0 })}. Over de looptijd is dat netto ${money(byNpv.npv_eur, { decimals: 0 })} in geld van nu.`));
+    } else {
+      list.append(el("li", `${rec.name} komt het beste uit. Je betaalt ongeveer ${money(rec.initial_investment_eur, { decimals: 0 })} en bespaart in het eerste jaar ongeveer ${money(saving(rec), { decimals: 0 })} op je energierekening.`));
+      list.append(el("li", rec.payback_years == null ? `Binnen ${p.horizon_years} jaar verdien je dat bedrag niet terug.` : `Je hebt de investering na ongeveer ${rec.payback_years} jaar terugverdiend. Over ${p.horizon_years} jaar is het netto voordeel ${money(rec.npv_eur, { decimals: 0 })} in geld van nu.`));
+      list.append(el("li", `Je gebruikt dan ${pct(rec.first_year.self_consumption_pct)} van je zonnestroom zelf; zonder accu is dat ${pct(base.self_consumption_pct)}.`));
+      if (rec.npv_eur < 0) list.append(el("li", "Let op: financieel kost deze keuze je over de looptijd geld. Je kiest hem omdat je eigen gebruik belangrijker vond."));
+    }
+    const gaps = rec ? [rec.pessimistic.npv_eur, rec.optimistic.npv_eur] : null;
+    if (gaps) list.append(el("li", `Bij ongunstiger prijzen en kosten wordt dat ${money(gaps[0], { decimals: 0 })}, bij gunstiger ${money(gaps[1], { decimals: 0 })}.`));
+    if (result.warnings.some(w => /GESCHAT PROFIEL/.test(w))) list.append(el("li", "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierdata (bijvoorbeeld via je slimme meter) wordt de uitkomst nauwkeuriger."));
+    list.append(el("li", "Vraag voor een vaste accu altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
+    box.append(list); return box;
+  }
   function render(run, out) {
     const result = run.result, request = run.input.request, p = request.parameters, baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, within_budget: true, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, color: "#79817d" };
     const options = [baseline, ...result.candidates.map((r, i) => ({ ...r, color: UI.colors[i % UI.colors.length] }))];
@@ -28,11 +50,11 @@ window.Results = (() => {
     const top = el("div", null, "result-meta"); top.append(el("p", `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`}`), el("p", `${Workspace.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${result.model_version} · ${UI.date(run.created_at_unix_s)}`, "muted")); out.append(top);
     const fictitious = run.input.profile?.options?.is_demo || result.warnings.some(w => /FICTIEF/i.test(w));
     if (fictitious) out.append(el("p", "FICTIEVE GEGEVENS — deze analyse gebruikt fictieve invoer. Gebruik eigen meetgegevens, tarieven en offertes voor een beoordeling van je situatie.", "demo-banner"));
-    const recommendation = el("div", null, "recommendation panel"); recommendation.append(el("p", "BINNEN DIT SCENARIO", "eyebrow"), el("h2", result.recommendation), badge(options.find(c => c.key === result.recommended_key)?.name || "Onbekende optie", "accent")); out.append(recommendation);
+    const recommendation = el("div", null, "recommendation panel"); recommendation.append(el("p", "BINNEN DIT SCENARIO", "eyebrow"), el("h2", result.recommendation), badge(options.find(c => c.key === result.recommended_key)?.name || "Onbekende optie", "accent")); out.append(recommendation, plainSummary(run));
     const actions = UI.$("page-actions"); actions.append(button("Dupliceer en pas aan", () => Workspace.duplicate(run)), button("Exporteer CSV", () => exportRun(run)), button("Afdrukken", () => window.print(), "text-button"));
     UI.$("service").lastChild.textContent = `Model ${result.model_version}`;
     const overview = el("div"), cash = el("div"), energy = el("div"), sensitivity = el("div"), input = inputView(run.input), warnings = el("div");
-    for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd/i.test(w))) overview.append(el("p", warning, "callout"));
+    for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) overview.append(el("p", warning, "callout"));
     const tiles = el("div", null, "option-kpis");
     for (const c of options) {
       const card = el("article", null, "panel option-kpi"); card.style.borderTopColor = c.color; card.append(el("h3", c.name)); if (c.key === result.recommended_key) card.append(badge("Aanbevolen", "accent")); if (c.within_budget === false) card.append(badge("Boven budget", "warning"));

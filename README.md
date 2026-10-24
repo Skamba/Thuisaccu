@@ -16,8 +16,9 @@ Open <http://127.0.0.1:3000>. Stop met Ctrl+C. De server maakt `data/research.sq
 
 ## Gebruik
 
+0. **Keuzehulp** is het startscherm voor wie gewoon wil weten welke thuisaccu past. Vijf vragen in gewone taal: energie (jaartotalen of een bestand), woning, contract, wat je belangrijk vindt en het advies. Met alleen jaartotalen maakt de server een geschat uurprofiel uit het standaardprofiel E1A 2026 en PVGIS-zonnedata. Het advies toont een zinvol capaciteitsbereik, welke accu’s uit de catalogus passen en waarom niet, en rekent de gekozen accu’s door tegenover geen accu. Aannames en indicaties zijn zichtbaar; zie [keuzehulp](docs/keuzehulp.md).
 1. **Dashboard** is het startpunt: aantallen, de volgende stap en recente imports en analyses. De vaste navigatie brengt je naar een aparte taak; terug en vooruit in de browser werken via URL-hashes.
-2. **Accu’s** toont een doorzoekbare catalogus met type- en fabrikantfilter. Laad via de lege toestand of **⋯ Meer** drie onderzochte bronmomentopnamen van 24 oktober 2026, zonder prijzen. **Eigen accu of offerte** opent een dialoog met drie stappen; lege gegevens blijven onbekend.
+2. **Accu’s** toont een doorzoekbare catalogus met type- en fabrikantfilter. Laad via de lege toestand of **⋯ Meer** de onderzochte bronmomentopnamen van 24 oktober 2026: acht uitvoeringen, waarvan vijf met een gepubliceerde Nederlandse prijs. **Eigen accu of offerte** opent een dialoog met drie stappen; lege gegevens blijven onbekend.
 3. Kies maximaal vier uitvoeringen in de vergelijkingsbalk en open **Vergelijk**. Klap gegevensgroepen in, toon alleen verschillen of verberg rijen zonder bekende waarde. Iedere bronclaim behoudt zijn context. CSV exporteert de zichtbare vergelijking. Er wordt geen automatische winnaar gekozen.
 4. **Opwek & verbruik** toont alle bewaarde imports met periode, resolutie en ROI-geschiktheid. **Importeer bestand** begeleidt je door bestand, kolommen en eenheden, controle en bewaren. Voorbeeldrijen, waarschuwingen en een SVG-maandgrafiek helpen bij de controle. Een bewaard profiel heeft een eigen detailscherm.
 5. **Scenario’s → Nieuw scenario** begeleidt je door locatie en profiel, tarieven en horizon, accu-opties, en controle en bevestigingen. Gebruik een volledig aaneengesloten jaar met AC-opwek én bruto huishoudelijk verbruik op uur- of fijnere basis. Ongeschikte profielen vermelden de reden; onvoldoende metadata geeft ‘Onbekend’. PDOK-adreszoeken gebeurt uitsluitend met de zoekknop.
@@ -29,7 +30,7 @@ De interface is gericht op je eigen energieprofielen, contracttarieven en offert
 
 De berekening toont energiestromen, eigen gebruik, zelfvoorziening, jaarlijkse besparing, levensduurkosten, nettowinst, ROI, netto contante waarde (NPV), blijvende terugverdientijd en gevoeligheidsvarianten. Het eerste model gebruikt vaste tarieven en eigen zonnestroom; dynamische handel en onbalansinkomsten zijn niet opgenomen. Het vergelijkt de ingevoerde uitvoeringen en bepaalt geen wereldwijd optimale accu. Lees de [rekenmethode en het Nederlandse kostenonderzoek](docs/roi-model.md) voor definities, bronnen en grenzen.
 
-Ondersteund: UTF-8 CSV/TSV, `.xlsx`, `.xls`, `.ods` en tabulaire JSON, met kolom- en werkbladkeuze, kopregels, decimaalteken, eenheden, tijdzone en intervalwaarden of cumulatieve standen. Limiet: 10 MB en 250.000 rijen. PDF en afbeeldingen worden niet uitgelezen. Zie [importafspraken](docs/solar-import.md).
+Een slimme-meterexport (P1) met netafname en teruglevering kan samen met de opwek in één bestand worden ingelezen; bruto verbruik wordt dan afgeleid als opwek + afname − teruglevering. Ondersteund: UTF-8 CSV/TSV, `.xlsx`, `.xls`, `.ods` en tabulaire JSON, met kolom- en werkbladkeuze, kopregels, decimaalteken, eenheden, tijdzone en intervalwaarden of cumulatieve standen. Limiet: 10 MB en 250.000 rijen. PDF en afbeeldingen worden niet uitgelezen. Zie [importafspraken](docs/solar-import.md).
 
 ## Configuratie
 
@@ -83,7 +84,7 @@ cargo build --workspace --locked
 cargo doc --workspace --no-deps --locked
 ```
 
-Met Node.js: voer `node --check` uit op alle vijf bestanden in `web/` (`app.js`, `analysis.js`, `ui.js`, `workspace.js`, `results.js`). De tests controleren opslag, migraties, transacties, bronhistorie, HTTP-contracten, import en de rekenkern. Referentiegevallen controleren energiebehoud, vermogensgrenzen, verliezen, salderen, NPV/ROI, financiering, vervanging en veranderende aanbevelingen.
+Met Node.js: voer `node --check` uit op alle zes bestanden in `web/` (`app.js`, `analysis.js`, `ui.js`, `workspace.js`, `results.js`, `keuzehulp.js`). De tests controleren opslag, migraties, transacties, bronhistorie, HTTP-contracten, import en de rekenkern. Referentiegevallen controleren energiebehoud, vermogensgrenzen, verliezen, salderen, NPV/ROI, financiering, vervanging en veranderende aanbevelingen.
 
 `Cargo.lock` legt dependencyversies vast. Stable Rust wordt niet op een specifieke compilerpatch vastgezet. De GitHub Actions-workflow draait zodra de repo naar GitHub wordt gepusht.
 

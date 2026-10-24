@@ -14,6 +14,20 @@ De [BYD Europese garantievoorwaarden](https://site.bydbatterybox.com/uploads/dow
 
 De [HTW Berlin Stromspeicher-Inspektion 2026](https://solar.htw-berlin.de/studien/stromspeicher-inspektion-2026/) vergelijkt complete combinaties van batterijen en omvormers en bespreekt standbyverbruik, deellastverliezen, regeling en garantievoorwaarden. De [methodetoelichting van de Stromspeicher-Inspektor](https://solar.htw-berlin.de/rechner/stromspeicher-inspektor/) maakt onderscheid tussen SPI-referentiegevallen van 5 en 10 kW. Onze datastructuur houdt die indices apart van round-trip-rendement. Een labmeting krijgt een eigen bron en kan naast een fabrikantclaim blijven bestaan.
 
+## Nederlandse momentopnamen voor de keuzehulp
+
+`crates/server/resources/references-nl.json` (sleutel `research-2026-10-24-nl-v1`) bevat gedateerde claims van 24 oktober 2026 voor HomeWizard Plug-In Battery, Marstek Venus E Gen 3.0, Zendure SolarFlow 2400 AC+, Sessy 5 en 10 kWh, en een tweede bron (Nederlands datablad) voor de bestaande Powerwall 3P-uitvoering. Specificaties en prijzen staan als aparte entries met elk hun eigen bron:
+
+| Uitvoering | Specificatiebron | Prijsbron (incl. btw, excl. installatie) |
+| --- | --- | --- |
+| HomeWizard Plug-In Battery | [technische specificaties](https://www.homewizard.com/plug-in-battery-technical-specifications) | € 1.195, [productpagina](https://www.homewizard.com/nl/plug-in-battery/) |
+| Marstek Venus E Gen 3.0 | [productpagina Duitsland](https://marstek.de/products/venus-e-3) | € 1.199, [123accu](https://www.123accu.nl/Marstek-Venus-E-3-0-plug-in-thuisbatterij-i57624.html) |
+| Zendure SolarFlow 2400 AC+ | [productpagina](https://zendure.com/products/zendure-solarflow-2400-ac-plus) | € 829, [ANWB Webwinkel](https://www.anwb.nl/webwinkel/p/252181/zendure-solarflow-2400-ac-thuisbatterij) |
+| Sessy 5 / 10 kWh | [specificaties](https://www.sessy.nl/specificaties/) | € 3.550 / € 5.500, [Sessy](https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/) |
+| Tesla Powerwall 3P | [datablad NL](https://energylibrary.tesla.com/docs/Public/EnergyStorage/Powerwall/3P/Datasheet/nl-nl/Powerwall-3P-Datasheet-NL.pdf) | Geen openbare Nederlandse prijs gevonden |
+
+Wat de bron niet vermeldt, ontbreekt: bijvoorbeeld de bruikbare capaciteit van HomeWizard en Zendure, het round-trip-rendement van Marstek en Zendure, en de meetgrens van het Sessy-rendement. Waar een webwinkel de btw niet expliciet noemt, is de prijs als inclusief vastgelegd omdat een consumentenprijs volgens EU-richtlijn 98/6/EG de eindprijs inclusief btw is; dat staat in de entryvoorwaarden. Prijzen veranderen snel; het zijn momentopnamen, geen actuele prijslijst.
+
 ## Vast te leggen gegevens
 
 De volgende inventaris is ons ontwerp op basis van dit onderzoek. Een veld mag onbekend blijven; een onbekende waarde is geen nul en geen ontkenning.

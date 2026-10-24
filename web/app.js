@@ -249,6 +249,7 @@ $("export-comparison").addEventListener("click", () => {
 function importOptions() {
   return { profile: $("import-profile").value, sheet: $("sheet").value || null, header_row: Number($("header-row").value), delimiter: $("delimiter").value, decimal: $("decimal").value,
     time_column: Number($("time-column").value || 0), production_column: Number($("production-column").value || 1), consumption_column: $("consumption-column").value === "" ? null : Number($("consumption-column").value),
+    consumption_source: $("consumption-source").value, export_column: $("consumption-source").value === "net_meter" && $("export-column").value !== "" ? Number($("export-column").value) : null,
     time_part_column: $("time-part-column").value === "" ? null : Number($("time-part-column").value), date_order: $("date-order").value, missing_rows: $("missing-rows").value,
     unit: $("unit").value, mode: $("mode").value, period: $("period").value, timezone: $("timezone").value.trim(), timestamp_position: $("timestamp-position").value, data_kind: $("data-kind").value };
 }
@@ -259,6 +260,7 @@ function multipart() {
 }
 function invalidatePreview() { previewSignature = null; $("save-file").disabled = true; }
 $("solar-form").addEventListener("change", event => { if (event.target.id !== "import-filename") invalidatePreview(); });
+$("consumption-source").addEventListener("change", () => { $("export-column-label").hidden = $("consumption-source").value !== "net_meter"; });
 const profiles = {
   solaredge: ["Gebruik installatieproductie uit Monitoring (CSV/Excel) of een bewaarde Site Energy JSON-export. Kies bij JSON date/value; eenheid en periode komen uit de metadata. Kies de tijdzone van de installatie. Ontbrekende waarden zijn geen nul.", "https://knowledge-center.solaredge.com/sites/kc/files/se_monitoring_api.pdf"],
   enphase: ["Open Reports in Enlighten en exporteer Site Energy Production, eventueel met Site Energy Consumption. Gebruik het installatietotaal; tel een totaal en de losse panelen niet samen. Recent Power bevat vermogen, geen periode-energie. Controleer Wh/kWh en de datumnotatie.", "https://enphase.com/sites/default/files/2025-08/Enphase-solar-troubleshooting-guide-ING-00061-2.0-EN-INT-2025-08-14.pdf"],
@@ -284,15 +286,20 @@ $("inspect-file").addEventListener("click", () => busy($("inspect-file"), async 
   for (const sheet of result.sheets) { const option = node("option", sheet); option.value = sheet; $("sheet").append(option); }
   if (result.sheets.includes(currentSheet)) $("sheet").value = currentSheet;
   $("sheet-label").hidden = !result.sheets.length;
-  for (const id of ["time-column", "time-part-column", "production-column", "consumption-column"]) {
+  for (const id of ["time-column", "time-part-column", "production-column", "consumption-column", "export-column"]) {
     $(id).replaceChildren();
-    if (["consumption-column", "time-part-column"].includes(id)) { const option = node("option", "Niet beschikbaar / niet nodig"); option.value = ""; $(id).append(option); }
+    if (["consumption-column", "time-part-column", "export-column"].includes(id)) { const option = node("option", "Niet beschikbaar / niet nodig"); option.value = ""; $(id).append(option); }
     result.headers.forEach((header, index) => { const option = node("option", `${index + 1}. ${header || "(leeg)"}`); option.value = String(index); $(id).append(option); });
   }
   const guess = regex => result.headers.findIndex(h => regex.test(h));
   const time = guess(/timestamp|datum|date|tijd|time/i), production = guess(/production|produced|opwek|generation|erzeugung|ertrag|^P$|^value$|^energy|yield/i), consumption = guess(/consumption|consumed|verbruik|verbrauch/i);
   $("time-column").value = String(time >= 0 ? time : 0); $("production-column").value = String(production >= 0 ? production : Math.min(1, result.headers.length - 1));
   $("consumption-column").value = consumption >= 0 ? String(consumption) : "";
+  // P1-exports noemen afname en teruglevering apart; dan is de verbruikskolom geen bruto verbruik.
+  const exported = guess(/teruglever|export|feed.?in|injectie|returned|produced_grid/i), imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen/i);
+  if (exported >= 0 && exported !== production) { $("export-column").value = String(exported); $("consumption-source").value = "net_meter"; if (consumption < 0 && imported >= 0) $("consumption-column").value = String(imported); }
+  else { $("export-column").value = ""; $("consumption-source").value = "gross"; }
+  $("export-column-label").hidden = $("consumption-source").value !== "net_meter";
   const separateTime = guess(/^(time|tijd|uhrzeit)(\s|$)/i);
   $("time-part-column").value = separateTime >= 0 && separateTime !== time ? String(separateTime) : "";
   const productionHeader = result.headers[Number($("production-column").value)] || "";

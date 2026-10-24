@@ -127,6 +127,7 @@ window.UI = (() => {
     const details = el("details"); details.append(el("summary", "Toon als tabel"), table(["Reeks", ...series.map(s => `${s.label} (${unit})`)], rows.map(r => [r.label, ...r.values.map(v => v == null ? "Onbekend" : format(v))]))); figure.append(details); return figure;
   }
   const screens = new Map(), routes = [
+    ["keuzehulp", "Keuzehulp", "Welke thuisaccu past bij jou? Vijf stappen, in gewone taal."],
     ["dashboard", "Dashboard", "Onderbouwen, niet raden. Je onderzoek op één plek."],
     ["accus", "Accu’s", "Brongebonden uitvoeringen, zonder automatische winnaar."],
     ["accus/vergelijk", "Accu’s vergelijken", "Elke claim behoudt haar bron en meetgrens."],
@@ -142,7 +143,7 @@ window.UI = (() => {
     let path = location.hash.slice(2), key = path, id = null;
     if (/^opwek\/\d+$/.test(path)) { key = "opwek/detail"; id = path.split("/")[1]; }
     if (/^scenarios\/\d+$/.test(path)) { key = "scenarios/detail"; id = path.split("/")[1]; }
-    if (!screens.has(key)) { location.replace("#/dashboard"); return; }
+    if (!screens.has(key)) { location.replace(path === "" ? "#/keuzehulp" : "#/dashboard"); return; }
     screens.forEach((s, name) => { s.hidden = name !== key; });
     document.querySelectorAll(".app-nav a").forEach(a => { const active = path.split("/")[0] === a.hash.slice(2); if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
     document.body.classList.remove("menu-open"); $("menu-toggle").setAttribute("aria-expanded", "false");
@@ -154,13 +155,14 @@ window.UI = (() => {
     const sidebar = el("aside", null, "sidebar"); sidebar.append(link("▤ Thuisaccu", "#/dashboard", "brand"), el("p", "LOKAAL ONDERZOEK", "eyebrow"));
     const nav = el("nav", null, "app-nav"); nav.setAttribute("aria-label", "Hoofdnavigatie");
     const icons = {
+      keuzehulp: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14 M12 17.5v.5",
       dashboard: "M3 10L12 3l9 7v11H3z M9 21v-8h6v8",
       scenarios: "M4 20V10h4v10 M10 20V4h4v16 M16 20v-7h4v7",
       accus: "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6",
       opwek: "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0",
       instellingen: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"
     };
-    [["dashboard", "scenarios"], ["accus", "opwek", "instellingen"]].forEach((names, index) => {
+    [["keuzehulp", "dashboard", "scenarios"], ["accus", "opwek", "instellingen"]].forEach((names, index) => {
       const group = el("div", null, index === 0 ? "nav-group" : "nav-group nav-secondary");
       names.forEach(name => { const a = link("", `#/${name}`), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(svg.namespaceURI, "path"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); p.setAttribute("d", icons[name]); svg.append(p); a.append(svg, el("span", routes.find(r => r[0] === name)[1])); group.append(a); });
       nav.append(group);

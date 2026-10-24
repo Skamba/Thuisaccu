@@ -116,3 +116,42 @@ pub fn simulate_year(
     };
     result
 }
+
+/// Bovengrens per capaciteit: verliesvrije accu zonder vermogensgrens of standby.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapacityPoint {
+    pub usable_capacity_kwh: f64,
+    pub battery_to_load_kwh: f64,
+    pub self_consumption_pct: f64,
+    pub self_sufficiency_pct: f64,
+    pub equivalent_cycles: f64,
+}
+
+/// Simuleert twee opeenvolgende jaren zodat de beginlading geen invloed heeft op het resultaat.
+/// Dit is een hulpmiddel om een capaciteitsbereik te kiezen, geen productberekening.
+pub fn capacity_curve(profile: &[EnergyInterval], capacities_kwh: &[f64]) -> Vec<CapacityPoint> {
+    capacities_kwh
+        .iter()
+        .map(|&capacity| {
+            let ideal = Battery {
+                usable_capacity_kwh: capacity,
+                charge_power_kw: f64::MAX,
+                discharge_power_kw: f64::MAX,
+                ac_round_trip_efficiency_pct: 100.0,
+                standby_w: 0.0,
+                annual_capacity_loss_pct: 0.0,
+                operating_life_years: 2,
+            };
+            let battery = (capacity > 0.0).then_some(&ideal);
+            let warm_up = simulate_year(profile, battery, 0, 1.0, 1.0, 0.0);
+            let year = simulate_year(profile, battery, 1, 1.0, 1.0, warm_up.end_storage_kwh);
+            CapacityPoint {
+                usable_capacity_kwh: capacity,
+                battery_to_load_kwh: year.battery_to_load_kwh,
+                self_consumption_pct: year.self_consumption_pct,
+                self_sufficiency_pct: year.self_sufficiency_pct,
+                equivalent_cycles: year.equivalent_cycles,
+            }
+        })
+        .collect()
+}

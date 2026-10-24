@@ -4,13 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>Thuisaccu — Vergelijk met inzicht</title>
+    <title>Thuisaccu — Welke thuisaccu past bij jou?</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/ui.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/analysis.js" defer></script>
     <script src="/results.js" defer></script>
     <script src="/workspace.js" defer></script>
+    <script src="/keuzehulp.js" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Naar de inhoud</a>
@@ -37,7 +38,7 @@
           <label id="sheet-label" hidden>Werkblad<select id="sheet"></select></label>
           <button id="inspect-file" type="button" class="secondary">1. Lees kolommen</button>
           <div id="mapping" hidden>
-            <div class="field-grid"><label>Datum / gecombineerd tijdstip<select id="time-column"></select></label><label>Aparte tijdkolom (optioneel)<select id="time-part-column"></select></label><label>Zonne-opwek<select id="production-column"></select></label><label>Verbruik (optioneel)<select id="consumption-column"></select></label><label>Eenheid<select id="unit"><option value="kwh">kWh — energie</option><option value="wh">Wh — energie</option><option value="kw">kW — gemiddeld vermogen</option><option value="w">W — gemiddeld vermogen</option></select></label>
+            <div class="field-grid"><label>Datum / gecombineerd tijdstip<select id="time-column"></select></label><label>Aparte tijdkolom (optioneel)<select id="time-part-column"></select></label><label>Zonne-opwek<select id="production-column"></select></label><label>Verbruik of netafname (optioneel)<select id="consumption-column"></select></label><label>Wat staat in die kolom?<select id="consumption-source"><option value="gross">Totaal verbruik van het huis (bruto)</option><option value="net_meter">Netafname uit de slimme meter (P1)</option></select></label><label id="export-column-label" hidden>Teruglevering naar het net (P1)<select id="export-column"></select></label><label>Eenheid<select id="unit"><option value="kwh">kWh — energie</option><option value="wh">Wh — energie</option><option value="kw">kW — gemiddeld vermogen</option><option value="w">W — gemiddeld vermogen</option></select></label>
             <label>Soort waarden<select id="mode"><option value="interval">Opbrengst per meetperiode</option><option value="cumulative">Cumulatieve meterstanden</option></select></label><label>Meetperiode<select id="period"><option value="5min">5 minuten</option><option value="10min">10 minuten</option><option value="15min">15 minuten</option><option value="30min">30 minuten</option><option value="hour" selected>Uur</option><option value="day">Dag</option><option value="week">Week</option><option value="month">Maand</option><option value="year">Jaar</option></select></label>
             <label>Tijdstempel markeert<select id="timestamp-position"><option value="start">Begin van de periode</option><option value="end">Einde van de periode</option></select></label><label>Decimaalteken<select id="decimal"><option value="dot">Punt (1.25)</option><option value="comma">Komma (1,25)</option></select></label>
             <label>Tijdzone<input id="timezone" value="UTC" placeholder="Europe/Amsterdam" required></label><label>Herkomst gegevens<select id="data-kind"><option value="measured">Gemeten productie</option><option value="modelled">Gemodelleerde opwek</option></select></label></div>

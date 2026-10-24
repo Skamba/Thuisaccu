@@ -1,5 +1,9 @@
 use crate::api::{ApiError, database_error};
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use chrono::{Datelike, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -7,7 +11,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, time::Duration};
 use thuisaccu_core::{
     analysis::{self, Candidate, Parameters},
-    sizing::EnergyInterval,
+    sizing::{self, EnergyInterval},
 };
 use thuisaccu_storage::{
     Catalog,
@@ -88,8 +92,57 @@ pub async fn run(
             "Ongeldige coördinaten voor de Nederlandse adresondersteuning.",
         ));
     }
+    let profile = load_profile(&catalog, request.solar_import_id).await?;
+    let metadata = catalog
+        .solar_metadata(request.solar_import_id)
+        .await
+        .map_err(database_error)?;
+    let profile_hash = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&profile).map_err(|e| invalid(e.to_string()))?)
+    );
+    let input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
+    let parameters = request.parameters.clone();
+    let candidates = request.candidates.clone();
+    let mut result =
+        tokio::task::spawn_blocking(move || analysis::analyze(&profile, &parameters, &candidates))
+            .await
+            .map_err(|_| invalid("De scenarioanalyse kon niet worden voltooid."))?
+            .map_err(|e| invalid(e.to_string()))?;
+    if metadata["options"]["is_demo"] == true {
+        result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
+    } else if metadata["options"]["generator"] == crate::typical_profile::GENERATOR {
+        result.warnings.insert(
+            0,
+            "GESCHAT PROFIEL: verbruik en opwek zijn afgeleid uit jaartotalen met een standaardprofiel en één PVGIS-weerjaar. Dit is een indicatie, geen meting van dit huishouden.".into(),
+        );
+    } else if metadata["options"]["data_kind"] == "modelled" {
+        result.warnings.insert(
+            0,
+            "De opwek is gemodelleerd; dit is geen volledig gemeten huishoudprofiel.".into(),
+        );
+    }
+    let input_json = serde_json::to_string(&input_snapshot).map_err(|e| invalid(e.to_string()))?;
+    let result_json = serde_json::to_string(&result).map_err(|e| invalid(e.to_string()))?;
+    let id = catalog
+        .save_analysis(&NewAnalysis {
+            import_id: request.solar_import_id,
+            title: &request.title,
+            model_version: &result.model_version,
+            profile_sha256: &profile_hash,
+            input_json: &input_json,
+            result_json: &result_json,
+            now: Utc::now().timestamp(),
+        })
+        .await
+        .map_err(database_error)?;
+    Ok((StatusCode::CREATED, Json(json!({"id":id,"result":result}))))
+}
+
+/// Eén aaneengesloten reeks met bruto verbruik per interval, of een gebruikersfout.
+async fn load_profile(catalog: &Catalog, import_id: i64) -> Result<Vec<EnergyInterval>, ApiError> {
     let intervals = catalog
-        .solar_intervals(request.solar_import_id)
+        .solar_intervals(import_id)
         .await
         .map_err(database_error)?;
     if intervals.is_empty() {
@@ -114,45 +167,32 @@ pub async fn run(
             consumption_kwh: load / 1000.0,
         });
     }
-    let metadata = catalog
-        .solar_metadata(request.solar_import_id)
-        .await
-        .map_err(database_error)?;
-    let profile_hash = format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&profile).map_err(|e| invalid(e.to_string()))?)
-    );
-    let input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
-    let parameters = request.parameters.clone();
-    let candidates = request.candidates.clone();
-    let mut result =
-        tokio::task::spawn_blocking(move || analysis::analyze(&profile, &parameters, &candidates))
-            .await
-            .map_err(|_| invalid("De scenarioanalyse kon niet worden voltooid."))?
-            .map_err(|e| invalid(e.to_string()))?;
-    if metadata["options"]["is_demo"] == true {
-        result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
-    } else if metadata["options"]["data_kind"] == "modelled" {
-        result.warnings.insert(
-            0,
-            "De opwek is gemodelleerd; dit is geen volledig gemeten huishoudprofiel.".into(),
-        );
+    Ok(profile)
+}
+
+/// Bovengrens van zelf gebruikte zonnestroom per accugrootte, als hulp bij het kiezen van een bereik.
+pub async fn capacity_curve(
+    State(catalog): State<Catalog>,
+    Path(import_id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    let profile = load_profile(&catalog, import_id).await?;
+    let hours: f64 = profile.iter().map(|i| i.duration_hours).sum();
+    if !((hours - 8760.0).abs() < 0.01 || (hours - 8784.0).abs() < 0.01) {
+        return Err(invalid(
+            "Gebruik een volledig jaar van 365 of 366 dagen voor de capaciteitsverkenning.",
+        ));
     }
-    let input_json = serde_json::to_string(&input_snapshot).map_err(|e| invalid(e.to_string()))?;
-    let result_json = serde_json::to_string(&result).map_err(|e| invalid(e.to_string()))?;
-    let id = catalog
-        .save_analysis(&NewAnalysis {
-            import_id: request.solar_import_id,
-            title: &request.title,
-            model_version: &result.model_version,
-            profile_sha256: &profile_hash,
-            input_json: &input_json,
-            result_json: &result_json,
-            now: Utc::now().timestamp(),
-        })
+    let capacities: Vec<f64> = [
+        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0,
+    ]
+    .to_vec();
+    let points = tokio::task::spawn_blocking(move || sizing::capacity_curve(&profile, &capacities))
         .await
-        .map_err(database_error)?;
-    Ok((StatusCode::CREATED, Json(json!({"id":id,"result":result}))))
+        .map_err(|_| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
+    Ok(Json(json!({
+        "points": points,
+        "assumptions": "Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening.",
+    })))
 }
 
 pub async fn history(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {

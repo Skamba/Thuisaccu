@@ -11,7 +11,7 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 | `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
 | `crates/storage` | SQLx/SQLite, migraties in `migrations/`, opslagmethoden en leesmodellen. |
 | `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
-| `web/` | `index.html`, `styles.css`, `app.js` (catalogus, vergelijking, import), `analysis.js` (scenario en resultaat). Ingebakken via `include_str!` in `crates/server/src/lib.rs`. |
+| `web/` | `index.html`, `styles.css`, `ui.js` (router, helpers), `app.js` (catalogus, vergelijking, import), `analysis.js` (scenario-editor), `workspace.js` (schermen), `results.js` (resultaat), `keuzehulp.js` (begeleide keuzehulp, startscherm). Ingebakken via `include_str!` in `crates/server/src/lib.rs`. |
 | `docs/` | Architectuur, API-contract, datamodel, importafspraken, rekenmodel, onderzoek en roadmap. |
 
 ## Commando's
@@ -23,7 +23,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
 cargo doc --workspace --no-deps --locked
-node --check web/app.js && node --check web/analysis.js   # optioneel, als Node aanwezig is
+for f in web/*.js; do node --check "$f"; done   # optioneel, als Node aanwezig is
 ```
 
 Draai alle vijf de cargo-controles voordat je werk afrondt; CI (`.github/workflows/ci.yml`) draait precies deze op Linux én Windows. Gebruik altijd `--locked`.
@@ -85,7 +85,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 ## Ingebouwde onderzoeksdata
 
-- `crates/server/resources/references.json` zijn gedateerde bronmomentopnamen (24 oktober 2026) zonder prijzen; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
+- `crates/server/resources/references.json` en `references-nl.json` zijn gedateerde bronmomentopnamen (24 oktober 2026), elk met een eigen importsleutel; alleen de Nederlandse set bevat prijzen. `typical-profiles.json` bevat de profielvormen voor de keuzehulp, gebouwd met `tools/build_typical_profiles.py`; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
 - Verzin geen specificaties, prijzen of bronnen. Bij bijwerken: nieuwe peildatum, controleerbare bron-URL en vindplaats, en de documentatie in [docs/battery-research.md](docs/battery-research.md) of [docs/roi-model.md](docs/roi-model.md) bijwerken.
 
 ## Wat buiten scope is tenzij gevraagd

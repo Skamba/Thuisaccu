@@ -12,15 +12,19 @@ De volgende routes bestaan:
 | `/ui.js` | `200`, JavaScript | Router, opmaak, meldingen, tabs en SVG-helpers |
 | `/workspace.js` | `200`, JavaScript | Dashboard, lijsten, wizards en instellingen |
 | `/results.js` | `200`, JavaScript | Resultaatdashboard, grafieken en export |
+| `/keuzehulp.js` | `200`, JavaScript | Begeleide keuzehulp voor consumenten |
 | `/samples/solar.csv`, `/samples/solar.json`, `/samples/solar.xlsx` | `200`, download | Fictieve voorbeelddata |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
-| `POST /api/v1/references` | `200`, JSON | Expliciete, idempotente invoer van drie bronmomentopnamen; `imported: true/false` |
+| `POST /api/v1/references` | `200`, JSON | Expliciete invoer van twee sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was |
 | `POST /api/v1/solar/inspect` | `200`, JSON | Kolommen, eerste acht rijen, werkbladen, aantal rijen, eventuele metadata |
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |
 | `GET /api/v1/solar/imports` | `200`, JSON | Bewaarde overzichten in een `imports`-array |
+| `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens |
+| `POST /api/v1/solar/typical` | `201`, JSON met `id`, `filename`, `summary` | Geschat uurjaar uit jaartotalen opslaan als gemodelleerde import |
+| `GET /api/v1/solar/typical` | `200`, JSON | Bronnen van de ingebakken profielvormen en PV-opbrengst per kWp per ligging |
 | `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen en gedateerde bronlinks |
 | `POST /api/v1/analysis/demo` | `200`, JSON met `id` | Expliciet synthetisch volledig demojaar aanmaken of hergebruiken |
 | `POST /api/v1/analysis/runs` | `201`, JSON met `id` en `result` | Valideren, simuleren, vergelijken en met invoer opslaan |
@@ -51,9 +55,15 @@ Nieuwe bronclaims zijn `unreviewed`. Herhaalde invoer voor dezelfde identiteit m
 
 De drie uploadroutes accepteren `multipart/form-data` met één `file` en één optioneel `options`-veld dat JSON bevat. Gebruik voor `options` de velden van `ImportOptions` in `crates/server/src/solar_import.rs`. Alle velden hebben defaults; de browser toont de instellingen expliciet en vereist een gecontroleerde preview voor de bewaaractie. De API parseert en valideert bij bewaren opnieuw.
 
-Belangrijkste opties: profiel, werkblad, kopregelindex (nul betekent eerste regel), kolomindexen vanaf nul, optionele aparte tijdkolom, eenheid, interval/cumulatief, periode, IANA-tijdzone, tijdstempelpositie, decimaalteken, datumvolgorde en beleid voor ontbrekende meetwaarden. Profielen zijn `generic`, `solaredge`, `enphase`, `sma`, `fronius` en `pvgis`.
+Belangrijkste opties: profiel, werkblad, kopregelindex (nul betekent eerste regel), kolomindexen vanaf nul, optionele aparte tijdkolom, eenheid, interval/cumulatief, periode, IANA-tijdzone, tijdstempelpositie, decimaalteken, datumvolgorde en beleid voor ontbrekende meetwaarden. Profielen zijn `generic`, `solaredge`, `enphase`, `sma`, `fronius` en `pvgis`. Met `consumption_source: "net_meter"` en `export_column` is de verbruikskolom netafname en de terugleverkolom netteruglevering; bruto verbruik wordt per interval `opwek + afname − teruglevering`. Standaard is `consumption_source: "gross"`.
 
 Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfde import-ID terug. De requestlimiet is 11 MiB inclusief multipart-overhead; het bestand zelf is maximaal 10 MiB. Per bestand gelden maximaal 250.000 gegevensrijen en 200 kolommen. Lees [de importafspraken](solar-import.md) voor de betekenis van waarden en beperkingen.
+
+## Geschat profiel en capaciteitscurve
+
+`POST /api/v1/solar/typical` accepteert `{ "annual_consumption_kwh": 3500, "solar": { "orientation": "south", "annual_production_kwh": 4000, "peak_power_kwp": null } }`. Verbruik is bruto (100–100.000 kWh). `solar` is `null` zonder panelen; geef anders precies één van jaaropwek (1–100.000 kWh) of piekvermogen (0,1–100 kWp). Ligging is `south`, `south_east`, `south_west`, `east`, `west` of `east_west`. Het resultaat is een volledig uurjaar met `data_kind: modelled` en `generator: typical-nl-v1`; dezelfde invoer geeft hetzelfde import-ID. Een analyse op zo’n profiel begint met de waarschuwing GESCHAT PROFIEL. Zie [keuzehulp](keuzehulp.md) voor bronnen en grenzen.
+
+`GET /api/v1/solar/imports/{id}/capacity` vereist dezelfde aaneengesloten jaarreeks met bruto verbruik als een analyse en geeft per capaciteit `usable_capacity_kwh`, `battery_to_load_kwh`, `self_consumption_pct`, `self_sufficiency_pct` en `equivalent_cycles`.
 
 ## Scenario-invoer en resultaten
 
