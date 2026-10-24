@@ -33,8 +33,9 @@ window.Data = (() => {
     if (![8760, 8784].some(hours => Math.abs(s.coverage_hours - hours) < 0.001)) return { ok: false, reason: "Geen volledig jaar" };
     if (s.rows > 110000) return { ok: false, reason: "Meer dan 110.000 meetperioden" };
     if (o.is_demo === true) return { ok: true, reason: "Bruikbaar · FICTIEF" };
-    if (o.mode === "cumulative") return { ok: null, reason: "Onbekend: intervalduur niet vast te stellen" };
-    const hours = { "5min": 1 / 12, "10min": 1 / 6, "15min": 0.25, "30min": 0.5, hour: 1 }[o.period];
+    // Een combinatie met een meterbestand heeft altijd vaste perioden van `combined_period`.
+    if (o.mode === "cumulative" && !o.combined_period) return { ok: null, reason: "Onbekend: intervalduur niet vast te stellen" };
+    const hours = { "5min": 1 / 12, "10min": 1 / 6, "15min": 0.25, "30min": 0.5, hour: 1 }[o.combined_period || o.period];
     if (!hours) return { ok: false, reason: "Uur- of fijnere waarden nodig" };
     if (Math.abs(s.rows * hours - s.coverage_hours) > 0.001) return { ok: null, reason: "Onbekend: dekking niet eenduidig" };
     return { ok: true, reason: o.generator === "typical-nl-v1" ? "Bruikbaar · geschat profiel" : "Bruikbaar" };

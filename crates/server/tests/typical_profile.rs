@@ -150,3 +150,75 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
             .starts_with("GESCHAT PROFIEL")
     );
 }
+
+#[test]
+fn heat_pump_and_ev_reshape_the_year_but_keep_the_annual_total() {
+    use thuisaccu_server::typical_profile::{TypicalRequest, build};
+    let request = |extra: Value| -> TypicalRequest {
+        let mut base = json!({"annual_consumption_kwh": 6000, "solar": null});
+        base.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(base).unwrap()
+    };
+    let month = |profile: &thuisaccu_server::typical_profile::TypicalProfile, label: &str| {
+        profile
+            .summary
+            .months
+            .iter()
+            .find(|m| m.label == label)
+            .unwrap()
+            .consumption_kwh
+            .unwrap()
+    };
+    let plain = build(&request(json!({}))).unwrap();
+    let heated = build(&request(json!({"heat_pump_kwh": 3000}))).unwrap();
+    // Zelfde jaartotaal; de warmtepomp verschuift verbruik naar de winter.
+    assert!((heated.summary.consumption_kwh.unwrap() - 6000.0).abs() < 1e-6);
+    let total: f64 = heated
+        .intervals
+        .iter()
+        .map(|i| i.consumption_wh.unwrap())
+        .sum();
+    assert!((total / 1000.0 - 6000.0).abs() < 1e-6);
+    assert!(month(&heated, "2026-01") > month(&plain, "2026-01"));
+    assert!(month(&heated, "2026-07") < month(&plain, "2026-07"));
+
+    let charged = build(&request(
+        json!({"ev": {"annual_kwh": 2000, "charging": "evening"}}),
+    ))
+    .unwrap();
+    let total: f64 = charged
+        .intervals
+        .iter()
+        .map(|i| i.consumption_wh.unwrap())
+        .sum();
+    assert!((total / 1000.0 - 6000.0).abs() < 1e-6);
+    // 2000 kWh / 365 dagen = 5,48 kWh per dag: 3,68 kWh om 18.00 uur en de rest om 19.00 uur lokale tijd.
+    let june_first_18h = 1_780_329_600; // 2026-06-01T16:00:00Z = 18.00 uur zomertijd
+    let at = |p: &thuisaccu_server::typical_profile::TypicalProfile, t: i64| {
+        p.intervals
+            .iter()
+            .find(|i| i.start_unix_s == t)
+            .unwrap()
+            .consumption_wh
+            .unwrap()
+    };
+    let added = at(&charged, june_first_18h) - at(&plain, june_first_18h) * (4000.0 / 6000.0);
+    assert!((added - 3680.0).abs() < 1.0, "{added}");
+    assert!(
+        charged
+            .summary
+            .warnings
+            .iter()
+            .any(|w| w.contains("Elektrische auto"))
+    );
+
+    for invalid in [
+        json!({"heat_pump_kwh": 6000}),
+        json!({"heat_pump_kwh": -1}),
+        json!({"ev": {"annual_kwh": 1000, "charging": "sometimes"}}),
+    ] {
+        assert!(build(&request(invalid)).is_err());
+    }
+}

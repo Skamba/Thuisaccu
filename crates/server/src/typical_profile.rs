@@ -20,7 +20,32 @@ pub struct TypicalRequest {
     /// Bruto huishoudelijk jaarverbruik: netafname + eigen gebruikte zonnestroom.
     pub annual_consumption_kwh: f64,
     pub solar: Option<TypicalSolar>,
+    /// Deel van het jaarverbruik voor een warmtepomp (kWh). Zit al in het jaarverbruik;
+    /// alleen de verdeling over het jaar verandert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heat_pump_kwh: Option<f64>,
+    /// Deel van het jaarverbruik voor het thuisladen van een elektrische auto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ev: Option<TypicalEv>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypicalEv {
+    pub annual_kwh: f64,
+    /// `evening` (vanaf 18.00 uur), `night` (vanaf 01.00 uur) of `daytime` (vanaf 11.00 uur).
+    pub charging: String,
+}
+
+/// Laadvermogen van een 1-fase laadpunt van 16 A: 230 V × 16 A.
+const EV_CHARGE_KW: f64 = 3.68;
+
+/// Aandeel warm tapwater in het warmtepompverbruik: CE Delft, factsheet bodemwarmtepomp
+/// (2021), 2 personen (680 kWh tapwater + 320 kWh stilstandsverlies) naast 1.960 kWh
+/// ruimteverwarming bij energielabel B.
+const TAP_WATER_SHARE: f64 = 1000.0 / 2960.0;
+const CE_DELFT_URL: &str =
+    "https://ce.nl/wp-content/uploads/2021/04/05_Factsheet-Bodemwarmtepomp_DEF.pdf";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +63,15 @@ struct Resource {
     interval_s: i64,
     load: LoadShape,
     pv: PvShapes,
+    heating: HeatingShape,
+}
+
+#[derive(Deserialize)]
+struct HeatingShape {
+    source: String,
+    url: String,
+    base_c: f64,
+    degree_hours: Vec<u64>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +103,14 @@ pub fn sources() -> Value {
     json!({
         "load": {"source": r.load.source, "url": r.load.url},
         "pv": {"source": r.pv.source, "url": r.pv.url, "annual_kwh_per_kwp": annual_yields()},
+        "heat_pump": {
+            "source": format!("{}; aandeel warm tapwater {:.0}% volgens CE Delft, factsheet bodemwarmtepomp (2 personen, label B)", r.heating.source, TAP_WATER_SHARE * 100.0),
+            "url": r.heating.url,
+            "tap_water_url": CE_DELFT_URL,
+            "base_c": r.heating.base_c,
+            "tap_water_share": TAP_WATER_SHARE,
+        },
+        "ev": {"charge_kw": EV_CHARGE_KW, "start_hours": {"evening": 18, "night": 1, "daytime": 11}},
     })
 }
 
@@ -120,10 +162,53 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
         return Err("Vul een jaarverbruik tussen 100 en 100.000 kWh in.".into());
     }
     let hours = r.load.values.len();
+    let heat_pump = request.heat_pump_kwh.unwrap_or(0.0);
+    let ev = request.ev.as_ref().map_or(0.0, |ev| ev.annual_kwh);
+    if !heat_pump.is_finite() || !(0.0..=30_000.0).contains(&heat_pump) {
+        return Err("Vul voor de warmtepomp 0 tot 30.000 kWh per jaar in.".into());
+    }
+    if !ev.is_finite() || !(0.0..=20_000.0).contains(&ev) {
+        return Err("Vul voor de elektrische auto 0 tot 20.000 kWh per jaar in.".into());
+    }
+    let ev_start = match request.ev.as_ref().map(|ev| ev.charging.as_str()) {
+        None => None,
+        Some("evening") => Some(18),
+        Some("night") => Some(1),
+        Some("daytime") => Some(11),
+        Some(_) => {
+            return Err("Kies voor het laden van de auto ’s avonds, ’s nachts of overdag.".into());
+        }
+    };
+    let household = consumption - heat_pump - ev;
+    if household < 100.0 {
+        return Err("Warmtepomp en auto samen zijn bijna even groot als of groter dan je totale verbruik. Het jaarverbruik is inclusief warmtepomp en auto; controleer de getallen.".into());
+    }
     let mut warnings = vec![
         "GESCHAT PROFIEL: het verbruik volgt het standaardprofiel E1A, een gemiddelde van veel huishoudens zonder zonnepanelen. Echte pieken en dalen van één huishouden zijn groter; de uitkomst is een indicatie, geen meting.".to_owned(),
-        "Extra verbruik van een warmtepomp, laadpaal of thuiswerken verandert het dagpatroon. Dat zit niet in het standaardprofiel.".to_owned(),
     ];
+    if heat_pump > 0.0 {
+        warnings.push(format!(
+            "Warmtepomp: {} kWh van het jaarverbruik. {:.0}% volgt de graaduren onder {} °C van het weerjaar 2023 in De Bilt (ruimteverwarming), {:.0}% is gelijkmatig over het jaar verdeeld (warm tapwater, verhouding uit een voorbeeld van CE Delft). Een lager rendement bij vorst en de regeling van je eigen warmtepomp zijn niet meegenomen.",
+            heat_pump.round(),
+            (1.0 - TAP_WATER_SHARE) * 100.0,
+            r.heating.base_c,
+            TAP_WATER_SHARE * 100.0
+        ));
+    }
+    if let (Some(start), Some(request_ev)) = (ev_start, &request.ev) {
+        warnings.push(format!(
+            "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {EV_CHARGE_KW} kW vanaf {start:02}.00 uur ({}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
+            ev.round(),
+            match request_ev.charging.as_str() {
+                "evening" => "’s avonds",
+                "night" => "’s nachts",
+                _ => "overdag",
+            }
+        ));
+    }
+    if heat_pump == 0.0 && ev == 0.0 {
+        warnings.push("Extra verbruik van een warmtepomp, laadpaal of thuiswerken verandert het dagpatroon. Dat zit niet in dit profiel; geef het apart op voor een betere schatting.".to_owned());
+    }
     let (production_kwh, pv) = match &request.solar {
         None => {
             warnings.push(
@@ -153,14 +238,20 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
         }
     };
     let load_sum: f64 = r.load.values.iter().map(|&v| v as f64).sum();
+    let degree_sum: f64 = r.heating.degree_hours.iter().map(|&v| v as f64).sum();
+    let charging = ev_start.map_or_else(|| vec![0.0; hours], |start| ev_load(r, ev, start));
     let intervals: Vec<SolarInterval> = (0..hours)
         .map(|i| {
             let start = r.start_unix_s + i as i64 * r.interval_s;
+            let heating = heat_pump
+                * ((1.0 - TAP_WATER_SHARE) * r.heating.degree_hours[i] as f64 / degree_sum
+                    + TAP_WATER_SHARE / hours as f64);
+            let kwh = r.load.values[i] as f64 / load_sum * household + heating + charging[i];
             SolarInterval {
                 start_unix_s: start,
                 end_unix_s: start + r.interval_s,
                 production_wh: pv[i] * 1000.0,
-                consumption_wh: Some(r.load.values[i] as f64 / load_sum * consumption * 1000.0),
+                consumption_wh: Some(kwh * 1000.0),
             }
         })
         .collect();
@@ -216,9 +307,14 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
                 label_orientation(&s.orientation)
             )
         });
+    let extras: String = [(heat_pump, "warmtepomp"), (ev, "auto")]
+        .iter()
+        .filter(|(kwh, _)| *kwh > 0.0)
+        .map(|(kwh, label)| format!(" ({} kWh {label})", kwh.round()))
+        .collect();
     Ok(TypicalProfile {
         title: format!(
-            "Geschat profiel · {} kWh verbruik · {solar_label}",
+            "Geschat profiel · {} kWh verbruik{extras} · {solar_label}",
             consumption.round()
         ),
         options: json!({
@@ -235,4 +331,37 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
         intervals,
         summary,
     })
+}
+
+/// Laadt elke dag dezelfde hoeveelheid met vast vermogen vanaf het gekozen lokale uur.
+/// Wat niet binnen het uur past, schuift door naar de volgende uren.
+fn ev_load(r: &Resource, annual_kwh: f64, start_hour: u32) -> Vec<f64> {
+    use chrono::Timelike;
+    let hours = r.load.values.len();
+    let per_day = annual_kwh / (hours as f64 / 24.0);
+    let mut load = vec![0.0; hours];
+    for i in 0..hours {
+        let local = Utc
+            .timestamp_opt(r.start_unix_s + i as i64 * r.interval_s, 0)
+            .single()
+            .map(|t| t.with_timezone(&Amsterdam));
+        if local.is_none_or(|t| t.hour() != start_hour) {
+            continue;
+        }
+        let mut remaining = per_day;
+        let mut index = i;
+        while remaining > 1e-12 {
+            let room = EV_CHARGE_KW - load[index % hours];
+            let added = room.min(remaining);
+            load[index % hours] += added;
+            remaining -= added;
+            index += 1;
+        }
+    }
+    // Precies het opgegeven jaarverbruik, ook als het aantal laaddagen afwijkt door zomertijd.
+    let total: f64 = load.iter().sum();
+    if total > 0.0 {
+        load.iter_mut().for_each(|v| *v *= annual_kwh / total);
+    }
+    load
 }

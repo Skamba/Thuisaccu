@@ -1,4 +1,6 @@
-use thuisaccu_server::solar_import::{ImportOptions, normalize, read_table};
+use thuisaccu_server::solar_import::{
+    ImportOptions, MeterOptions, combine_with_meter, normalize, read_table,
+};
 
 fn analyze(
     text: &str,
@@ -308,4 +310,85 @@ fn p1_import_and_export_derive_gross_consumption_from_the_energy_balance() {
         ..options
     };
     assert!(analyze("time,p,i\n2026-06-01T10:00:00Z,1,1\n", &missing_export).is_err());
+}
+
+/// Synthetische reeksen: omvormer per 15 minuten, meter per uur.
+fn combine(
+    inverter: &str,
+    meter: &str,
+    meter_period: &str,
+) -> Result<thuisaccu_storage::solar::SolarSummary, String> {
+    let inverter_options = ImportOptions {
+        period: "15min".into(),
+        ..Default::default()
+    };
+    let table = read_table("omvormer.csv", inverter.as_bytes(), &inverter_options)?;
+    let (production, summary) = normalize(&table, &inverter_options)?;
+    let meter_options = MeterOptions {
+        period: meter_period.into(),
+        timezone: "UTC".into(),
+        ..Default::default()
+    }
+    .as_import_options();
+    let table = read_table("meter.csv", meter.as_bytes(), &meter_options)?;
+    let (grid, _) = normalize(&table, &meter_options)?;
+    combine_with_meter(&production, &summary, &grid, "UTC").map(|(_, summary)| summary)
+}
+
+#[test]
+fn inverter_and_meter_files_combine_on_complete_common_hours_without_filling_gaps() {
+    // Uur 10 en 12 staan volledig in beide bestanden; in uur 11 ontbreekt één kwartier opwek.
+    let mut inverter = String::from("time,production\n");
+    for hour in [10, 11, 12] {
+        for minute in [0, 15, 30, 45] {
+            if hour == 11 && minute == 30 {
+                continue;
+            }
+            inverter.push_str(&format!("2026-06-01T{hour}:{minute:02}:00Z,0.25\n"));
+        }
+    }
+    let meter = "time,import,export\n2026-06-01T10:00:00Z,0.5,0.75\n2026-06-01T11:00:00Z,0.5,0.25\n2026-06-01T12:00:00Z,1,0\n";
+    let summary = combine(&inverter, meter, "hour").unwrap();
+    assert_eq!(summary.rows, 2);
+    assert_eq!(summary.gaps, 1);
+    assert_eq!(summary.production_kwh, 2.0);
+    // Bruto = opwek + netafname − teruglevering: (1 + 0,5 − 0,75) + (1 + 1 − 0) = 2,75 kWh.
+    assert!((summary.consumption_kwh.unwrap() - 2.75).abs() < 1e-9);
+    assert!(
+        summary
+            .warnings
+            .iter()
+            .any(|w| w.contains("niet volledig in beide bestanden"))
+    );
+    assert!(
+        summary
+            .warnings
+            .iter()
+            .any(|w| w.contains("gecombineerd per uur"))
+    );
+}
+
+#[test]
+fn incompatible_resolutions_and_impossible_balances_are_rejected() {
+    let inverter = "time,production\n2026-06-01T10:00:00Z,0.25\n2026-06-01T10:15:00Z,0.25\n";
+    let ten_minutes =
+        "time,import,export\n2026-06-01T10:00:00Z,0.1,0\n2026-06-01T10:10:00Z,0.1,0\n";
+    assert!(
+        combine(inverter, ten_minutes, "10min")
+            .unwrap_err()
+            .contains("passen niet op elkaar")
+    );
+    let too_much_export =
+        "time,import,export\n2026-06-01T10:00:00Z,0,2\n2026-06-01T10:15:00Z,0,2\n";
+    assert!(
+        combine(inverter, too_much_export, "15min")
+            .unwrap_err()
+            .contains("teruglevering groter")
+    );
+    let elsewhere = "time,import,export\n2026-07-01T10:00:00Z,0,0\n";
+    assert!(
+        combine(inverter, elsewhere, "15min")
+            .unwrap_err()
+            .contains("geen gemeenschappelijke")
+    );
 }

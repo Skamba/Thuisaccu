@@ -12,7 +12,7 @@ use thuisaccu_storage::{
 };
 
 use crate::{
-    solar_import::{self, ImportOptions},
+    solar_import::{self, ImportOptions, MeterOptions},
     typical_profile::{self, TypicalRequest},
 };
 
@@ -103,12 +103,36 @@ struct Upload {
     filename: String,
     bytes: Vec<u8>,
     options: ImportOptions,
+    /// Optioneel meterbestand (netafname en teruglevering) naast het omvormerbestand.
+    meter: Option<MeterUpload>,
+}
+
+struct MeterUpload {
+    filename: String,
+    bytes: Vec<u8>,
+    options: MeterOptions,
+}
+
+async fn file_field(
+    field: axum::extract::multipart::Field<'_>,
+) -> Result<(String, Vec<u8>), ApiError> {
+    let filename = field.file_name().unwrap_or("upload.csv").to_owned();
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+    if bytes.is_empty() || bytes.len() > 10 * 1024 * 1024 {
+        return Err(bad_request("Gebruik een bestand van maximaal 10 MB."));
+    }
+    Ok((filename, bytes.to_vec()))
 }
 
 async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
     let mut file = None;
     let mut options = ImportOptions::default();
     let mut options_seen = false;
+    let mut meter_file = None;
+    let mut meter_options: Option<MeterOptions> = None;
     while let Some(field) = multipart
         .next_field()
         .await
@@ -119,15 +143,24 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
                 if file.is_some() {
                     return Err(bad_request("Kies één bestand."));
                 }
-                let filename = field.file_name().unwrap_or("upload.csv").to_owned();
-                let bytes = field
-                    .bytes()
-                    .await
-                    .map_err(|e| bad_request(e.to_string()))?;
-                if bytes.is_empty() || bytes.len() > 10 * 1024 * 1024 {
-                    return Err(bad_request("Gebruik een bestand van maximaal 10 MB."));
+                file = Some(file_field(field).await?);
+            }
+            Some("meter_file") => {
+                if meter_file.is_some() {
+                    return Err(bad_request("Kies één meterbestand."));
                 }
-                file = Some((filename, bytes.to_vec()));
+                meter_file = Some(file_field(field).await?);
+            }
+            Some("meter_options") => {
+                if meter_options.is_some() {
+                    return Err(bad_request("Meterinstellingen zijn dubbel meegestuurd."));
+                }
+                meter_options = Some(
+                    serde_json::from_str(
+                        &field.text().await.map_err(|e| bad_request(e.to_string()))?,
+                    )
+                    .map_err(|e| bad_request(format!("Meterinstellingen: {e}")))?,
+                );
             }
             Some("options") => {
                 if options_seen {
@@ -142,14 +175,28 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
             _ => return Err(bad_request("Onbekend uploadveld.")),
         }
     }
-    if options.header_row > 1000 {
+    if options.header_row > 1000 || meter_options.as_ref().is_some_and(|m| m.header_row > 1000) {
         return Err(bad_request("Sla maximaal 1000 kopregels over."));
     }
     let (filename, bytes) = file.ok_or_else(|| bad_request("Geen bestand ontvangen."))?;
+    let meter = match (meter_file, meter_options) {
+        (Some((filename, bytes)), Some(options)) => Some(MeterUpload {
+            filename,
+            bytes,
+            options,
+        }),
+        (None, None) => None,
+        _ => {
+            return Err(bad_request(
+                "Stuur bij een meterbestand ook de meterinstellingen mee.",
+            ));
+        }
+    };
     Ok(Upload {
         filename,
         bytes,
         options,
+        meter,
     })
 }
 
@@ -179,7 +226,21 @@ async fn process(
     tokio::task::spawn_blocking(move || {
         let table = solar_import::read_table(&input.filename, &input.bytes, &input.options)?;
         let (intervals, summary) = solar_import::normalize(&table, &input.options)?;
-        Ok::<_, String>((input, intervals, summary))
+        let Some(meter) = &input.meter else {
+            return Ok::<_, String>((input, intervals, summary));
+        };
+        let meter_options = meter.options.as_import_options();
+        let meter_table = solar_import::read_table(&meter.filename, &meter.bytes, &meter_options)
+            .map_err(|e| format!("Meterbestand: {e}"))?;
+        let (meter_intervals, _) = solar_import::normalize(&meter_table, &meter_options)
+            .map_err(|e| format!("Meterbestand: {e}"))?;
+        let (intervals, summary) = solar_import::combine_with_meter(
+            &intervals,
+            &summary,
+            &meter_intervals,
+            &input.options.timezone,
+        )?;
+        Ok((input, intervals, summary))
     })
     .await
     .map_err(|_| bad_request("Bestand kon niet worden verwerkt."))?
@@ -196,13 +257,36 @@ pub async fn save_solar(
     multipart: Multipart,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let (input, intervals, summary) = process(multipart).await?;
-    let sha256 = format!("{:x}", Sha256::digest(&input.bytes));
-    let options_json =
-        serde_json::to_string(&input.options).map_err(|e| bad_request(e.to_string()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(Sha256::digest(&input.bytes));
+    let mut options =
+        serde_json::to_value(&input.options).map_err(|e| bad_request(e.to_string()))?;
+    let mut filename = input.filename.clone();
+    if let Some(meter) = &input.meter {
+        // Een combinatie is uniek door beide bestanden en beide instellingen.
+        hasher.update(Sha256::digest(&meter.bytes));
+        options["meter"] =
+            serde_json::to_value(&meter.options).map_err(|e| bad_request(e.to_string()))?;
+        options["meter_filename"] = json!(meter.filename);
+        let seconds = intervals
+            .first()
+            .map_or(0, |i| i.end_unix_s - i.start_unix_s);
+        options["combined_period"] = json!(match seconds {
+            3600 => "hour".to_owned(),
+            s => format!("{}min", s / 60),
+        });
+        filename = format!("{} + {}", input.filename, meter.filename);
+    }
+    let sha256 = if input.meter.is_some() {
+        format!("{:x}", hasher.finalize())
+    } else {
+        format!("{:x}", Sha256::digest(&input.bytes))
+    };
+    let options_json = serde_json::to_string(&options).map_err(|e| bad_request(e.to_string()))?;
     let summary_json = serde_json::to_string(&summary).map_err(|e| bad_request(e.to_string()))?;
     let id = catalog
         .save_solar(
-            &input.filename,
+            &filename,
             &sha256,
             &options_json,
             &summary_json,

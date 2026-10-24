@@ -31,7 +31,7 @@
       }
       view.append(table(["Profiel", "Periode", "Resolutie", "Opwek", "Verbruik", "Bruikbaar voor een berekening"], items.map(item => [
         link(title(item), `#/energie/${item.id}`), `${UI.dateOnly(item.summary.from_unix_s)} – ${UI.dateOnly(item.summary.to_unix_s)}`,
-        PERIODS[item.options.period] || (Data.isDemo(item) ? "1 uur" : "Onbekend"), kwh(item.summary.production_kwh),
+        PERIODS[item.options.combined_period || item.options.period] || (Data.isDemo(item) ? "1 uur" : "Onbekend"), kwh(item.summary.production_kwh),
         item.summary.consumption_kwh == null ? "Nee" : kwh(item.summary.consumption_kwh), fitBadge(item)]), { caption: "Bewaarde energieprofielen" }));
     }
   });
@@ -67,15 +67,45 @@
   };
 
   UI.page("energie/import", {
-    title: "Bestand importeren", subtitle: "Van export naar gecontroleerd energieprofiel in vier stappen.", parent: "energie",
+    title: "Bestand importeren", subtitle: "Van export naar gecontroleerd energieprofiel in vijf stappen.", parent: "energie",
     render(view) {
       // Opties volgen ImportOptions in crates/server/src/solar_import.rs.
       const options = { profile: "generic", sheet: null, header_row: 0, delimiter: "auto", decimal: "dot", time_column: 0, time_part_column: null, production_column: 1, consumption_column: null, consumption_source: "gross", export_column: null, unit: "kwh", mode: "interval", period: "hour", timezone: "Europe/Amsterdam", timestamp_position: "start", data_kind: "measured", date_order: "day_first", missing_rows: "reject" };
       const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null };
-      const signature = () => JSON.stringify([state.file?.name, state.file?.size, state.file?.lastModified, options]);
-      const multipart = () => { const body = new FormData(); body.append("file", state.file, state.name.trim() || state.file.name); body.append("options", JSON.stringify(options)); return body; };
-      const bind = (control, key, cast = v => v) => { control.addEventListener("change", () => { options[key] = cast(control.value); state.previewed = null; }); return control; };
-      const column = (key, optional) => bind(select([...(optional ? [["", "Niet beschikbaar"]] : []), ...state.inspected.headers.map((name, i) => [String(i), `${i + 1}. ${name || "(leeg)"}`])], options[key] ?? "", {}), key, v => v === "" ? null : Number(v));
+      // Optioneel meterbestand; opties volgen MeterOptions in solar_import.rs.
+      const meter = {
+        use: false, file: null, inspected: null,
+        options: {
+          sheet: null, header_row: 0, delimiter: "auto", decimal: "dot", time_column: 0, time_part_column: null,
+          import_column: 1, export_column: 2, unit: "kwh", mode: "interval", period: "15min",
+          timezone: "Europe/Amsterdam", timestamp_position: "start", date_order: "day_first", missing_rows: "reject"
+        }
+      };
+      const fileKey = file => [file?.name, file?.size, file?.lastModified];
+      const signature = () => JSON.stringify([fileKey(state.file), options, meter.use && [fileKey(meter.file), meter.options]]);
+      const multipart = () => {
+        const body = new FormData();
+        body.append("file", state.file, state.name.trim() || state.file.name);
+        body.append("options", JSON.stringify(options));
+        if (meter.use) {
+          body.append("meter_file", meter.file, meter.file.name);
+          body.append("meter_options", JSON.stringify(meter.options));
+        }
+        return body;
+      };
+      const bindTo = target => (control, key, cast = v => v) => {
+        control.addEventListener("change", () => { target[key] = cast(control.value); state.previewed = null; });
+        return control;
+      };
+      const bind = bindTo(options), bindMeter = bindTo(meter.options);
+      const headerOptions = (headers, optional) => [
+        ...(optional ? [["", "Niet beschikbaar"]] : []),
+        ...headers.map((name, i) => [String(i), `${i + 1}. ${name || "(leeg)"}`])
+      ];
+      const toColumn = v => v === "" ? null : Number(v);
+      const column = (key, optional) => bind(select(headerOptions(state.inspected.headers, optional), options[key] ?? ""), key, toColumn);
+      const meterColumn = (key, optional) =>
+        bindMeter(select(headerOptions(meter.inspected.headers, optional), meter.options[key] ?? ""), key, toColumn);
 
       function stepFile(body) {
         const profile = PROFILES[options.profile];
@@ -136,7 +166,62 @@
           field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
           h("h3", {}, "Eerste rijen"), table(r.headers, r.preview));
       }
+      // Stap 3: een apart bestand van de slimme meter naast de opwek van de omvormer.
+      function stepMeter(body) {
+        body.append(h("h2", {}, "Meterbestand (optioneel)"),
+          h("p", { class: "lead" }, "Bevat je omvormerbestand alleen opwek? Voeg dan een export van je slimme meter (P1) toe " +
+            "met netafname en teruglevering. Het totale verbruik wordt opwek + afname − teruglevering, per gezamenlijke meetperiode."),
+          UI.choice("Wil je een meterbestand toevoegen?", "meter-use", [
+            ["no", "Nee", "Het omvormerbestand bevat al verbruik, of je importeert alleen opwek."],
+            ["yes", "Ja, ik heb een P1- of meterexport", "Bijvoorbeeld van je energieleverancier, HomeWizard of een P1-logger."]
+          ], meter.use ? "yes" : "no", value => { meter.use = value === "yes"; state.previewed = null; flow.rerender(); }));
+        if (!meter.use) return;
+        if (options.consumption_column != null) {
+          body.append(h("p", { class: "callout" }, "Met een meterbestand volgt het verbruik uit de meter. De verbruikskolom " +
+            "van het omvormerbestand wordt daarom niet gebruikt."));
+          Object.assign(options, { consumption_column: null, consumption_source: "gross", export_column: null });
+        }
+        const fileInput = h("input", { type: "file", accept: ".csv,.tsv,.txt,.xlsx,.xls,.ods,.json", required: !meter.file,
+          onchange: event => { meter.file = event.target.files[0] || null; meter.inspected = null; state.previewed = null; } });
+        const read = button("Lees meterbestand", () => UI.busy(read, async () => {
+          if (!meter.file) throw new Error("Kies eerst een meterbestand.");
+          const body = new FormData(), m = meter.options;
+          body.append("file", meter.file, meter.file.name);
+          body.append("options", JSON.stringify({ header_row: m.header_row, delimiter: m.delimiter, sheet: m.sheet }));
+          const result = await UI.api("/api/v1/solar/inspect", { method: "POST", body });
+          const guess = pattern => result.headers.findIndex(name => pattern.test(name));
+          const imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen|levering/i);
+          const exported = guess(/teruglever|export|feed.?in|injectie|returned/i);
+          Object.assign(m, {
+            time_column: Math.max(0, guess(/timestamp|datum|date|tijd|time/i)),
+            import_column: imported >= 0 ? imported : 1, export_column: exported >= 0 ? exported : 2
+          });
+          meter.inspected = result; flow.rerender();
+        }), "secondary");
+        body.append(field("Meterbestand", fileInput, meter.file ? `Gekozen: ${meter.file.name}` : "CSV, Excel of JSON; maximaal 10 MB."),
+          h("div", { class: "grid" },
+            field("Regels vóór de kopregel", bindMeter(numberInput({ min: "0", max: "1000", step: "1", value: String(meter.options.header_row) }), "header_row", Number)),
+            field("CSV-scheiding", bindMeter(select([["auto", "Automatisch"], ["semicolon", "Puntkomma ;"], ["comma", "Komma ,"], ["tab", "Tab"]], meter.options.delimiter), "delimiter"))),
+          h("p", { class: "actions" }, read));
+        if (!meter.inspected) return;
+        const opts = (pairs, key) => bindMeter(select(pairs, meter.options[key]), key);
+        body.append(h("div", { class: "grid" },
+          field("Datum of tijdstip", meterColumn("time_column")), field("Aparte tijdkolom", meterColumn("time_part_column", true)),
+          field("Netafname", meterColumn("import_column")), field("Teruglevering", meterColumn("export_column")),
+          field("Eenheid", opts([["kwh", "kWh (energie)"], ["wh", "Wh (energie)"], ["kw", "kW (gemiddeld vermogen)"], ["w", "W (gemiddeld vermogen)"]], "unit")),
+          field("Soort waarden", opts([["interval", "Per meetperiode"], ["cumulative", "Cumulatieve meterstanden"]], "mode")),
+          field("Meetperiode", opts(Object.entries(PERIODS).filter(([key]) => /min|hour/.test(key)), "period")),
+          field("Tijdstempel markeert", opts([["start", "Begin van de periode"], ["end", "Einde van de periode"]], "timestamp_position")),
+          field("Decimaalteken", opts([["dot", "Punt (1.25)"], ["comma", "Komma (1,25)"]], "decimal")),
+          field("Tijdzone", bindMeter(input({ value: meter.options.timezone, required: true }), "timezone", v => v.trim())),
+          field("Datumnotatie", opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
+          field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
+          h("p", { class: "help" }, "Dubbele tarieven (normaal en dal)? Tel ze vooraf op tot één kolom voor afname en één voor teruglevering. " +
+            "Cumulatieve P1-meterstanden kunnen direct; de eerste stand is dan alleen het beginpunt."),
+          h("h3", {}, "Eerste rijen"), table(meter.inspected.headers, meter.inspected.preview));
+      }
       async function preview() {
+        if (meter.use && !meter.inspected) throw new Error("Kies en lees eerst het meterbestand, of kies ‘Nee’.");
         const sent = signature(), summary = await UI.api("/api/v1/solar/preview", { method: "POST", body: multipart() });
         if (sent !== signature()) throw new Error("De instellingen zijn veranderd. Controleer opnieuw.");
         state.summary = summary; state.previewed = sent;
@@ -153,11 +238,14 @@
         }));
         body.append(h("h2", {}, "Bewaren"), h("p", {}, "Het originele bestand wordt niet bewaard; de gecontroleerde meetperioden en instellingen wel."), field("Naam van het profiel", name), save);
       }
-      const flow = UI.wizard([{ label: "Bestand", render: stepFile }, { label: "Kolommen", render: stepColumns }, { label: "Controle", render: stepCheck }, { label: "Bewaren", render: stepSave }], {
+      const flow = UI.wizard([
+        { label: "Bestand", render: stepFile }, { label: "Kolommen", render: stepColumns },
+        { label: "Meter", render: stepMeter }, { label: "Controle", render: stepCheck }, { label: "Bewaren", render: stepSave }
+      ], {
         async validate(index, body) {
           if (!UI.validate(body)) return false;
           // De volgende stap opent pas na een geslaagde controle door de server.
-          const work = { 0: inspect, 1: preview }[index];
+          const work = { 0: inspect, 2: preview }[index];
           if (!work) return true;
           try { await work(); return true; } catch (error) { toast(error.message, true); return false; }
           return true;

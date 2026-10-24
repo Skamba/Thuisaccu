@@ -10,7 +10,8 @@ Eenmalig offline te draaien; de server downloadt niets. Gebruik:
   Kolom E1A_AZI_A: kleinverbruik <= 3x25 A zonder invoeding, afname. Kolom A is
   het einde van het kwartier in UTC+1 (doorlopende wintertijd).
 - PVGIS 5.3 seriescalc, De Bilt (52.101, 5.177), 2023, 1 kWp, 14% systeemverlies,
-  helling 35 graden, azimut 0/-45/45/-90/90, bestanden pv_<azimut>.json:
+  helling 35 graden, azimut 0/-45/45/-90/90, bestanden pv_<azimut>.json. De luchttemperatuur
+  T2m uit pv_0.json levert de graaduren voor het warmtepompdeel:
   https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?lat=52.101&lon=5.177&peakpower=1&loss=14&angle=35&aspect=<azimut>&startyear=2023&endyear=2023&pvcalculation=1&outputformat=json
 """
 import csv
@@ -46,6 +47,11 @@ for key, azimuth in [("south", 0), ("south_east", -45), ("south_west", 45), ("ea
     shifted = [watts[(i - 1) % 8760] for i in range(8760)]
     orientations[key] = [round(w * 10) for w in shifted]
     yields[key] = round(sum(watts) / 1000, 1)
+    if azimuth == 0:
+        # Graaduren onder de Nederlandse stookgrens van 18 °C, uit de luchttemperatuur T2m
+        # van hetzelfde weerjaar; vorm voor het ruimteverwarmingsdeel van een warmtepomp.
+        temperature = [h["T2m"] for h in hours]
+        degree_hours = [round(max(0.0, 18.0 - temperature[(i - 1) % 8760]) * 100) for i in range(8760)]
 
 json.dump({
     "start_unix_s": int(start.timestamp()),
@@ -62,6 +68,13 @@ json.dump({
         "unit": "0,1 Wh AC per kWp per uur (UTC)",
         "annual_kwh_per_kwp": yields,
         "orientations": orientations,
+    },
+    "heating": {
+        "source": "PVGIS 5.3 (EU JRC), luchttemperatuur T2m op 2 m, De Bilt, weerjaar 2023; graaduren onder 18 °C",
+        "url": "https://re.jrc.ec.europa.eu/pvg_tools/en/",
+        "unit": "0,01 graaduur per uur (UTC)",
+        "base_c": 18,
+        "degree_hours": degree_hours,
     },
 }, open(output, "w", encoding="utf-8"), separators=(",", ":"), ensure_ascii=False)
 print("geschreven", output, yields)

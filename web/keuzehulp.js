@@ -54,6 +54,7 @@
   };
   const BLANK = {
     panels: "yes", data: "totals", importId: "", gridImport: "", gridExport: "", production: "", kwp: "", orientation: "south",
+    heatPump: "", ev: "", evCharging: "evening",
     install: "any", phases: "unknown", place: "any", backup: "no",
     contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
     objective: "net_present_value", budget: "", horizon: "15"
@@ -130,8 +131,31 @@
         field("Ligging van de panelen", select([["south", "Zuid"], ["south_east", "Zuidoost"], ["south_west", "Zuidwest"], ["east_west", "Oost en west"], ["east", "Oost"], ["west", "West"]],
           answers.orientation, { onchange: event => { answers.orientation = event.target.value; save(); update(); } })));
     }
-    body.append(grid, derived, h("p", { class: "help" }, "We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven op deze computer."));
-    update();
+    const electric = h("fieldset", {}, h("legend", {}, "Warmtepomp of elektrische auto? (optioneel)"),
+      h("p", { class: "help" }, "Deze verbruiken op andere momenten dan de rest van het huis: een warmtepomp vooral in de winter, " +
+        "een auto als hij thuis laadt. Het verbruik zit al in je afname hierboven; we verdelen het alleen anders over het jaar. " +
+        "Plan je er een? Tel het verwachte verbruik dan op bij je afname."),
+      h("div", { class: "grid" },
+        amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { min: "0", max: "30000" },
+          "Staat vaak in de app of op het display van de warmtepomp. Ter indicatie: CE Delft rekent bij label B en 2 personen " +
+          "met ongeveer 1.960 kWh voor verwarming en 1.000 kWh voor warm water.", rerenderEv),
+        amount("Waarvan elektrische auto, thuis geladen (kWh per jaar)", "ev", { min: "0", max: "20000" },
+          "Staat vaak in de app van je laadpaal of auto.", rerenderEv)));
+    const evChoice = h("div");
+    function rerenderEv() {
+      update();
+      evChoice.replaceChildren();
+      if (parse(answers.ev) > 0) {
+        evChoice.append(UI.choice("Wanneer laadt de auto meestal?", "kh-evCharging", [
+          ["evening", "’s Avonds na thuiskomst", "Vanaf 18.00 uur met 3,7 kW."],
+          ["night", "’s Nachts", "Vanaf 01.00 uur, bijvoorbeeld met een laadtimer."],
+          ["daytime", "Overdag, op zonnestroom", "Vanaf 11.00 uur; alleen als de auto overdag thuis staat."]
+        ], answers.evCharging, v => { answers.evCharging = v; save(); }));
+      }
+    }
+    electric.append(evChoice);
+    body.append(grid, derived, electric, h("p", { class: "help" }, "We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven op deze computer."));
+    rerenderEv();
   }
 
   function stepHome(body) {
@@ -230,7 +254,13 @@
     if (!(consumption > 0)) throw new Error("Vul in stap 1 je afname, teruglevering en opwek (of kWp) in.");
     const own = parse(answers.production);
     const solar = answers.panels === "yes" ? { orientation: answers.orientation, annual_production_kwh: own, peak_power_kwp: own == null ? parse(answers.kwp) : null } : null;
-    return (await UI.api("/api/v1/solar/typical", { method: "POST", json: { annual_consumption_kwh: consumption, solar } })).id;
+    const heatPump = parse(answers.heatPump), ev = parse(answers.ev);
+    const json = {
+      annual_consumption_kwh: consumption, solar,
+      heat_pump_kwh: heatPump > 0 ? heatPump : undefined,
+      ev: ev > 0 ? { annual_kwh: ev, charging: answers.evCharging } : undefined
+    };
+    return (await UI.api("/api/v1/solar/typical", { method: "POST", json })).id;
   }
 
   // Bewerkbare kostenopbouw per accu; een ingevuld bedrag vervangt de indicatie.
@@ -423,6 +453,11 @@
       if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) { UI.toast("Vul de opwek van je panelen of het vermogen in kWp in.", true); return false; }
       const value = gross();
       if (value != null && !(value > 0)) { UI.toast("Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.", true); return false; }
+      const extra = (parse(answers.heatPump) || 0) + (parse(answers.ev) || 0);
+      if (value != null && extra > 0 && value - extra < 100) {
+        UI.toast("Warmtepomp en auto zijn een deel van je totale verbruik en kunnen daar niet boven uitkomen.", true);
+        return false;
+      }
     }
     return true;
   }

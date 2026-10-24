@@ -188,3 +188,57 @@ async fn upload_inspection_and_preview_do_not_persist_until_save_and_repeat_save
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(catalog.list_solar().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let part = |name: &str, filename: Option<&str>, body: &str| match filename {
+        Some(f) => format!(
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{f}\"\r\nContent-Type: text/csv\r\n\r\n{body}\r\n"
+        ),
+        None => format!(
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{body}\r\n"
+        ),
+    };
+    let body = [
+        part("options", None, r#"{"timezone":"UTC"}"#),
+        part(
+            "file",
+            Some("omvormer.csv"),
+            "time,production\n2026-06-01T10:00:00Z,2\n2026-06-01T11:00:00Z,1\n",
+        ),
+        part(
+            "meter_options",
+            None,
+            r#"{"timezone":"UTC","period":"hour"}"#,
+        ),
+        part(
+            "meter_file",
+            Some("p1.csv"),
+            "time,import,export\n2026-06-01T10:00:00Z,0,1.5\n2026-06-01T11:00:00Z,0.5,0\n",
+        ),
+    ]
+    .concat()
+        + "--test-boundary--\r\n";
+    let response = app
+        .oneshot(
+            Request::post("/api/v1/solar/imports")
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=test-boundary",
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let saved = response_json(response).await;
+    // (2 + 0 − 1,5) + (1 + 0,5 − 0) = 2 kWh bruto verbruik.
+    assert!((saved["summary"]["consumption_kwh"].as_f64().unwrap() - 2.0).abs() < 1e-9);
+    let imports = catalog.list_solar().await.unwrap();
+    assert_eq!(imports[0].filename, "omvormer.csv + p1.csv");
+    assert_eq!(imports[0].options["combined_period"], "hour");
+    assert_eq!(imports[0].options["meter"]["import_column"], 1);
+}

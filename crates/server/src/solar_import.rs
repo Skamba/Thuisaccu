@@ -63,6 +63,79 @@ impl Default for ImportOptions {
     }
 }
 
+/// Instellingen voor een apart meterbestand (bijvoorbeeld een P1-export) met netafname
+/// en teruglevering. Wordt gecombineerd met de opwek uit het omvormerbestand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MeterOptions {
+    pub sheet: Option<String>,
+    pub header_row: usize,
+    pub delimiter: String,
+    pub decimal: String,
+    pub time_column: usize,
+    pub time_part_column: Option<usize>,
+    pub import_column: usize,
+    pub export_column: usize,
+    pub unit: String,
+    pub mode: String,
+    pub period: String,
+    pub timezone: String,
+    pub timestamp_position: String,
+    pub date_order: String,
+    pub missing_rows: String,
+}
+
+impl Default for MeterOptions {
+    fn default() -> Self {
+        let base = ImportOptions::default();
+        Self {
+            sheet: None,
+            header_row: 0,
+            delimiter: base.delimiter,
+            decimal: base.decimal,
+            time_column: 0,
+            time_part_column: None,
+            import_column: 1,
+            export_column: 2,
+            unit: base.unit,
+            mode: base.mode,
+            period: "15min".into(),
+            timezone: "Europe/Amsterdam".into(),
+            timestamp_position: base.timestamp_position,
+            date_order: base.date_order,
+            missing_rows: base.missing_rows,
+        }
+    }
+}
+
+impl MeterOptions {
+    /// Leest het meterbestand met dezelfde parser: netafname staat tijdelijk in het
+    /// opwekveld en teruglevering in het verbruiksveld van [`SolarInterval`].
+    pub fn as_import_options(&self) -> ImportOptions {
+        ImportOptions {
+            profile: "generic".into(),
+            sheet: self.sheet.clone(),
+            header_row: self.header_row,
+            delimiter: self.delimiter.clone(),
+            decimal: self.decimal.clone(),
+            time_column: self.time_column,
+            time_part_column: self.time_part_column,
+            production_column: self.import_column,
+            consumption_column: Some(self.export_column),
+            consumption_source: "gross".into(),
+            export_column: None,
+            unit: self.unit.clone(),
+            mode: self.mode.clone(),
+            period: self.period.clone(),
+            timezone: self.timezone.clone(),
+            timestamp_position: self.timestamp_position.clone(),
+            data_kind: "measured".into(),
+            date_order: self.date_order.clone(),
+            missing_rows: self.missing_rows.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Table {
     pub detected_unit: Option<String>,
@@ -523,21 +596,6 @@ pub fn normalize(
             "Geen meetperioden; voor cumulatieve standen zijn minstens twee metingen nodig.".into(),
         );
     }
-    let mut months: BTreeMap<String, (f64, Option<f64>)> = BTreeMap::new();
-    for item in &intervals {
-        let date = Utc
-            .timestamp_opt(item.start_unix_s, 0)
-            .single()
-            .ok_or("Datum buiten bereik.")?
-            .with_timezone(&timezone);
-        let month = months
-            .entry(date.format("%Y-%m").to_string())
-            .or_insert((0.0, options.consumption_column.map(|_| 0.0)));
-        month.0 += item.production_wh / 1000.0;
-        if let (Some(total), Some(value)) = (&mut month.1, item.consumption_wh) {
-            *total += value / 1000.0;
-        }
-    }
     let mut warnings = vec!["Opwek alleen bepaalt geen geschikte accucapaciteit of terugverdientijd. Combineer met gelijktijdig verbruik, tarieven en systeemgrenzen.".into()];
     if skipped_rows > 0 {
         warnings.push(format!("{skipped_rows} rij(en) met ontbrekende meetwaarden expliciet overgeslagen; dit is geen nulproductie."));
@@ -570,8 +628,39 @@ pub fn normalize(
         warnings.push("Dit bestand is gemodelleerde opwek, geen gemeten productie.".into());
     }
     warnings.push("Maandtotalen zijn ingedeeld op de lokale start van elk interval; intervallen die maandgrenzen overschrijden worden niet opgesplitst.".into());
-    let has_consumption = options.consumption_column.is_some();
-    let summary = SolarSummary {
+    let summary = summarize(
+        &intervals,
+        timezone,
+        options.consumption_column.is_some(),
+        gaps,
+        warnings,
+    )?;
+    Ok((intervals, summary))
+}
+
+fn summarize(
+    intervals: &[SolarInterval],
+    timezone: Tz,
+    has_consumption: bool,
+    gaps: usize,
+    warnings: Vec<String>,
+) -> Result<SolarSummary, String> {
+    let mut months: BTreeMap<String, (f64, Option<f64>)> = BTreeMap::new();
+    for item in intervals {
+        let date = Utc
+            .timestamp_opt(item.start_unix_s, 0)
+            .single()
+            .ok_or("Datum buiten bereik.")?
+            .with_timezone(&timezone);
+        let month = months
+            .entry(date.format("%Y-%m").to_string())
+            .or_insert((0.0, has_consumption.then_some(0.0)));
+        month.0 += item.production_wh / 1000.0;
+        if let (Some(total), Some(value)) = (&mut month.1, item.consumption_wh) {
+            *total += value / 1000.0;
+        }
+    }
+    Ok(SolarSummary {
         rows: intervals.len(),
         from_unix_s: intervals[0].start_unix_s,
         to_unix_s: intervals.last().unwrap().end_unix_s,
@@ -608,6 +697,127 @@ pub fn normalize(
             })
             .collect(),
         warnings,
+    })
+}
+
+/// Combineert opwek uit het omvormerbestand met netafname en teruglevering uit een
+/// meterbestand. Beide reeksen worden opgeteld tot de grofste resolutie; alleen perioden die
+/// in beide bestanden volledig gemeten zijn, worden gebruikt. Ontbrekende perioden blijven
+/// gaten en worden nooit met nullen aangevuld. Bruto verbruik = opwek + netafname −
+/// teruglevering.
+pub fn combine_with_meter(
+    production: &[SolarInterval],
+    production_summary: &SolarSummary,
+    meter: &[SolarInterval],
+    timezone: &str,
+) -> Result<(Vec<SolarInterval>, SolarSummary), String> {
+    let timezone: Tz = timezone
+        .parse()
+        .map_err(|_| "Onbekende IANA-tijdzone in het omvormerbestand.")?;
+    if production.iter().any(|i| i.consumption_wh.is_some()) {
+        return Err("Kies in het omvormerbestand geen verbruikskolom als je een meterbestand toevoegt; het verbruik volgt dan uit de meter.".into());
+    }
+    let longest = production
+        .iter()
+        .chain(meter)
+        .map(|i| i.end_unix_s - i.start_unix_s)
+        .max()
+        .unwrap_or(0);
+    let (bucket, period) = [
+        (300, "5min"),
+        (600, "10min"),
+        (900, "15min"),
+        (1800, "30min"),
+        (3600, "hour"),
+    ]
+    .into_iter()
+    .find(|(seconds, _)| *seconds >= longest)
+    .ok_or("Combineren kan alleen met meetperioden van een uur of korter.")?;
+    // Per periode: opgetelde energie en gemeten seconden, zodat onvolledige perioden opvallen.
+    let collect = |series: &[SolarInterval]| -> Result<BTreeMap<i64, (f64, f64, i64)>, String> {
+        let mut buckets = BTreeMap::new();
+        for i in series {
+            let key = i.start_unix_s.div_euclid(bucket);
+            if (i.end_unix_s - 1).div_euclid(bucket) != key {
+                return Err("De meetperioden van omvormer en meter passen niet op elkaar (bijvoorbeeld 10 en 15 minuten). Exporteer beide per kwartier of per uur.".into());
+            }
+            let entry = buckets.entry(key).or_insert((0.0, 0.0, 0));
+            entry.0 += i.production_wh;
+            entry.1 += i.consumption_wh.unwrap_or(0.0);
+            entry.2 += i.end_unix_s - i.start_unix_s;
+        }
+        Ok(buckets)
     };
+    let solar = collect(production)?;
+    let grid = collect(meter)?;
+    let complete =
+        |b: &BTreeMap<i64, (f64, f64, i64)>, key: &i64| b.get(key).is_some_and(|v| v.2 == bucket);
+    let keys: Vec<i64> = solar
+        .keys()
+        .filter(|key| complete(&solar, key) && complete(&grid, key))
+        .copied()
+        .collect();
+    if keys.is_empty() {
+        return Err("Omvormer- en meterbestand hebben geen gemeenschappelijke, volledige meetperioden. Controleer of ze dezelfde periode en tijdzone beschrijven.".into());
+    }
+    let first = keys[0];
+    let last = keys[keys.len() - 1];
+    let outside = |b: &BTreeMap<i64, (f64, f64, i64)>| {
+        b.keys()
+            .filter(|key| (first..=last).contains(*key) && !keys.contains(key))
+            .count()
+    };
+    let unmatched = outside(&solar).max(outside(&grid));
+    let mut intervals = Vec::with_capacity(keys.len());
+    let mut negative = 0;
+    let mut gaps = 0;
+    for (index, key) in keys.iter().enumerate() {
+        if index > 0 && keys[index - 1] + 1 != *key {
+            gaps += 1;
+        }
+        let produced = solar[key].0;
+        let (imported, exported, _) = grid[key];
+        let gross = produced + imported - exported;
+        if gross < -1e-6 {
+            negative += 1;
+        }
+        intervals.push(SolarInterval {
+            start_unix_s: key * bucket,
+            end_unix_s: (key + 1) * bucket,
+            production_wh: produced,
+            consumption_wh: Some(gross.max(0.0)),
+        });
+    }
+    if negative > intervals.len() / 100 {
+        return Err(format!(
+            "In {negative} meetperioden is de teruglevering groter dan opwek plus netafname. Omvormer en meter lopen waarschijnlijk niet gelijk in tijd of gebruiken verschillende eenheden, of er is al een accu. Controleer tijdzone, tijdstempelpositie en eenheid van beide bestanden."
+        ));
+    }
+    let mut warnings: Vec<String> = production_summary
+        .warnings
+        .iter()
+        .filter(|w| !w.starts_with("Maandtotalen") && !w.contains("gat(en)"))
+        .cloned()
+        .collect();
+    warnings.push(format!(
+        "Omvormer- en meterbestand zijn gecombineerd per {}. Bruto verbruik is afgeleid als opwek + netafname − teruglevering; dat klopt alleen zonder bestaande accu en als beide bestanden dezelfde tijdsperioden beschrijven.",
+        match period {
+            "hour" => "uur".to_owned(),
+            other => other.replace("min", " minuten"),
+        }
+    ));
+    if unmatched > 0 {
+        warnings.push(format!("{unmatched} meetperiode(n) binnen de reeks stonden niet volledig in beide bestanden en zijn weggelaten; dit is geen nulverbruik of nulopwek."));
+    }
+    if gaps > 0 {
+        warnings.push(format!(
+            "{gaps} gat(en) in de gecombineerde meetreeks; deze worden niet met nullen aangevuld."
+        ));
+    }
+    if negative > 0 {
+        warnings.push(format!("{negative} meetperiode(n) gaven een licht negatief afgeleid verbruik door meetafwijkingen; die zijn op 0 gezet."));
+    }
+    warnings.push("Maandtotalen zijn ingedeeld op de lokale start van elk interval; intervallen die maandgrenzen overschrijden worden niet opgesplitst.".into());
+    let summary = summarize(&intervals, timezone, true, gaps, warnings)?;
     Ok((intervals, summary))
 }
