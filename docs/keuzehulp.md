@@ -30,7 +30,7 @@ Grenzen: een standaardprofiel is een gemiddelde over veel huishoudens en dus gla
 
 ## Capaciteitscurve
 
-`GET /api/v1/solar/imports/{id}/capacity` simuleert een verliesvrije accu zonder vermogensgrens, standby of slijtage voor 0 tot 20 kWh, twee keer achter elkaar zodat de beginlading niet meetelt. De uitkomst is een bovengrens voor zonnestroom die via de accu zelf wordt gebruikt. De keuzehulp noemt het bereik waarbinnen 75% tot 90% van de waarde bij 20 kWh wordt gehaald ‘zinvol’. Dit is een hulpmiddel bij de keuze, geen productberekening en geen advies over een exacte grootte.
+`GET /api/v1/solar/imports/{id}/capacity` simuleert een verliesvrije accu zonder vermogensgrens, standby of slijtage voor 0 tot 20 kWh, twee keer achter elkaar zodat de beginlading niet meetelt. De uitkomst is een bovengrens voor zonnestroom die via de accu zelf wordt gebruikt. De keuzehulp noemt het bereik waarbinnen 75% tot 90% van de waarde bij 20 kWh wordt gehaald ‘zinvol’ (doel ‘beste verhouding tussen prijs en opbrengst’, standaard) of 90% tot 97% (doel ‘zo veel mogelijk eigen zonnestroom’). De gebruiker kiest dat doel boven de grafiek; de grenzen zijn als lijnen in de grafiek getekend en de labels ‘binnen/kleiner/groter dan het zinvolle bereik’ bij de accu’s schuiven direct mee. Beide drempels zijn ontwerpkeuzes, geen bronwaarden. Dit is een hulpmiddel bij de keuze, geen productberekening en geen advies over een exacte grootte.
 
 ## Van bronclaim naar rekengegevens
 

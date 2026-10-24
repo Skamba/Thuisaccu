@@ -15,8 +15,10 @@
   const LEGACY = [[/^dashboard$/, "keuzehulp"], [/^scenarios\/nieuw$/, "zelf"], [/^scenarios\/(\d+)$/, "berekeningen/$1"], [/^scenarios$/, "berekeningen"],
     [/^opwek\/import$/, "energie/import"], [/^opwek\/(\d+)$/, "energie/$1"], [/^opwek$/, "energie"]];
   const icon = name => {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), path = document.createElementNS(svg.namespaceURI, "path");
-    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); path.setAttribute("d", ICONS[name] || ""); svg.append(path); return svg;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
+      path = document.createElementNS(svg.namespaceURI, "path");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+      path.setAttribute("d", ICONS[name] || ""); svg.append(path); return svg;
   };
 
   function duplicate(run) {
@@ -26,15 +28,19 @@
   }
 
   UI.page("berekeningen", {
-    nav: "Mijn berekeningen", icon: "list", title: "Mijn berekeningen", subtitle: "Bewaarde uitkomsten, elk met de oorspronkelijke invoer.",
+    nav: "Mijn berekeningen", icon: "list", title: "Mijn berekeningen",
+      subtitle: "Bewaarde uitkomsten, elk met de oorspronkelijke invoer.",
     async render(view, actions) {
       actions.append(link("Nieuwe keuzehulp", "#/keuzehulp", "button"));
       const runs = await Data.runs();
-      if (!runs.length) { view.append(UI.empty("Nog geen berekeningen", "Doorloop de keuzehulp; je uitkomst wordt hier bewaard.", link("Start de keuzehulp", "#/keuzehulp", "button"))); return; }
+      if (!runs.length) { view.append(UI.empty("Nog geen berekeningen",
+        "Doorloop de keuzehulp; je uitkomst wordt hier bewaard.", link("Start de keuzehulp", "#/keuzehulp", "button")));
+        return; }
       view.append(table(["Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
         const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
         return [h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
-          Data.objectives[run.input.request.parameters.objective], rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
+          Data.objectives[run.input.request.parameters.objective],
+            rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
           money(rec ? rec.npv_eur : 0, { decimals: 0 }), button("Pas aan", () => duplicate(run), "ghost")];
       }), { caption: "Laatste 100 berekeningen" }));
     }
@@ -44,38 +50,57 @@
     title: "Uitkomst", subtitle: "Vergelijking met geen accu, binnen de vastgelegde aannames.", parent: "berekeningen",
     async render(view, actions, { id }) {
       const run = (await Data.runs()).find(r => String(r.id) === id);
-      if (!run) { view.append(UI.empty("Berekening niet gevonden", "Alleen de laatste 100 berekeningen zijn beschikbaar.", link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
+      if (!run) { view.append(UI.empty("Berekening niet gevonden",
+        "Alleen de laatste 100 berekeningen zijn beschikbaar.",
+        link("Naar mijn berekeningen", "#/berekeningen", "button")));
+        return; }
       $("page-title").textContent = run.title;
       await Results.render(run, view, actions, duplicate);
     }
   });
 
   UI.page("instellingen", {
-    nav: "Instellingen", icon: "gear", title: "Instellingen", subtitle: "Voorkeuren en standaardaannames voor deze browser.",
+    nav: "Instellingen", icon: "gear", title: "Instellingen",
+      subtitle: "Voorkeuren en standaardaannames voor deze browser.",
     render(view) {
-      const labels = { start_year: "Startjaar", horizon_years: "Looptijd (jaren)", discount_pct: "Discontovoet per jaar (%)", annual_cost_escalation_pct: "Stijging extra jaarkosten (%)", annual_pv_loss_pct: "Afname PV-opwek per jaar (%)", annual_load_growth_pct: "Verandering verbruik per jaar (%)", annual_price_change_pct: "Prijsverandering energie per jaar (%)", price_uncertainty_pct: "Tariefvariatie gevoeligheid (%)", cost_uncertainty_pct: "Kostenvariatie gevoeligheid (%)" };
-      const current = Data.defaults(), controls = Object.fromEntries(Object.keys(labels).map(key => [key, numberInput({ value: String(current[key]), required: true })]));
+      const labels = { start_year: "Startjaar", horizon_years: "Looptijd (jaren)",
+        discount_pct: "Discontovoet per jaar (%)", annual_cost_escalation_pct: "Stijging extra jaarkosten (%)",
+        annual_pv_loss_pct: "Afname PV-opwek per jaar (%)", annual_load_growth_pct: "Verandering verbruik per jaar (%)",
+        annual_price_change_pct: "Prijsverandering energie per jaar (%)",
+        price_uncertainty_pct: "Tariefvariatie gevoeligheid (%)",
+        cost_uncertainty_pct: "Kostenvariatie gevoeligheid (%)" };
+      const current = Data.defaults(),
+        controls = Object.fromEntries(Object.keys(labels).map(key => [key,
+          numberInput({ value: String(current[key]), required: true })]));
       const form = h("form", { class: "panel", novalidate: true, onsubmit: event => {
         event.preventDefault();
         if (!UI.validate(form)) return;
-        const values = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, Number(control.value)]));
+        const values = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key,
+          Number(control.value)]));
         const saved = store.set("thuisaccu-standaard", values);
-        toast(saved ? "Standaardaannames bewaard voor nieuwe berekeningen." : "Bewaren in deze browser is niet beschikbaar.", !saved);
+        toast(saved ? "Standaardaannames bewaard voor nieuwe berekeningen." : "Bewaren in deze browser is niet beschikbaar.",
+          !saved);
       } }, h("h2", {}, "Standaardaannames"), h("p", { class: "help" }, "Gelden voor nieuwe berekeningen in de keuzehulp en bij Zelf doorrekenen. Bewaarde berekeningen veranderen nooit."),
         h("div", { class: "grid" }, Object.entries(labels).map(([key, label]) => field(label, controls[key]))),
         h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Bewaar"),
           button("Herstel oorspronkelijke waarden", () => { store.set("thuisaccu-standaard", null); for (const [key, control] of Object.entries(controls)) control.value = String(Data.DEFAULTS[key]); toast("Oorspronkelijke waarden hersteld."); }, "ghost")));
-      const preference = (key, label, options) => field(label, select(options, store.get(`thuisaccu-${key}`, options[0][0]), { onchange: event => { document.documentElement.dataset[key] = event.target.value; store.set(`thuisaccu-${key}`, event.target.value); } }));
+      const preference = (key, label, options) => field(label,
+        select(options, store.get(`thuisaccu-${key}`, options[0][0]),
+          { onchange: event => { document.documentElement.dataset[key] = event.target.value;
+            store.set(`thuisaccu-${key}`, event.target.value); } }));
       view.append(form,
         h("section", { class: "panel" }, h("h2", {}, "Weergave"), h("div", { class: "grid" },
           preference("theme", "Thema", [["system", "Volg het systeem"], ["light", "Licht"], ["dark", "Donker"]]),
           preference("density", "Dichtheid", [["comfortable", "Ruim"], ["compact", "Compact"]]))),
         h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
-          h("p", {}, "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."),
-          h("p", {}, "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
+          h("p", {},
+            "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."),
+          h("p", {},
+            "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
           button("Wis concepten in deze browser", () => { for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null); toast("Concepten gewist."); }, "secondary")),
         h("section", { class: "panel" }, h("h2", {}, "Over het model"),
-          h("p", {}, "Het model rekent per meetperiode hoeveel zonnestroom een accu opslaat en later zelf gebruikt, met vaste tarieven. Vanaf 2027 zonder salderen. Dynamische handel, netladen en onbalansinkomsten zijn niet opgenomen."),
+          h("p", {},
+            "Het model rekent per meetperiode hoeveel zonnestroom een accu opslaat en later zelf gebruikt, met vaste tarieven. Vanaf 2027 zonder salderen. Dynamische handel, netladen en onbalansinkomsten zijn niet opgenomen."),
           h("p", {}, "Een aanbeveling geldt alleen voor de doorgerekende opties en vastgelegde aannames; ‘geen accu’ is een volwaardige uitkomst. De app beoordeelt geen installatiegeschiktheid of elektrische veiligheid.")));
     }
   });
@@ -91,34 +116,44 @@
   let generation = 0;
   async function route() {
     let path = location.hash.replace(/^#\/?/, "").replace(/\/$/, "");
-    for (const [pattern, target] of LEGACY) if (pattern.test(path)) { location.replace(`#/${path.replace(pattern, target)}`); return; }
+    for (const [pattern,
+      target] of LEGACY) if (pattern.test(path)) { location.replace(`#/${path.replace(pattern, target)}`);
+      return; }
     if (!path) { location.replace("#/keuzehulp"); return; }
     const found = match(path);
     if (!found) { location.replace("#/keuzehulp"); return; }
     const run = ++generation, section = found.page.parent || found.key;
-    document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.page === section) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.page === section) a.setAttribute("aria-current",
+      "page");
+      else a.removeAttribute("aria-current"); });
     document.body.classList.remove("menu-open"); $("menu").setAttribute("aria-expanded", "false");
     $("page-title").textContent = found.page.title; $("page-subtitle").textContent = found.page.subtitle || "";
     document.title = `${found.page.title} · Thuisaccu`;
     const view = $("view"), actions = $("page-actions");
     view.replaceChildren(); actions.replaceChildren();
     try { await found.page.render(view, actions, found.params); }
-    catch (error) { if (run === generation) view.replaceChildren(h("p", { class: "warning" }, `Dit scherm kon niet worden geladen: ${error.message}`)); }
+    catch (error) { if (run === generation) view.replaceChildren(h("p", { class: "warning" },
+      `Dit scherm kon niet worden geladen: ${error.message}`)); }
     if (run === generation) { $("page-title").focus({ preventScroll: true }); window.scrollTo(0, 0); }
   }
 
   function start() {
-    for (const key of ["theme", "density"]) document.documentElement.dataset[key] = store.get(`thuisaccu-${key}`, key === "theme" ? "system" : "comfortable");
+    for (const key of ["theme", "density"]) document.documentElement.dataset[key] = store.get(`thuisaccu-${key}`,
+      key === "theme" ? "system" : "comfortable");
     const nav = $("nav");
     for (const [key, page] of UI.pages) {
       if (!page.nav) continue;
       nav.append(h("a", { href: `#/${key}`, dataset: { page: key } }, icon(page.icon), h("span", {}, page.nav)));
     }
-    $("menu").addEventListener("click", () => { const open = document.body.classList.toggle("menu-open"); $("menu").setAttribute("aria-expanded", String(open)); });
-    document.querySelector(".skip").addEventListener("click", event => { event.preventDefault(); $("page-title").focus(); });
+    $("menu").addEventListener("click",
+      () => { const open = document.body.classList.toggle("menu-open");
+        $("menu").setAttribute("aria-expanded", String(open)); });
+    document.querySelector(".skip").addEventListener("click",
+      event => { event.preventDefault(); $("page-title").focus(); });
     window.addEventListener("hashchange", route);
     const service = $("service");
-    UI.api("/api/v1/health").then(() => { service.textContent = "Lokale service actief"; service.classList.add("online"); })
+    UI.api("/api/v1/health").then(() => { service.textContent = "Lokale service actief";
+      service.classList.add("online"); })
       .catch(() => { service.textContent = "Service niet bereikbaar"; service.classList.add("offline"); });
     route();
   }

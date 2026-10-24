@@ -31,3 +31,26 @@ jobs:
       - name: Documentation
         run: cargo doc --workspace --no-deps --locked
 
+
+  e2e:
+    name: Browsertests (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build server
+        run: cargo build --locked -p thuisaccu-server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check frontend syntax
+        run: for f in web/*.js; do node --check "$f"; done
+      - name: Install Playwright and Chromium
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Browser tests
+        working-directory: tests/e2e
+        run: npm test

@@ -1,0 +1,540 @@
+[
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · stekker 800 W",
+  "market": "Nederland; webshop fabrikant",
+  "source_url": "https://cdn.shopify.com/s/files/1/0726/0736/7225/files/Datasheet_20260526_E2_AC_NL_compressed.pdf?v=1780726254",
+  "source_title": "Anker SOLIX Solarbank Max AC datasheet (NL, 26 mei 2026)",
+  "source_kind": "datasheet",
+  "locator": "Pagina 2: tabel Anker SOLIX Solarbank Max AC",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. Geen round-trip-rendement of sluimerverbruik vermeld. Garantie 10 jaar volgens de datasheet. Productpagina: met een Schuko-stekker standaard 800 W; in Nederland 800 tot 3.500 W op een eigen groep.",
+  "numbers": [
+   {
+    "metric": "nominal_energy_wh",
+    "qualifier": "exact",
+    "value": 7000,
+    "boundary": "unspecified",
+    "reported_value": "Nominaal vermogen 7 kWh (hoofdmodule)",
+    "conditions": "De datasheet noemt de capaciteit ‘nominaal vermogen’; ontladingsdiepte 100%."
+   },
+   {
+    "metric": "depth_of_discharge_pct",
+    "qualifier": "exact",
+    "value": 100,
+    "boundary": "unspecified",
+    "reported_value": "Ontladingsdiepte 100%"
+   },
+   {
+    "metric": "continuous_charge_power_w",
+    "qualifier": "at_most",
+    "value": 3500,
+    "boundary": "system_ac",
+    "reported_value": "Nominale ingangsstroom 15,2 A a.c.; maximaal laad-/ontlaadvermogen 3,5 kW",
+    "conditions": "Netingang van het systeem."
+   },
+   {
+    "metric": "continuous_discharge_power_w",
+    "qualifier": "at_most",
+    "value": 800,
+    "boundary": "system_ac",
+    "reported_value": "Nominaal uitgangsvermogen 0,8 / 3,5 kW; via een Schuko-stekker standaard 800 W"
+   },
+   {
+    "metric": "apparent_power_va",
+    "qualifier": "at_most",
+    "value": 3680,
+    "boundary": "system_ac",
+    "reported_value": "Maximaal schijnbaar vermogen 3,68 kVA"
+   },
+   {
+    "metric": "backup_power_w",
+    "qualifier": "exact",
+    "value": 3500,
+    "boundary": "system_ac",
+    "reported_value": "AC-back-up: nominaal actief vermogen 3,5 kW; 3,68 kVA continu"
+   },
+   {
+    "metric": "cycle_life_cycles",
+    "qualifier": "exact",
+    "value": 10000,
+    "boundary": "unspecified",
+    "reported_value": "Levensduur 10.000 cycli",
+    "conditions": "Geen eindcapaciteit vermeld; geen garantie."
+   },
+   {
+    "metric": "weight_kg",
+    "qualifier": "exact",
+    "value": 73,
+    "boundary": "unspecified",
+    "reported_value": "Gewicht 73 kg (7 kWh)"
+   },
+   {
+    "metric": "max_system_energy_wh",
+    "qualifier": "at_most",
+    "value": 42000,
+    "boundary": "unspecified",
+    "reported_value": "1 + 5 extra batterijen: 42 kWh"
+   }
+  ],
+  "features": [
+   {
+    "metric": "inverter_included",
+    "status": "supported"
+   },
+   {
+    "metric": "indoor",
+    "status": "supported"
+   },
+   {
+    "metric": "outdoor",
+    "status": "supported",
+    "conditions": "Installatielocatie binnen/buiten; IP66, bedrijfstemperatuur −20 tot 55 °C."
+   },
+   {
+    "metric": "backup",
+    "status": "conditional",
+    "conditions": "AC-back-up-uitgang tot 3,5 kW; het hele huis alleen met de aparte Backup Auto-Switch (productpagina: tot 5.000 W, omschakeling binnen 20 ms)."
+   },
+   {
+    "metric": "expandable",
+    "status": "supported",
+    "conditions": "Tot vijf BP7000-uitbreidingsbatterijen van 7 kWh."
+   }
+  ],
+  "texts": [
+   {
+    "metric": "chemistry",
+    "value": "LFP"
+   },
+   {
+    "metric": "coupling",
+    "value": "AC-gekoppeld (stekker)"
+   },
+   {
+    "metric": "ip_rating",
+    "value": "IP66"
+   },
+   {
+    "metric": "phase_topology",
+    "value": "1 fase, 220/230 V L+N+PE"
+   }
+  ],
+  "product_warranty_months": 120
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · stekker 800 W",
+  "market": "Nederland; webshop fabrikant",
+  "source_url": "https://www.ankersolix.com/nl/products/a17e2",
+  "source_title": "Anker SOLIX NL: Solarbank Max AC",
+  "source_kind": "offer",
+  "locator": "Productpagina, prijsblok",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. €1.999,00 ‘na korting’ (€500 korting op €2.499,00); einddatum van de actie niet vermeld. De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Eerdere momentopnamen in zoekresultaten noemden €2.099 en €2.199. Geen installatie; een eventuele eigen groep en de Backup Auto-Switch zijn niet inbegrepen.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "Anker Innovations (Anker SOLIX webshop Nederland)",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 199900,
+   "tax_basis": "included",
+   "includes_installation": false
+  }
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · eigen groep 3,5 kW",
+  "market": "Nederland; webshop fabrikant",
+  "source_url": "https://cdn.shopify.com/s/files/1/0726/0736/7225/files/Datasheet_20260526_E2_AC_NL_compressed.pdf?v=1780726254",
+  "source_title": "Anker SOLIX Solarbank Max AC datasheet (NL, 26 mei 2026)",
+  "source_kind": "datasheet",
+  "locator": "Pagina 2: tabel Anker SOLIX Solarbank Max AC",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. Geen round-trip-rendement of sluimerverbruik vermeld. Garantie 10 jaar volgens de datasheet. Productpagina: 3.500 W met Wieland-stekker of vaste bedrading op een eigen groep. Een eigen groep vraagt werk in de meterkast.",
+  "numbers": [
+   {
+    "metric": "nominal_energy_wh",
+    "qualifier": "exact",
+    "value": 7000,
+    "boundary": "unspecified",
+    "reported_value": "Nominaal vermogen 7 kWh (hoofdmodule)",
+    "conditions": "De datasheet noemt de capaciteit ‘nominaal vermogen’; ontladingsdiepte 100%."
+   },
+   {
+    "metric": "depth_of_discharge_pct",
+    "qualifier": "exact",
+    "value": 100,
+    "boundary": "unspecified",
+    "reported_value": "Ontladingsdiepte 100%"
+   },
+   {
+    "metric": "continuous_charge_power_w",
+    "qualifier": "at_most",
+    "value": 3500,
+    "boundary": "system_ac",
+    "reported_value": "Nominale ingangsstroom 15,2 A a.c.; maximaal laad-/ontlaadvermogen 3,5 kW",
+    "conditions": "Netingang van het systeem."
+   },
+   {
+    "metric": "continuous_discharge_power_w",
+    "qualifier": "at_most",
+    "value": 3500,
+    "boundary": "system_ac",
+    "reported_value": "Nominaal uitgangsvermogen 0,8 / 3,5 kW; 3.500 W met Wieland-stekker of vaste aansluiting op een eigen groep"
+   },
+   {
+    "metric": "apparent_power_va",
+    "qualifier": "at_most",
+    "value": 3680,
+    "boundary": "system_ac",
+    "reported_value": "Maximaal schijnbaar vermogen 3,68 kVA"
+   },
+   {
+    "metric": "backup_power_w",
+    "qualifier": "exact",
+    "value": 3500,
+    "boundary": "system_ac",
+    "reported_value": "AC-back-up: nominaal actief vermogen 3,5 kW; 3,68 kVA continu"
+   },
+   {
+    "metric": "cycle_life_cycles",
+    "qualifier": "exact",
+    "value": 10000,
+    "boundary": "unspecified",
+    "reported_value": "Levensduur 10.000 cycli",
+    "conditions": "Geen eindcapaciteit vermeld; geen garantie."
+   },
+   {
+    "metric": "weight_kg",
+    "qualifier": "exact",
+    "value": 73,
+    "boundary": "unspecified",
+    "reported_value": "Gewicht 73 kg (7 kWh)"
+   },
+   {
+    "metric": "max_system_energy_wh",
+    "qualifier": "at_most",
+    "value": 42000,
+    "boundary": "unspecified",
+    "reported_value": "1 + 5 extra batterijen: 42 kWh"
+   }
+  ],
+  "features": [
+   {
+    "metric": "inverter_included",
+    "status": "supported"
+   },
+   {
+    "metric": "indoor",
+    "status": "supported"
+   },
+   {
+    "metric": "outdoor",
+    "status": "supported",
+    "conditions": "Installatielocatie binnen/buiten; IP66, bedrijfstemperatuur −20 tot 55 °C."
+   },
+   {
+    "metric": "backup",
+    "status": "conditional",
+    "conditions": "AC-back-up-uitgang tot 3,5 kW; het hele huis alleen met de aparte Backup Auto-Switch (productpagina: tot 5.000 W, omschakeling binnen 20 ms)."
+   },
+   {
+    "metric": "expandable",
+    "status": "supported",
+    "conditions": "Tot vijf BP7000-uitbreidingsbatterijen van 7 kWh."
+   }
+  ],
+  "texts": [
+   {
+    "metric": "chemistry",
+    "value": "LFP"
+   },
+   {
+    "metric": "coupling",
+    "value": "AC-gekoppeld (vaste installatie)"
+   },
+   {
+    "metric": "ip_rating",
+    "value": "IP66"
+   },
+   {
+    "metric": "phase_topology",
+    "value": "1 fase, 220/230 V L+N+PE"
+   }
+  ],
+  "product_warranty_months": 120
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · eigen groep 3,5 kW",
+  "market": "Nederland; webshop fabrikant",
+  "source_url": "https://www.ankersolix.com/nl/products/a17e2",
+  "source_title": "Anker SOLIX NL: Solarbank Max AC",
+  "source_kind": "offer",
+  "locator": "Productpagina, prijsblok",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. €1.999,00 ‘na korting’ (€500 korting op €2.499,00); einddatum van de actie niet vermeld. De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Eerdere momentopnamen in zoekresultaten noemden €2.099 en €2.199. Geen installatie; een eventuele eigen groep en de Backup Auto-Switch zijn niet inbegrepen.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "Anker Innovations (Anker SOLIX webshop Nederland)",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 199900,
+   "tax_basis": "included",
+   "includes_installation": false
+  }
+ },
+ {
+  "manufacturer": "Zonneplan",
+  "product": "Nexus thuisbatterij",
+  "model_code": "Nexus 1-fase",
+  "product_kind": "battery_system",
+  "configuration": "1-fase · 10 kWh",
+  "market": "Nederland; Zonneplan",
+  "source_url": "https://www.zonneplan.nl/thuisbatterij/1-fase/",
+  "source_title": "Zonneplan: 1-fase thuisbatterij",
+  "source_kind": "product_page",
+  "locator": "Productpagina: prijsblok, omvormer en afmetingen; algemene Nexus-pagina voor rendement en noodstroom",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. Geen bruikbare capaciteit, laadvermogen, sluimerverbruik of productgarantie in jaren vermeld; Zonneplan noemt ‘10 jaar servicegarantie’ zonder voorwaarden.",
+  "numbers": [
+   {
+    "metric": "nominal_energy_wh",
+    "qualifier": "exact",
+    "value": 10000,
+    "boundary": "unspecified",
+    "reported_value": "10 kWh",
+    "conditions": "Niet gespecificeerd als bruikbaar of nominaal."
+   },
+   {
+    "metric": "continuous_discharge_power_w",
+    "qualifier": "at_most",
+    "value": 4400,
+    "boundary": "system_ac",
+    "reported_value": "4,4 kW omvormer",
+    "conditions": "Omvormervermogen; laadvermogen niet apart vermeld."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "at_most",
+    "value": 90,
+    "boundary": "unspecified",
+    "reported_value": "round-trip efficiency tot 90%",
+    "conditions": "Algemene productpagina Nexus; meetgrens niet vermeld."
+   },
+   {
+    "metric": "phase_count",
+    "qualifier": "exact",
+    "value": 1,
+    "boundary": "unspecified",
+    "reported_value": "1-fase thuisbatterij"
+   }
+  ],
+  "features": [
+   {
+    "metric": "inverter_included",
+    "status": "supported",
+    "conditions": "Eigen 1-fase omvormer van 4,4 kW."
+   },
+   {
+    "metric": "backup",
+    "status": "conditional",
+    "conditions": "Productpagina: kan noodstroom leveren bij een storing. Volgens Selectra kost een noodstroomstopcontact €200 extra (niet in een primaire bron bevestigd)."
+   },
+   {
+    "metric": "expandable",
+    "status": "supported",
+    "conditions": "Modulaire batterijpakketten; Zonneplan noemt 10, 15 en 20 kWh."
+   },
+   {
+    "metric": "cloud_required",
+    "status": "unknown"
+   }
+  ],
+  "texts": [
+   {
+    "metric": "chemistry",
+    "value": "LFP"
+   },
+   {
+    "metric": "coupling",
+    "value": "AC-gekoppeld (vaste installatie)"
+   },
+   {
+    "metric": "communication",
+    "value": "4G-verbinding in plaats van wifi (productpagina)"
+   },
+   {
+    "metric": "installation_requirements",
+    "value": "Installatie door Zonneplan; slimme aansturing vraagt volgens Selectra een energiecontract van Zonneplan"
+   }
+  ],
+  "product_warranty_months": null
+ },
+ {
+  "manufacturer": "Zonneplan",
+  "product": "Nexus thuisbatterij",
+  "model_code": "Nexus 1-fase",
+  "product_kind": "battery_system",
+  "configuration": "1-fase · 10 kWh",
+  "market": "Nederland; Zonneplan",
+  "source_url": "https://www.zonneplan.nl/thuisbatterij/1-fase/",
+  "source_title": "Zonneplan: 1-fase thuisbatterij",
+  "source_kind": "offer",
+  "locator": "Productpagina, prijsblok",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. €4.690 ‘na teruggave btw’. Btw terugvragen kan volgens de Belastingdienst alleen bij handel in stroom als ondernemer; de keuzehulp rekent daarom niet met deze prijs. Of installatie is inbegrepen staat niet op de pagina (Selectra meldt van wel). Prijs inclusief btw niet vermeld.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "Zonneplan",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 469000,
+   "tax_basis": "excluded",
+   "includes_installation": null
+  }
+ },
+ {
+  "manufacturer": "Zonneplan",
+  "product": "Nexus thuisbatterij",
+  "model_code": "Nexus 1-fase",
+  "product_kind": "battery_system",
+  "configuration": "1-fase · 15 kWh",
+  "market": "Nederland; Zonneplan",
+  "source_url": "https://www.zonneplan.nl/thuisbatterij/1-fase/",
+  "source_title": "Zonneplan: 1-fase thuisbatterij",
+  "source_kind": "product_page",
+  "locator": "Productpagina: prijsblok, omvormer en afmetingen; algemene Nexus-pagina voor rendement en noodstroom",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. Geen bruikbare capaciteit, laadvermogen, sluimerverbruik of productgarantie in jaren vermeld; Zonneplan noemt ‘10 jaar servicegarantie’ zonder voorwaarden.",
+  "numbers": [
+   {
+    "metric": "nominal_energy_wh",
+    "qualifier": "exact",
+    "value": 15000,
+    "boundary": "unspecified",
+    "reported_value": "15 kWh",
+    "conditions": "Niet gespecificeerd als bruikbaar of nominaal."
+   },
+   {
+    "metric": "continuous_discharge_power_w",
+    "qualifier": "at_most",
+    "value": 4400,
+    "boundary": "system_ac",
+    "reported_value": "4,4 kW omvormer",
+    "conditions": "Omvormervermogen; laadvermogen niet apart vermeld."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "at_most",
+    "value": 90,
+    "boundary": "unspecified",
+    "reported_value": "round-trip efficiency tot 90%",
+    "conditions": "Algemene productpagina Nexus; meetgrens niet vermeld."
+   },
+   {
+    "metric": "phase_count",
+    "qualifier": "exact",
+    "value": 1,
+    "boundary": "unspecified",
+    "reported_value": "1-fase thuisbatterij"
+   }
+  ],
+  "features": [
+   {
+    "metric": "inverter_included",
+    "status": "supported",
+    "conditions": "Eigen 1-fase omvormer van 4,4 kW."
+   },
+   {
+    "metric": "backup",
+    "status": "conditional",
+    "conditions": "Productpagina: kan noodstroom leveren bij een storing. Volgens Selectra kost een noodstroomstopcontact €200 extra (niet in een primaire bron bevestigd)."
+   },
+   {
+    "metric": "expandable",
+    "status": "supported",
+    "conditions": "Modulaire batterijpakketten; Zonneplan noemt 10, 15 en 20 kWh."
+   },
+   {
+    "metric": "cloud_required",
+    "status": "unknown"
+   }
+  ],
+  "texts": [
+   {
+    "metric": "chemistry",
+    "value": "LFP"
+   },
+   {
+    "metric": "coupling",
+    "value": "AC-gekoppeld (vaste installatie)"
+   },
+   {
+    "metric": "communication",
+    "value": "4G-verbinding in plaats van wifi (productpagina)"
+   },
+   {
+    "metric": "installation_requirements",
+    "value": "Installatie door Zonneplan; slimme aansturing vraagt volgens Selectra een energiecontract van Zonneplan"
+   }
+  ],
+  "product_warranty_months": null
+ },
+ {
+  "manufacturer": "Zonneplan",
+  "product": "Nexus thuisbatterij",
+  "model_code": "Nexus 1-fase",
+  "product_kind": "battery_system",
+  "configuration": "1-fase · 15 kWh",
+  "market": "Nederland; Zonneplan",
+  "source_url": "https://www.zonneplan.nl/thuisbatterij/1-fase/",
+  "source_title": "Zonneplan: 1-fase thuisbatterij",
+  "source_kind": "offer",
+  "locator": "Productpagina, prijsblok",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-24. €5.490 ‘na teruggave btw’. Btw terugvragen kan volgens de Belastingdienst alleen bij handel in stroom als ondernemer; de keuzehulp rekent daarom niet met deze prijs. Of installatie is inbegrepen staat niet op de pagina (Selectra meldt van wel). Prijs inclusief btw niet vermeld.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "Zonneplan",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 549000,
+   "tax_basis": "excluded",
+   "includes_installation": null
+  }
+ }
+]

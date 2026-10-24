@@ -23,10 +23,11 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
 cargo doc --workspace --no-deps --locked
-for f in web/*.js; do node --check "$f"; done   # optioneel, als Node aanwezig is
+for f in web/*.js; do node --check "$f"; done   # als Node aanwezig is
+cargo build --locked -p thuisaccu-server && (cd tests/e2e && npm ci && npm test)   # browsertests
 ```
 
-Draai alle vijf de cargo-controles voordat je werk afrondt; CI (`.github/workflows/ci.yml`) draait precies deze op Linux én Windows. Gebruik altijd `--locked`.
+Draai alle vijf de cargo-controles voordat je werk afrondt; CI (`.github/workflows/ci.yml`) draait precies deze op Linux én Windows, en daarnaast op Linux de browsertests in `tests/e2e/` (Playwright met Chromium, vastgezet in `package-lock.json`). Gebruik altijd `--locked`. Wijzig je iets in `web/`, draai dan ook de browsertests; ze starten de gebouwde server met een tijdelijke database en falen bij elk verzoek buiten 127.0.0.1.
 
 Configuratie via omgevingsvariabelen: `LISTEN_ADDR`, `RUST_LOG`, `DATABASE_PATH`. `.env` wordt niet geladen. Gebruik voor handmatig testen een tijdelijke database (`DATABASE_PATH=<tempdir>/test.sqlite3`) zodat je de onderzoeksdata van de gebruiker niet vervuilt.
 
@@ -82,10 +83,11 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 - Schrijf gedragstests bij nieuwe berekeningen en API-contracten: `crates/core/tests/analysis.rs` (rekenkern), `crates/storage/tests/catalog.rs` (opslag, migraties, transacties), `crates/server/tests/*.rs` (HTTP, import, scenario).
 - Referentiegevallen voor de rekenkern controleren energiebehoud, vermogensgrenzen, verliezen, NPV/ROI, financiering en vervanging. Een nieuwe rekenregel krijgt een handmatig narekenbaar referentiegeval met de aanname in de testnaam of een comment.
 - Testdata is synthetisch en klein. Voorbeeldbestanden voor import staan in `crates/server/resources/`.
+- `tests/e2e/app.test.js` (node:test + Playwright) dekt de keuzehulp, import met meterbestand, de prijswaarschuwing en het smalle scherm. Gebruik daar ook alleen synthetische, in de test gegenereerde gegevens.
 
 ## Ingebouwde onderzoeksdata
 
-- `crates/server/resources/references.json` en `references-nl.json` zijn gedateerde bronmomentopnamen (24 oktober 2026), elk met een eigen importsleutel; alleen de Nederlandse set bevat prijzen. `typical-profiles.json` bevat de profielvormen voor de keuzehulp, gebouwd met `tools/build_typical_profiles.py`; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
+- `crates/server/resources/references.json`, `references-nl.json` en `references-nl-2.json` zijn gedateerde bronmomentopnamen (24 oktober 2026), elk met een eigen importsleutel in `REFERENCE_SETS` (`api.rs`); alleen de Nederlandse sets bevatten prijzen. Nieuwe producten komen in een nieuwe set met een nieuwe sleutel, zodat bestaande databases ze kunnen bijladen zonder dat oude claims veranderen. De interface waarschuwt drie maanden na de peildatum (`RESEARCHED_ISO` in `web/data.js`). `typical-profiles.json` bevat de profielvormen voor de keuzehulp, gebouwd met `tools/build_typical_profiles.py`; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
 - Verzin geen specificaties, prijzen of bronnen. Bij bijwerken: nieuwe peildatum, controleerbare bron-URL en vindplaats, en de documentatie in [docs/battery-research.md](docs/battery-research.md) of [docs/roi-model.md](docs/roi-model.md) bijwerken.
 
 ## Wat buiten scope is tenzij gevraagd

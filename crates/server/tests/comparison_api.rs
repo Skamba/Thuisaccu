@@ -45,15 +45,31 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let data = response_json(response).await;
-    // Drie internationale momentopnamen plus vijf Nederlandse uitvoeringen; de Powerwall-
-    // datasheet hangt als extra bron aan de bestaande uitvoering.
-    assert_eq!(data["configurations"].as_array().unwrap().len(), 8);
+    // Drie internationale momentopnamen, vijf Nederlandse uitvoeringen en vier uit de tweede
+    // Nederlandse set; de Powerwall-datasheet hangt als extra bron aan de bestaande uitvoering.
+    assert_eq!(data["configurations"].as_array().unwrap().len(), 12);
     let offers = data["offers"].as_array().unwrap();
-    assert_eq!(offers.len(), 5);
-    assert!(offers.iter().all(|o| o["currency"] == "EUR"
-        && o["tax_basis"] == "included"
-        && o["includes_installation"] == false
-        && o["source_url"].as_str().unwrap().starts_with("https://")));
+    assert_eq!(offers.len(), 9);
+    assert!(offers.iter().all(
+        |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
+    ));
+    // Een prijs ‘na teruggave btw’ blijft exclusief btw en zonder bekende installatie.
+    let excluded: Vec<_> = offers
+        .iter()
+        .filter(|o| o["tax_basis"] == "excluded")
+        .collect();
+    assert_eq!(excluded.len(), 2);
+    assert!(
+        excluded
+            .iter()
+            .all(|o| o["includes_installation"].is_null())
+    );
+    assert!(
+        offers
+            .iter()
+            .filter(|o| o["tax_basis"] == "included")
+            .all(|o| o["includes_installation"] == false)
+    );
     let tesla = data["configurations"]
         .as_array()
         .unwrap()

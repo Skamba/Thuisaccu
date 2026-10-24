@@ -51,7 +51,8 @@ window.UI = (() => {
 
   async function api(url, { method = "GET", json, body } = {}) {
     const options = { method };
-    if (json !== undefined) { options.headers = { "content-type": "application/json" }; options.body = JSON.stringify(json); }
+    if (json !== undefined) { options.headers = { "content-type": "application/json" };
+      options.body = JSON.stringify(json); }
     else if (body !== undefined) options.body = body;
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
@@ -63,7 +64,8 @@ window.UI = (() => {
   const store = {
     get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
     set(key, value) {
-      try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); return true; }
+      try { if (value == null) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify(value)); return true; }
       catch { return false; }
     }
   };
@@ -143,8 +145,10 @@ window.UI = (() => {
         h("thead", {}, h("tr", {}, headers.map(text => h("th", { scope: "col" }, text)))),
         h("tbody", {}, rows.map(row => h("tr", {}, row.map(cell => h("td", {}, cell ?? "Onbekend")))))));
   }
-  const stats = items => h("dl", { class: "stats" }, items.map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
-  const empty = (title, text, ...actions) => h("div", { class: "empty" }, h("h2", {}, title), h("p", {}, text), h("div", { class: "actions" }, actions));
+  const stats = items => h("dl", { class: "stats" },
+    items.map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
+  const empty = (title, text, ...actions) => h("div", { class: "empty" }, h("h2", {}, title), h("p", {}, text),
+    h("div", { class: "actions" }, actions));
 
   // Tabbladen met pijltjestoetsen, Home en End.
   function tabs(entries, initial = 0) {
@@ -155,9 +159,13 @@ window.UI = (() => {
       panels[i].hidden = i !== index;
     });
     entries.forEach(({ label, content }, index) => {
-      const tab = h("button", { type: "button", role: "tab", id: `${id}-tab-${index}`, "aria-controls": `${id}-panel-${index}`, onclick: () => show(index) }, label);
+      const tab = h("button",
+        { type: "button", role: "tab", id: `${id}-tab-${index}`, "aria-controls": `${id}-panel-${index}`,
+          onclick: () => show(index) },
+        label);
       tab.addEventListener("keydown", event => {
-        const next = { ArrowRight: (index + 1) % entries.length, ArrowLeft: (index - 1 + entries.length) % entries.length, Home: 0, End: entries.length - 1 }[event.key];
+        const next = { ArrowRight: (index + 1) % entries.length,
+          ArrowLeft: (index - 1 + entries.length) % entries.length, Home: 0, End: entries.length - 1 }[event.key];
         if (next === undefined) return;
         event.preventDefault(); show(next); list.children[next].focus();
       });
@@ -209,18 +217,21 @@ window.UI = (() => {
       if (/^[=+@-]/.test(text)) text = `'${text}`;
       return `"${text.replaceAll('"', '""')}"`;
     };
-    const blob = new Blob(["﻿" + rows.map(row => row.map(cell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["﻿" + rows.map(row => row.map(cell).join(";")).join("\r\n")],
+      { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob), a = h("a", { href: url, download: filename });
     a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // Grafieken in inline SVG, altijd met een tabel als tekstalternatief.
-  const palette = ["#2b7a5f", "#3f7cc0", "#c06a1f", "#8f5aa0", "#00858b", "#8b6b23", "#5e68b8", "#b84d74", "#5f7338", "#7a6a5e"];
+  const palette = ["#2b7a5f", "#3f7cc0", "#c06a1f", "#8f5aa0", "#00858b", "#8b6b23", "#5e68b8", "#b84d74", "#5f7338",
+    "#7a6a5e"];
   function chart(type, { title, rows, series, unit = "", format = v => number(v, 0), marks = [] }) {
     const width = 880, horizontal = type === "range" || type === "stacked";
     const height = horizontal ? Math.max(220, rows.length * 56 + 80) : 320;
     const longest = Math.max(0, ...rows.map(r => String(r.label).length));
-    const left = horizontal ? Math.min(330, Math.max(110, longest * 6.6 + 24)) : 80, right = 24, top = 20, bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
+    const left = horizontal ? Math.min(330, Math.max(110, longest * 6.6 + 24)) : 80, right = 24, top = 20,
+      bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
     const svg = document.createElementNS(SVG, "svg");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", `${title}. De waarden staan ook in de tabel onder de grafiek.`);
@@ -233,15 +244,20 @@ window.UI = (() => {
       }
       svg.append(node); return node;
     };
-    const text = (x, y, value, anchor = "start") => { draw("text", { x, y, "text-anchor": anchor, class: "chart-text" }).textContent = value; };
+    const text = (x, y, value,
+      anchor = "start") => { draw("text", { x, y, "text-anchor": anchor, class: "chart-text" }).textContent = value; };
     const colour = (i, s) => s?.color || palette[i % palette.length];
-    const values = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0), 0)] : r.values).filter(finite);
+    const values = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0),
+      0)] : r.values).filter(finite);
     const min = Math.min(0, ...values), max = Math.max(0, ...values), span = max - min || 1;
     const x = v => left + (v - min) / span * plotW, y = v => top + (max - v) / span * plotH;
     for (let i = 0; i <= 4; i++) {
       const value = min + i * span / 4;
-      if (horizontal) { draw("line", { x1: x(value), x2: x(value), y1: top, y2: height - bottom, class: "chart-grid" }); text(x(value), height - 26, format(value), "middle"); }
-      else { draw("line", { x1: left, x2: width - right, y1: y(value), y2: y(value), class: "chart-grid" }); text(left - 10, y(value) + 4, format(value), "end"); }
+      if (horizontal) { draw("line",
+        { x1: x(value), x2: x(value), y1: top, y2: height - bottom, class: "chart-grid" });
+        text(x(value), height - 26, format(value), "middle"); }
+      else { draw("line", { x1: left, x2: width - right, y1: y(value), y2: y(value), class: "chart-grid" });
+        text(left - 10, y(value) + 4, format(value), "end"); }
     }
     if (horizontal) draw("line", { x1: x(0), x2: x(0), y1: top, y2: height - bottom, class: "chart-axis" });
     else draw("line", { x1: left, x2: width - right, y1: y(0), y2: y(0), class: "chart-axis" });
@@ -249,12 +265,19 @@ window.UI = (() => {
     if (type === "line") {
       const px = i => left + i / Math.max(1, rows.length - 1) * plotW;
       series.forEach((s, si) => {
-        const points = rows.map((r, i) => finite(r.values[si]) ? `${px(i)},${y(r.values[si])}` : null).filter(Boolean).join(" ");
-        draw("polyline", { points, fill: "none", stroke: colour(si, s), "stroke-width": 2.5, "stroke-dasharray": si > 4 ? "7 3" : "none" });
-        rows.forEach((r, i) => { if (finite(r.values[si])) draw("circle", { cx: px(i), cy: y(r.values[si]), r: 4, fill: colour(si, s) }, `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); });
+        const points = rows.map((r,
+          i) => finite(r.values[si]) ? `${px(i)},${y(r.values[si])}` : null).filter(Boolean).join(" ");
+        draw("polyline",
+          { points, fill: "none", stroke: colour(si, s), "stroke-width": 2.5,
+            "stroke-dasharray": si > 4 ? "7 3" : "none" });
+        rows.forEach((r,
+          i) => { if (finite(r.values[si])) draw("circle",
+            { cx: px(i), cy: y(r.values[si]), r: 4, fill: colour(si, s) },
+            `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); });
       });
       const step = Math.max(1, Math.ceil(rows.length / 10));
-      rows.forEach((r, i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
+      rows.forEach((r,
+        i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
       for (const mark of marks) {
         const index = rows.findIndex(r => r.label === mark.at); if (index < 0) continue;
         draw("line", { x1: px(index), x2: px(index), y1: top, y2: height - bottom, class: "chart-mark" }, mark.label);
@@ -270,7 +293,10 @@ window.UI = (() => {
             let start = 0;
             r.values.forEach((v, si) => {
               if (!finite(v)) return;
-              draw("rect", { x: x(start), y: cy - 13, width: Math.max(0, x(start + v) - x(start)), height: 26, fill: colour(si, series[si]) }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
+              draw("rect",
+                { x: x(start), y: cy - 13, width: Math.max(0, x(start + v) - x(start)), height: 26,
+                  fill: colour(si, series[si]) },
+                `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
               start += v;
             });
           } else {
@@ -279,15 +305,20 @@ window.UI = (() => {
               `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`);
             r.values.forEach((v, i) => {
               if (!finite(v)) return;
-              if (i === 1) draw("circle", { cx: x(v), cy, r: 6, class: "chart-base" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
-              else draw("rect", { x: x(v) - 2, y: cy - 9, width: 4, height: 18, class: "chart-tick" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
+              if (i === 1) draw("circle", { cx: x(v), cy, r: 6, class: "chart-base" },
+                `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
+              else draw("rect", { x: x(v) - 2, y: cy - 9, width: 4, height: 18, class: "chart-tick" },
+                `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
             });
           }
         } else {
           const groupW = plotW / rows.length, barW = groupW / (series.length + 1);
           r.values.forEach((v, si) => {
             if (!finite(v)) return;
-            draw("rect", { x: left + ri * groupW + si * barW + barW / 2, y: Math.min(y(v), y(0)), width: barW * 0.86, height: Math.max(1, Math.abs(y(v) - y(0))), fill: colour(si, series[si]) }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
+            draw("rect",
+              { x: left + ri * groupW + si * barW + barW / 2, y: Math.min(y(v), y(0)), width: barW * 0.86,
+                height: Math.max(1, Math.abs(y(v) - y(0))), fill: colour(si, series[si]) },
+              `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
           });
           text(left + (ri + 0.5) * groupW, height - 28, r.label, "middle");
         }

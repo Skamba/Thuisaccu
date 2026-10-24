@@ -1,0 +1,11 @@
+{
+  "name": "thuisaccu-e2e",
+  "private": true,
+  "description": "Browsertests voor de lokale Thuisaccu-webapp (alleen ontwikkeling en CI).",
+  "scripts": {
+    "test": "node --test --test-concurrency=1"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

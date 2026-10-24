@@ -28,6 +28,20 @@ De [HTW Berlin Stromspeicher-Inspektion 2026](https://solar.htw-berlin.de/studie
 
 Wat de bron niet vermeldt, ontbreekt: bijvoorbeeld de bruikbare capaciteit van HomeWizard en Zendure, het round-trip-rendement van Marstek en Zendure, en de meetgrens van het Sessy-rendement. Waar een webwinkel de btw niet expliciet noemt, is de prijs als inclusief vastgelegd omdat een consumentenprijs volgens EU-richtlijn 98/6/EG de eindprijs inclusief btw is; dat staat in de entryvoorwaarden. Prijzen veranderen snel; het zijn momentopnamen, geen actuele prijslijst.
 
+Een tweede set, `crates/server/resources/references-nl-2.json` (sleutel `research-2026-10-24-nl-v2`), voegt toe:
+
+| Uitvoering | Specificaties | Prijs |
+| --- | --- | --- |
+| Anker SOLIX Solarbank Max AC, 7 kWh, stekker 800 W | [datasheet NL, 26 mei 2026](https://cdn.shopify.com/s/files/1/0726/0736/7225/files/Datasheet_20260526_E2_AC_NL_compressed.pdf?v=1780726254), pagina 2 | € 1.999 actieprijs (adviesprijs € 2.499), [Anker NL](https://www.ankersolix.com/nl/products/a17e2) |
+| Anker SOLIX Solarbank Max AC, 7 kWh, eigen groep 3,5 kW | idem | idem |
+| Zonneplan Nexus 1-fase, 10 / 15 kWh | [Zonneplan 1-fase](https://www.zonneplan.nl/thuisbatterij/1-fase/) en [Nexus-overzicht](https://www.zonneplan.nl/thuisbatterij) | € 4.690 / € 5.490 ‘na teruggave btw’, vastgelegd als exclusief btw |
+
+De Anker-datasheet noemt de capaciteit nominaal met 100% ontladingsdiepte, maar geen round-trip-rendement en geen sluimerverbruik; de keuzehulp gebruikt daarvoor de zichtbare aannames. Het uitgangsvermogen is 0,8 kW via een Schuko-stekker en 3,5 kW op een eigen groep, daarom staan er twee uitvoeringen. Eerdere zoekresultaten toonden ook € 2.099 en € 2.199 voor dezelfde pagina; de vastgelegde prijs is die van 24 oktober 2026. Zonneplan noemt geen bruikbare capaciteit, geen laadvermogen en geen garantietermijn in jaren, alleen ‘10 jaar servicegarantie’ en ‘round-trip efficiency tot 90%’. Omdat btw terugvragen alleen bij handel als ondernemer kan (Belastingdienst), gebruikt de keuzehulp de Zonneplan-prijs niet automatisch; vul je eigen offerte in.
+
+Niet opgenomen: EcoFlow STREAM AC Pro (geen Nederlandse fabrikantpagina met specificaties gevonden; prijzen alleen via marktplaatsverkopers) en Huawei LUNA2000 (de S0 is uit productie, de S1-specificatiepagina was niet bereikbaar; heeft een Huawei-omvormer nodig).
+
+Na drie maanden (vanaf 24 januari 2027) tonen de catalogus en de keuzehulp een melding dat prijzen en tarieven verouderd kunnen zijn. Bestaande databases krijgen de tweede set met ‘Laad onderzochte uitvoeringen’ in de catalogus; eerder geladen sets worden niet opnieuw ingevoegd.
+
 ## Vast te leggen gegevens
 
 De volgende inventaris is ons ontwerp op basis van dit onderzoek. Een veld mag onbekend blijven; een onbekende waarde is geen nul en geen ontkenning.

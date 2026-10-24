@@ -3,7 +3,8 @@
 // Keuzehulp: vijf stappen in gewone taal en daarna een doorrekening met zichtbare aannames.
 // Antwoorden staan alleen als concept in deze browser; er gaat niets naar externe diensten.
 (() => {
-  const { h, field, numberInput, select, choice, checkbox, badge, button, link, external, table, chart, money, kwh, number: n, parse, store } = UI;
+  const { h, field, numberInput, select, choice, checkbox, badge, button, link, external, table, chart, money, kwh,
+    number: n, parse, store } = UI;
   const STORE = "thuisaccu-keuzehulp";
 
   // Gedateerde indicaties uit openbare bronnen; alleen na een klik of keuze gebruikt.
@@ -12,7 +13,8 @@
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
       "plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
     importSources: [
-      ["CBS: Verdeling energietarieven 2026 (september 2026)", "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
+      ["CBS: Verdeling energietarieven 2026 (september 2026)",
+        "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
       ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"]
     ],
     // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
@@ -24,10 +26,14 @@
       "(het wettelijke minimum van 50% van het kale leveringstarief volgens de ACM, bij het CBS-gemiddelde) " +
       "en € 0,0515 terugleverkosten: 1 cent netto.",
     exportSources: [
-      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)", "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"],
-      ["Salderingcheck.nl: terugleververgoeding 2027 per leverancier", "https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/"],
-      ["Eneco: rekenvoorbeelden met en zonder salderen (peildatum 25 februari 2026)", "https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/"],
-      ["Vattenfall: einde salderingsregeling 2027", "https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/"]
+      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)",
+        "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"],
+      ["Salderingcheck.nl: terugleververgoeding 2027 per leverancier",
+        "https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/"],
+      ["Eneco: rekenvoorbeelden met en zonder salderen (peildatum 25 februari 2026)",
+        "https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/"],
+      ["Vattenfall: einde salderingsregeling 2027",
+        "https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/"]
     ],
     variantYear: 2030,
     variantText: "Tot 2030 moet de vergoeding minstens 50% van het kale leveringstarief zijn. Voor daarna is geen minimum " +
@@ -46,18 +52,30 @@
       "terugleververmogen op 800 W of minder. Die laatste adviezen geeft Milieu Centraal voor stekkerzonnepanelen; " +
       "ze gelden ook logisch voor een stekkerbatterij, maar zijn daarvoor niet afzonderlijk gepubliceerd.",
     sources: [
-      ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)", "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
-      ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)", "https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd"],
-      ["Milieu Centraal: thuisbatterij (gewijzigd 28 september 2026)", "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/"],
-      ["Milieu Centraal: zonnepanelen met een stekker (gewijzigd 30 juni 2026)", "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/"]
+      ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)",
+        "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
+      ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)",
+        "https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd"],
+      ["Milieu Centraal: thuisbatterij (gewijzigd 28 september 2026)",
+        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/"],
+      ["Milieu Centraal: zonnepanelen met een stekker (gewijzigd 30 juni 2026)",
+        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/"]
     ]
   };
+  // Zinvol bereik op de capaciteitscurve: aandeel van wat een accu van 20 kWh zou opleveren.
+  const SIZING = {
+    value: { low: 0.75, high: 0.9, label: "Beste verhouding tussen prijs en opbrengst",
+      detail: "Het bereik waarin je 75 tot 90% haalt van wat een accu van 20 kWh zou opleveren." },
+    max: { low: 0.9, high: 0.97, label: "Zo veel mogelijk eigen zonnestroom",
+      detail: "90 tot 97%: groter en duurder; de laatste kWh’s worden maar op weinig dagen helemaal gebruikt." }
+  };
   const BLANK = {
-    panels: "yes", data: "totals", importId: "", gridImport: "", gridExport: "", production: "", kwp: "", orientation: "south",
+    panels: "yes", data: "totals", importId: "", gridImport: "", gridExport: "", production: "", kwp: "",
+      orientation: "south",
     heatPump: "", ev: "", evCharging: "evening",
     install: "any", phases: "unknown", place: "any", backup: "no",
     contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
-    objective: "net_present_value", budget: "", horizon: "15"
+    objective: "net_present_value", budget: "", horizon: "15", sizing: "value"
   };
   let answers = { ...BLANK, ...store.get(STORE, {}) }, yields = null, flow = null;
   // Concepten van vóór de terugleververgoedingsvraag: een ingevulde vergoeding blijft leidend.
@@ -85,9 +103,11 @@
     flow.rerender();
     if (name) document.querySelector(`.wizard-body input[name="${name}"][value="${value}"]`)?.focus();
   }
-  const pick = (key, legend, options, help) => choice(legend, `kh-${key}`, options, answers[key], v => { answers[key] = v; save(); rerender(); }, help);
+  const pick = (key, legend, options, help) => choice(legend, `kh-${key}`, options, answers[key],
+    v => { answers[key] = v; save(); rerender(); }, help);
   function amount(label, key, props, help, onInput) {
-    const control = numberInput({ value: answers[key], ...props, oninput: event => { answers[key] = event.target.value; save(); onInput?.(); } });
+    const control = numberInput({ value: answers[key], ...props,
+      oninput: event => { answers[key] = event.target.value; save(); onInput?.(); } });
     return field(label, control, help);
   }
   const sourceList = sources => h("details", { class: "sources" }, h("summary", {}, "Bronnen"),
@@ -95,18 +115,24 @@
 
   function stepEnergy(body) {
     body.append(h("h2", {}, "Je energie"),
-      h("p", { class: "lead" }, "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
+      h("p", { class: "lead" },
+        "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
       pick("panels", "Heb je zonnepanelen?", [["yes", "Ja"], ["no", "Nee"]]),
       pick("data", "Welke gegevens heb je?", [
-        ["totals", "Jaartotalen", "Van je jaarafrekening en de app van je omvormer. We maken er een geschat uurprofiel van."],
-        ["file", "Een bestand met uur- of kwartierwaarden", "Een export van je omvormer of slimme meter (P1). Nauwkeuriger."]
+        ["totals", "Jaartotalen",
+          "Van je jaarafrekening en de app van je omvormer. We maken er een geschat uurprofiel van."],
+        ["file", "Een bestand met uur- of kwartierwaarden",
+          "Een export van je omvormer of slimme meter (P1). Nauwkeuriger."]
       ]));
     if (answers.data === "file") {
       const target = h("div");
-      body.append(target, h("p", { class: "actions" }, link("Importeer een bestand", "#/energie/import", "button secondary")));
+      body.append(target,
+        h("p", { class: "actions" }, link("Importeer een bestand", "#/energie/import", "button secondary")));
       Data.imports().then(list => {
         const fit = list.filter(item => Data.suitability(item).ok === true);
-        if (!fit.length) { target.append(h("p", { class: "callout" }, "Je hebt nog geen bruikbaar bestand bewaard. Importeer eerst één volledig jaar met opwek en verbruik (of P1-afname en -teruglevering) en kom daarna terug.")); return; }
+        if (!fit.length) { target.append(h("p", { class: "callout" },
+          "Je hebt nog geen bruikbaar bestand bewaard. Importeer eerst één volledig jaar met opwek en verbruik (of P1-afname en -teruglevering) en kom daarna terug."));
+          return; }
         if (!fit.some(item => String(item.id) === answers.importId)) answers.importId = "";
         const control = select([["", "Kies een bewaard profiel…"], ...fit.map(item => [String(item.id), item.filename])], answers.importId,
           { required: true, onchange: event => { answers.importId = event.target.value; save(); } });
@@ -125,9 +151,12 @@
       amount("Stroom van het net per jaar (kWh)", "gridImport", { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘levering’ of ‘verbruik’. Bij een dag/nacht-meter tel je beide op.", update));
     if (answers.panels === "yes") {
       grid.append(
-        amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport", { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’.", update),
-        amount("Opwek van je panelen per jaar (kWh)", "production", { min: "0", max: "100000" }, "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
-        amount("Of: vermogen van je panelen (kWp)", "kwp", { min: "0.1", max: "100" }, "Aantal panelen × wattpiek per paneel ÷ 1000, bijvoorbeeld 10 × 400 Wp = 4 kWp.", update),
+        amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport",
+          { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’.", update),
+        amount("Opwek van je panelen per jaar (kWh)", "production", { min: "0", max: "100000" },
+          "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
+        amount("Of: vermogen van je panelen (kWp)", "kwp", { min: "0.1", max: "100" },
+          "Aantal panelen × wattpiek per paneel ÷ 1000, bijvoorbeeld 10 × 400 Wp = 4 kWp.", update),
         field("Ligging van de panelen", select([["south", "Zuid"], ["south_east", "Zuidoost"], ["south_west", "Zuidwest"], ["east_west", "Oost en west"], ["east", "Oost"], ["west", "West"]],
           answers.orientation, { onchange: event => { answers.orientation = event.target.value; save(); update(); } })));
     }
@@ -154,7 +183,9 @@
       }
     }
     electric.append(evChoice);
-    body.append(grid, derived, electric, h("p", { class: "help" }, "We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven op deze computer."));
+    body.append(grid, derived, electric,
+      h("p", { class: "help" },
+        "We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven op deze computer."));
     rerenderEv();
   }
 
@@ -163,14 +194,17 @@
       pick("install", "Hoe wil je de accu aansluiten?", [
         ["plug", "Zelf, met de stekker", "Stekkerbatterij tot 800 W in een gewoon stopcontact. Goedkoper en kleiner, " +
           "geen installateur. Lees wel het veiligheidsadvies hieronder."],
-        ["fixed", "Laten installeren", "Vaste aansluiting in de meterkast. Meer vermogen en capaciteit, hogere kosten."],
+        ["fixed", "Laten installeren",
+          "Vaste aansluiting in de meterkast. Meer vermogen en capaciteit, hogere kosten."],
         ["any", "Weet ik nog niet", "We laten beide soorten zien."]]),
       answers.install === "fixed" ? null : h("div", { class: "callout" }, h("p", {}, RULES.plug)),
       pick("phases", "Wat voor aansluiting heb je?", [
         ["1", "1-fase", "Eén hoofdschakelaar in de meterkast, vaak 1×35 A of 1×40 A."],
         ["3", "3-fase", "Drie hoofdschakelaars of een brede driepolige schakelaar, vaak 3×25 A."],
         ["unknown", "Weet ik niet"]], "Een paar accu’s werken alleen op 3-fase. Stekkerbatterijen werken op beide."),
-      pick("place", "Waar kan de accu staan?", [["inside", "Binnen", "Bijvoorbeeld meterkast, berging of zolder (vorstvrij)."], ["outside", "Buiten", "Tegen de gevel, in een schuur of garage."], ["any", "Maakt niet uit"]]),
+      pick("place", "Waar kan de accu staan?",
+        [["inside", "Binnen", "Bijvoorbeeld meterkast, berging of zolder (vorstvrij)."],
+          ["outside", "Buiten", "Tegen de gevel, in een schuur of garage."], ["any", "Maakt niet uit"]]),
       pick("backup", "Wil je noodstroom bij een stroomstoring?", [["no", "Niet nodig"], ["yes", "Ja, dat is belangrijk", "Veel accu’s schakelen bij een storing uit. Noodstroom vraagt extra onderdelen."]]));
   }
 
@@ -193,7 +227,8 @@
       sourceList(INDICATION.importSources),
       pick("feedin", "Wat krijg je vanaf 2027 voor teruggeleverde stroom?", [
         ["known", "Ik weet mijn vergoeding en terugleverkosten", "Staan in je contract of tariefoverzicht, per kWh."],
-        ["indication", "Weet ik niet: reken met een indicatie", "€ 0,0615 vergoeding en € 0,0515 terugleverkosten per kWh."]
+        ["indication", "Weet ik niet: reken met een indicatie",
+          "€ 0,0615 vergoeding en € 0,0515 terugleverkosten per kWh."]
       ]));
     if (answers.feedin === "known") {
       body.append(h("div", { class: "grid" },
@@ -216,11 +251,13 @@
   function stepGoal(body) {
     body.append(h("h2", {}, "Wat vind je belangrijk?"), h("p", { class: "lead" }, "We vergelijken elke passende accu met géén accu. ‘Geen accu’ kan ook de beste keuze zijn."),
       pick("objective", "Wanneer is een accu voor jou de beste?", [
-        ["net_present_value", "Als hij over de hele looptijd het meeste oplevert", "Rekent toekomstige besparingen om naar geld van nu (netto contante waarde)."],
+        ["net_present_value", "Als hij over de hele looptijd het meeste oplevert",
+          "Rekent toekomstige besparingen om naar geld van nu (netto contante waarde)."],
         ["payback", "Als ik mijn geld zo snel mogelijk terugverdien"],
         ["self_consumption", "Als ik zo veel mogelijk eigen zonnestroom gebruik", "Ook als dat financieel niet uitkomt."]]),
       h("div", { class: "grid" },
-        amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" }, "Alle startkosten samen: accu, installatie en eventuele extra’s."),
+        amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" },
+          "Alle startkosten samen: accu, installatie en eventuele extra’s."),
         field("Hoe ver wil je vooruitkijken?", select([["10", "10 jaar"], ["15", "15 jaar"], ["20", "20 jaar"]], answers.horizon, { onchange: event => { answers.horizon = event.target.value; save(); } }))));
   }
 
@@ -241,7 +278,10 @@
     if (/hybride/i.test(p.coupling)) notes.push("Hybride systeem: combineert met of vervangt je omvormer. Laat een installateur dat beoordelen.");
     if (/DC/.test(p.coupling) && !/hybride/i.test(p.coupling)) notes.push("Heeft een geschikte (hybride) omvormer nodig.");
     if (p.missing.length) notes.push(`Kan nog niet worden doorgerekend: ${p.missing.join(" en ")} onbekend.`);
-    if (!p.offer) notes.push("Geen gepubliceerde prijs gevonden; vul een offertebedrag in om mee te rekenen.");
+    if (!p.offer && p.otherOffer) {
+      notes.push(`${p.otherOffer.seller} publiceert alleen een prijs ${p.otherOffer.tax_basis === "excluded"
+        ? "zonder btw of na btw-teruggave" : "zonder vermelding van btw"}; vul je offertebedrag inclusief btw in.`);
+    } else if (!p.offer) notes.push("Geen gepubliceerde prijs gevonden; vul een offertebedrag in om mee te rekenen.");
     return { ok: !no.length, no, notes };
   }
 
@@ -253,7 +293,8 @@
     const consumption = gross();
     if (!(consumption > 0)) throw new Error("Vul in stap 1 je afname, teruglevering en opwek (of kWp) in.");
     const own = parse(answers.production);
-    const solar = answers.panels === "yes" ? { orientation: answers.orientation, annual_production_kwh: own, peak_power_kwp: own == null ? parse(answers.kwp) : null } : null;
+    const solar = answers.panels === "yes" ? { orientation: answers.orientation, annual_production_kwh: own,
+      peak_power_kwp: own == null ? parse(answers.kwp) : null } : null;
     const heatPump = parse(answers.heatPump), ev = parse(answers.ev);
     const json = {
       annual_consumption_kwh: consumption, solar,
@@ -266,14 +307,17 @@
   // Bewerkbare kostenopbouw per accu; een ingevuld bedrag vervangt de indicatie.
   function costEditor(lines, categories, priceInput) {
     const labels = Object.fromEntries(categories.map(c => [c.key, c.label])), inputs = new Map();
-    const summary = h("summary"), totals = h("p", { class: "help" }), box = h("details", { class: "costs" }, summary, totals);
+    const summary = h("summary"), totals = h("p", { class: "help" }),
+      box = h("details", { class: "costs" }, summary, totals);
     const statusText = { included: "Inbegrepen", not_applicable: "Niet van toepassing", unknown: "Nog in te vullen" };
     const fixedLine = line => line.timing === "event" || ["grant", "vat_refund"].includes(line.category);
     const item = line => {
       const head = h("div", { class: "cost-head" }, h("span", {}, labels[line.category]));
-      if (fixedLine(line)) head.append(h("span", { class: "cost-status" }, line.status === "priced" ? money(line.amount_minor / 100) : statusText[line.status]));
+      if (fixedLine(line)) head.append(h("span", { class: "cost-status" },
+        line.status === "priced" ? money(line.amount_minor / 100) : statusText[line.status]));
       else {
-        const control = numberInput({ min: "0", step: "0.01", placeholder: statusText[line.status] || "", "aria-label": `${labels[line.category]} in euro`, oninput: update });
+        const control = numberInput({ min: "0", step: "0.01", placeholder: statusText[line.status] || "",
+          "aria-label": `${labels[line.category]} in euro`, oninput: update });
         control.value = line.status === "priced" ? String(line.amount_minor / 100) : "";
         inputs.set(line.category, control); head.append(control);
       }
@@ -288,7 +332,8 @@
       ["Later en aftrekposten", l => fixedLine(l)]
     ];
     for (const [title, match] of groups) {
-      const group = lines.filter(l => l.category !== "battery" && match(l)), rest = group.filter(l => l.status === "not_applicable");
+      const group = lines.filter(l => l.category !== "battery" && match(l)),
+        rest = group.filter(l => l.status === "not_applicable");
       box.append(h("div", { class: "cost-group" }, h("h4", {}, title), group.filter(l => l.status !== "not_applicable").map(item),
         rest.length ? h("details", {}, h("summary", {}, `${rest.length} ${rest.length === 1 ? "post" : "posten"} niet van toepassing`), rest.map(item)) : null));
     }
@@ -299,15 +344,21 @@
         const value = parse(control.value), original = line.status === "priced" ? line.amount_minor : null;
         if (value != null && value > 0) {
           const minor = Math.round(value * 100);
-          return minor === original ? { ...line } : { ...line, status: "priced", amount_minor: minor, source: "Eigen invoer in de keuzehulp", notes: `Aangepast; indicatie was: ${line.notes}` };
+          return minor === original ? { ...line } : { ...line, status: "priced", amount_minor: minor,
+            source: "Eigen invoer in de keuzehulp", notes: `Aangepast; indicatie was: ${line.notes}` };
         }
-        return original != null ? { ...line, status: "not_applicable", amount_minor: 0, source: "Eigen invoer in de keuzehulp", notes: "Door de gebruiker op nul gezet." } : { ...line };
+        return original != null ? { ...line, status: "not_applicable", amount_minor: 0,
+          source: "Eigen invoer in de keuzehulp", notes: "Door de gebruiker op nul gezet." } : { ...line };
       });
     }
     function update() {
       const all = collect(), price = parse(priceInput.value) || 0;
-      const start = price + all.filter(l => l.timing === "upfront" && l.status === "priced" && !["grant", "vat_refund"].includes(l.category)).reduce((t, l) => t + l.amount_minor, 0) / 100;
-      const yearly = all.filter(l => l.timing === "annual" && l.status === "priced").reduce((t, l) => t + l.amount_minor, 0) / 100;
+      const start = price + all.filter(l => l.timing === "upfront" && l.status === "priced" && !["grant",
+        "vat_refund"].includes(l.category)).reduce((t, l) => t + l.amount_minor,
+        0) / 100;
+      const yearly = all.filter(l => l.timing === "annual" && l.status === "priced").reduce((t,
+        l) => t + l.amount_minor,
+        0) / 100;
       const open = all.filter(l => l.status === "unknown" && l.category !== "battery").length;
       summary.textContent = `Kosten: ${money(start, { decimals: 0 })} bij de start${yearly ? ` + ${money(yearly, { decimals: 0 })} per jaar` : ""}${open ? ` · ${open} nog in te vullen` : ""}`;
       totals.textContent = `Startkosten inclusief accu ${money(start, { decimals: 0 })}, extra jaarkosten ${money(yearly, { decimals: 0 })}. Elke post noemt zijn bron of aanname; vervang een indicatie door je offertebedrag.`;
@@ -321,26 +372,41 @@
     check.checked = !check.disabled && preselect;
     const priceInput = numberInput({ min: "0", step: "0.01", placeholder: "Offertebedrag" });
     priceInput.value = p.offer ? String(p.offer.upfront_amount_minor / 100) : "";
-    const editor = costEditor(Data.estimateCosts(costCatalog, { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases, inverterIncluded: p.inverterIncluded }, answers), costCatalog.categories, priceInput);
-    const within = p.capacity != null && range && p.capacity >= range.low && p.capacity <= range.high;
+    const editor = costEditor(Data.estimateCosts(costCatalog,
+      { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases,
+        inverterIncluded: p.inverterIncluded },
+      answers),
+      costCatalog.categories, priceInput);
+    const rangeBadge = h("span");
+    const updateRange = current => {
+      rangeBadge.replaceChildren();
+      if (p.capacity == null || !current) return;
+      const text = p.capacity < current.low ? "Kleiner dan het zinvolle bereik"
+        : p.capacity > current.high ? "Groter dan het zinvolle bereik" : "Binnen het zinvolle bereik";
+      rangeBadge.append(badge(text, text.startsWith("Binnen") ? "success" : ""));
+    };
+    updateRange(range);
     const card = h("article", { class: `panel product${p.fit.ok ? "" : " unfit"}` },
       h("div", { class: "product-head" }, check, h("label", { for: check.id }, p.name)),
       h("p", {}, [p.kind === "plug" ? "Stekkerbatterij" : p.kind === "fixed" ? "Vaste installatie" : "Aansluiting onbekend",
         p.capacity != null ? `${n(p.capacity, 1)} kWh bruikbaar` : "capaciteit onbekend",
         p.dischargeKw != null ? `${n(p.dischargeKw, 1)} kW ontladen` : "vermogen onbekend",
         p.warrantyYears ? `${n(p.warrantyYears, 0)} jaar productgarantie` : null].filter(Boolean).join(" · ")),
-      p.capacity != null && range ? badge(p.capacity < range.low ? "Kleiner dan het zinvolle bereik" : p.capacity > range.high ? "Groter dan het zinvolle bereik" : "Binnen het zinvolle bereik", within ? "success" : "") : null,
+      rangeBadge,
       p.fit.no.map(reason => h("p", { class: "warning" }, `Past niet: ${reason}`)),
       p.fit.notes.map(note => h("p", { class: "help" }, note)),
-      field("Aanschafprijs (€, incl. btw)", priceInput, p.offer ? h("span", {}, external(`Prijs volgens ${p.offer.seller}`, p.offer.source_url), p.offer.includes_installation === false ? " · exclusief installatie" : "") : null),
+      field("Aanschafprijs (€, incl. btw)", priceInput,
+        p.offer ? h("span", {}, external(`Prijs volgens ${p.offer.seller}`, p.offer.source_url),
+          p.offer.includes_installation === false ? " · exclusief installatie" : "") : null),
       editor.element,
       h("details", {}, h("summary", {}, "Zo rekenen we met deze accu"),
         table(["Rekengegeven", "Waarde"], [
           ["Bruikbare capaciteit", p.capacity != null ? `${n(p.capacity)} kWh` : "Onbekend"],
-          ["Laden / ontladen (AC)", p.chargeKw != null && p.dischargeKw != null ? `${n(p.chargeKw)} / ${n(p.dischargeKw)} kW` : "Onbekend"],
+          ["Laden / ontladen (AC)",
+            p.chargeKw != null && p.dischargeKw != null ? `${n(p.chargeKw)} / ${n(p.dischargeKw)} kW` : "Onbekend"],
           ["Rendement heen en terug", `${n(p.efficiency, 0)}%`], ["Sluimerverbruik", `${n(p.standby, 0)} W`]]),
         h("ul", {}, p.notes.map(note => h("li", {}, note))), link("Bekijk alle bronclaims", "#/accus")));
-    return { card, check, priceInput, editor, p };
+    return { card, check, priceInput, editor, p, updateRange };
   }
 
   function buildRequest(importId, chosen) {
@@ -364,14 +430,18 @@
         source: fromOffer ? `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${Data.RESEARCHED_ON})` : "Eigen invoer in de keuzehulp",
         notes: fromOffer ? "Gepubliceerde prijs inclusief btw, exclusief installatie." : "Door de gebruiker ingevoerd bedrag."
       });
-      return { key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id, battery: p.battery, costs: lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 }, assumptions: `Keuzehulp. ${p.notes.join(" ")}` };
+      return { key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id, battery: p.battery,
+        costs: lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
+        assumptions: `Keuzehulp. ${p.notes.join(" ")}` };
     });
     return {
       title: `Keuzehulp ${new Date().toLocaleDateString("nl-NL")}`, solar_import_id: importId,
       site: { address: "Nederland (keuzehulp, geen adres opgegeven)", latitude: null, longitude: null, bag_id: null },
       parameters: {
-        start_year: 2027, horizon_years: Number(answers.horizon), discount_pct: d.discount_pct, annual_cost_escalation_pct: d.annual_cost_escalation_pct,
-        annual_pv_loss_pct: d.annual_pv_loss_pct, annual_load_growth_pct: d.annual_load_growth_pct, objective: answers.objective, budget_eur: parse(answers.budget),
+        start_year: 2027, horizon_years: Number(answers.horizon), discount_pct: d.discount_pct,
+          annual_cost_escalation_pct: d.annual_cost_escalation_pct,
+        annual_pv_loss_pct: d.annual_pv_loss_pct, annual_load_growth_pct: d.annual_load_growth_pct,
+          objective: answers.objective, budget_eur: parse(answers.budget),
         tariff: {
           import_eur_per_kwh: tariffImport, export_eur_per_kwh: feed.export, export_fee_eur_per_kwh: feed.fee,
           export_fee_bands: [], fixed_annual_eur: 0, annual_price_change_pct: d.annual_price_change_pct
@@ -379,32 +449,63 @@
         price_uncertainty_pct: d.price_uncertainty_pct, cost_uncertainty_pct: d.cost_uncertainty_pct,
         export_variant: variant
       },
-      candidates, costs_confirmed: true, technical_assumptions_confirmed: true, consumption_is_gross: true, production_is_ac: true
+      candidates, costs_confirmed: true, technical_assumptions_confirmed: true, consumption_is_gross: true,
+        production_is_ac: true
     };
   }
 
   function stepAdvice(body) {
-    body.append(h("h2", {}, "Je advies"), h("p", { class: "help", "aria-live": "polite" }, "Je advies wordt voorbereid…"));
-    advice(body).catch(error => body.replaceChildren(h("h2", {}, "Je advies"), h("p", { class: "warning" }, error.message), button("← Terug naar de vragen", () => flow.show(0), "secondary")));
+    body.append(h("h2", {}, "Je advies"),
+      h("p", { class: "help", "aria-live": "polite" }, "Je advies wordt voorbereid…"));
+    advice(body).catch(error => body.replaceChildren(h("h2", {}, "Je advies"),
+      h("p", { class: "warning" }, error.message), button("← Terug naar de vragen", () => flow.show(0), "secondary")));
   }
   async function advice(body) {
     const [importId, cmp, costCatalog] = await Promise.all([ensureProfile(), Data.catalog(true), Data.costs()]);
     const curve = await UI.api(`/api/v1/solar/imports/${importId}/capacity`);
     const points = curve.points, max = points[points.length - 1].battery_to_load_kwh;
     const at = share => points.find(p => p.battery_to_load_kwh >= share * max)?.usable_capacity_kwh;
-    const range = max > 0 ? { low: at(0.75), high: at(0.9) } : null;
+    const rangeFor = key => max > 0 ? { low: at(SIZING[key].low), high: at(SIZING[key].high) } : null;
+    if (!SIZING[answers.sizing]) answers.sizing = "value";
+    let range = rangeFor(answers.sizing), cards = [];
     body.replaceChildren(h("h2", {}, "Je advies"));
 
     const size = h("section", { class: "panel" }, h("h3", {}, "1. Hoe groot moet een accu zijn?"));
-    if (!range) size.append(h("p", {}, answers.panels === "no"
-      ? "Zonder zonnepanelen is er geen zonnestroom om op te slaan. In deze berekening levert een accu dan niets op. Met een dynamisch contract kan dat anders zijn; dat rekenen we nog niet."
-      : "Je hebt vrijwel geen zonnestroom over om op te slaan. Een accu levert in deze berekening weinig op."));
-    else size.append(
-      h("p", { class: "lead" }, `Zonder accu gebruik je ongeveer ${n(points[0].self_consumption_pct, 0)}% van je zonnestroom zelf. Met een accu loopt dat op, maar elke extra kWh wordt minder vaak gevuld. Een bruikbare capaciteit van ongeveer ${n(range.low, 0)} tot ${n(range.high, 0)} kWh benut het meeste van wat er te halen is.`),
-      chart("line", { title: "Zonnestroom die je via de accu zelf gebruikt, per accugrootte", rows: points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, values: [p.battery_to_load_kwh] })), series: [{ label: "Uit de accu zelf gebruikt (kWh per jaar)" }], unit: "kWh/jaar" }),
-      h("p", { class: "help" }, curve.assumptions));
+    const sizeBody = h("div", { "aria-live": "polite" });
+    const renderSize = () => {
+      sizeBody.replaceChildren(
+        h("p", { class: "lead" }, `Zonder accu gebruik je ongeveer ${n(points[0].self_consumption_pct, 0)}% van je zonnestroom zelf. ` +
+          "Met een accu loopt dat op, maar elke extra kWh wordt minder vaak gevuld. " +
+          `Voor ‘${SIZING[answers.sizing].label.toLowerCase()}’ past een bruikbare capaciteit van ongeveer ` +
+          `${n(range.low, 0)} tot ${n(range.high, 0)} kWh.`),
+        chart("line", {
+          title: "Zonnestroom die je via de accu zelf gebruikt, per accugrootte",
+          rows: points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, values: [p.battery_to_load_kwh] })),
+          series: [{ label: "Uit de accu zelf gebruikt (kWh per jaar)" }], unit: "kWh/jaar",
+          marks: [["low", "begin"], ["high", "einde"]].map(([key, word]) => ({
+            at: `${n(range[key], 0)} kWh`, symbol: "│",
+              label: `${word} van het zinvolle bereik: ${n(range[key], 0)} kWh`
+          }))
+        }));
+    };
+    if (!range) {
+      size.append(h("p", {}, answers.panels === "no"
+        ? "Zonder zonnepanelen is er geen zonnestroom om op te slaan. In deze berekening levert een accu dan niets op. " +
+          "Met een dynamisch contract kan dat anders zijn; dat rekenen we nog niet."
+        : "Je hebt vrijwel geen zonnestroom over om op te slaan. Een accu levert in deze berekening weinig op."));
+    } else {
+      const options = Object.entries(SIZING).map(([key, s]) => [key, s.label, s.detail]);
+      size.append(
+        UI.choice("Wat wil je met de accu bereiken?", "kh-sizing", options, answers.sizing, value => {
+          answers.sizing = value; save(); range = rangeFor(value); renderSize();
+          cards.forEach(c => c.updateRange(range));
+        }),
+        sizeBody, h("p", { class: "help" }, curve.assumptions));
+      renderSize();
+    }
 
-    const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c)).map(p => ({ ...p, fit: fit(p) }))
+    const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp,
+      c)).map(p => ({ ...p, fit: fit(p) }))
       .sort((a, b) => Number(b.fit.ok) - Number(a.fit.ok) || (a.capacity ?? 99) - (b.capacity ?? 99));
     const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s passen bij je woning?"));
     if (!products.length) {
@@ -413,11 +514,13 @@
       body.append(size, pickSection); return;
     }
     let preselected = 0;
-    const cards = products.map(p => {
+    cards = products.map(p => {
       const preselect = p.fit.ok && !p.missing.length && Boolean(p.offer) && preselected < 6;
       if (preselect) preselected++;
       return productCard(p, costCatalog, range, preselect);
     });
+    const age = Data.priceAge();
+    if (age.stale) pickSection.append(h("p", { class: "callout", role: "note" }, age.text));
     pickSection.append(h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. Een vinkje betekent: neem mee in de berekening.`),
       h("div", { class: "products" }, cards.map(c => c.card)));
 
@@ -437,22 +540,30 @@
       location.hash = `#/berekeningen/${response.id}`;
     }).finally(() => { status.textContent = ""; }));
     const run = h("section", { class: "panel" }, h("h3", {}, "3. Reken het door"),
-      h("p", {}, "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
+      h("p", {},
+        "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
       h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), go, status);
     const rules = h("section", { class: "panel" }, h("h3", {}, "4. Voordat je koopt"),
       h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
-      h("p", { class: "help" }, "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
+      h("p", { class: "help" },
+        "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
       sourceList(RULES.sources));
     body.append(size, pickSection, run, rules);
   }
 
   function check(index, body) {
     if (!UI.validate(body)) return false;
-    if (index === 0 && answers.data === "file" && !answers.importId) { UI.toast("Kies een bewaard energieprofiel of kies ‘Jaartotalen’.", true); return false; }
+    if (index === 0 && answers.data === "file" && !answers.importId) { UI.toast("Kies een bewaard energieprofiel of kies ‘Jaartotalen’.",
+      true);
+      return false; }
     if (index === 0 && answers.data === "totals") {
-      if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) { UI.toast("Vul de opwek van je panelen of het vermogen in kWp in.", true); return false; }
+      if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) { UI.toast("Vul de opwek van je panelen of het vermogen in kWp in.",
+        true);
+        return false; }
       const value = gross();
-      if (value != null && !(value > 0)) { UI.toast("Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.", true); return false; }
+      if (value != null && !(value > 0)) { UI.toast("Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.",
+        true);
+        return false; }
       const extra = (parse(answers.heatPump) || 0) + (parse(answers.ev) || 0);
       if (value != null && extra > 0 && value - extra < 100) {
         UI.toast("Warmtepomp en auto zijn een deel van je totale verbruik en kunnen daar niet boven uitkomen.", true);
@@ -463,11 +574,14 @@
   }
 
   UI.page("keuzehulp", {
-    nav: "Keuzehulp", icon: "help", title: "Welke thuisaccu past bij jou?", subtitle: "Vijf stappen in gewone taal. Duurt ongeveer vijf minuten.",
+    nav: "Keuzehulp", icon: "help", title: "Welke thuisaccu past bij jou?",
+      subtitle: "Vijf stappen in gewone taal. Duurt ongeveer vijf minuten.",
     render(view, actions) {
-      actions.append(button("Begin opnieuw", () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }, "ghost"));
+      actions.append(button("Begin opnieuw",
+        () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }, "ghost"));
       flow = UI.wizard([
-        { label: "Je energie", render: stepEnergy }, { label: "Je woning", render: stepHome }, { label: "Je contract", render: stepContract },
+        { label: "Je energie", render: stepEnergy }, { label: "Je woning", render: stepHome },
+          { label: "Je contract", render: stepContract },
         { label: "Wat je belangrijk vindt", render: stepGoal }, { label: "Advies", render: stepAdvice }
       ], { validate: check, onShow: () => window.scrollTo(0, 0) });
       view.append(flow.element); flow.show(0);

@@ -81,7 +81,7 @@ cargo build --workspace --locked
 cargo doc --workspace --no-deps --locked
 ```
 
-Met Node.js: voer `node --check` uit op alle scripts in `web/`. De tests controleren opslag, migraties, transacties, bronhistorie, HTTP-contracten, import en de rekenkern. Referentiegevallen controleren energiebehoud, vermogensgrenzen, verliezen, salderen, NPV/ROI, financiering, vervanging en veranderende aanbevelingen.
+Met Node.js: voer `node --check` uit op alle scripts in `web/` en draai de browsertests met `cargo build --locked -p thuisaccu-server && (cd tests/e2e && npm ci && npx playwright install chromium && npm test)`. De tests controleren opslag, migraties, transacties, bronhistorie, HTTP-contracten, import en de rekenkern. Referentiegevallen controleren energiebehoud, vermogensgrenzen, verliezen, salderen, NPV/ROI, financiering, vervanging en veranderende aanbevelingen.
 
 `Cargo.lock` legt dependencyversies vast. Stable Rust wordt niet op een specifieke compilerpatch vastgezet. De GitHub Actions-workflow draait zodra de repo naar GitHub wordt gepusht.
 
