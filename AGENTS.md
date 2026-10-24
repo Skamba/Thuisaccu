@@ -11,7 +11,7 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 | `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
 | `crates/storage` | SQLx/SQLite, migraties in `migrations/`, opslagmethoden en leesmodellen. |
 | `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
-| `web/` | `index.html`, `styles.css`, `ui.js` (router, helpers), `app.js` (catalogus, vergelijking, import), `analysis.js` (scenario-editor), `workspace.js` (schermen), `results.js` (resultaat), `keuzehulp.js` (begeleide keuzehulp, startscherm). Ingebakken via `include_str!` in `crates/server/src/lib.rs`. |
+| `web/` | `index.html` (shell), `styles.css`, `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`. |
 | `docs/` | Architectuur, API-contract, datamodel, importafspraken, rekenmodel, onderzoek en roadmap. |
 
 ## Commando's
@@ -65,17 +65,17 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 - Het contract staat in [docs/api.md](docs/api.md). Nieuwe of gewijzigde routes: router in `crates/server/src/lib.rs`, handler, test in `crates/server/tests/`, en de tabel in `docs/api.md`.
 - Request-structs gebruiken `#[serde(deny_unknown_fields)]`; houd dat zo. Fouten geven JSON zonder interne details (HTTP 500 lekt geen databasefouten).
-- Wijzigingen in `RunRequest` of het resultaat raken ook `web/analysis.js` en bewaarde runs in bestaande databases; de browser moet oude runs blijven kunnen tonen.
+- Wijzigingen in `RunRequest` of het resultaat raken ook `web/keuzehulp.js`, `web/scenario.js`, `web/results.js` en bewaarde runs in bestaande databases; de browser moet oude runs blijven kunnen tonen.
 
 ## Frontend (`web/`)
 
 - Geen frameworks, build-stap, CDN, externe fonts of scripts: de app moet volledig offline werken. Grafieken met inline SVG.
 - Na elke wijziging in `web/` moet de server opnieuw gebouwd en gestart worden; de bestanden zitten in de binary.
-- Een nieuw bestand in `web/` vereist een route met `include_str!` en het juiste content-type in `crates/server/src/lib.rs`, plus een assertie in `crates/server/tests/http.rs`.
-- Zet API- of gebruikersdata uitsluitend via `textContent`/`createElement` in de DOM (de `make`/`node`-helpers). Nooit `innerHTML` met data.
+- Een nieuw script in `web/` krijgt een regel in `ASSETS` (`crates/server/src/lib.rs`), een `<script defer>` in `index.html` vóór `app.js`, en een regel in de assettest in `crates/server/tests/http.rs`. Een scherm registreert zich met `UI.page(...)`.
+- Bouw de DOM met `UI.h()`; tekst wordt altijd als tekstknoop ingevoegd. Nooit `innerHTML` (de HTTP-test controleert dat). Formulieren houden hun toestand in een object en lezen niet terug uit de DOM.
 - Toegankelijkheid: echte `<label>`s, `aria-live` voor statusmeldingen, zichtbare focus, toetsenbordbediening. Kleur is niet de enige betekenisdrager.
 - Getallen in `nl-NL`-notatie; houd valuta, eenheid en meetgrens bij elke waarde zichtbaar.
-- `crates/server/tests/http.rs` controleert dat de HTML `/styles.css`, `/app.js`, `/keuzehulp.js` en het bestandsveld `solar-file` bevat.
+- `crates/server/tests/http.rs` controleert de shell (`#nav`, `#view`, geen externe bronnen) en elk script.
 
 ## Tests
 

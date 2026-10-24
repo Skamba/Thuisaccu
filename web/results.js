@@ -1,98 +1,199 @@
 "use strict";
 
+// Resultaat van één bewaarde analyse. Gebruikt uitsluitend de vastgelegde invoer en uitkomst,
+// zodat oudere runs altijd met hun oorspronkelijke aannames worden getoond.
 window.Results = (() => {
-  const { el, button, badge, table, formatMoney: money, formatKwh: kwh, formatPct: pct, formatYears: years, formatNumber: n } = UI;
-  const finite = value => typeof value === "number" && Number.isFinite(value);
-  function stats(items) { const out = el("div", null, "stats"); for (const [label, value] of items) { const item = el("div"); item.append(el("small", label), el("strong", value)); out.append(item); } return out; }
-  function inputView(input) {
-    const out = el("div"), p = input.request.parameters, tariff = p.tariff;
-    const fieldLabel = id => UI.$(id)?.closest("label")?.firstChild?.textContent?.trim() || id;
-    out.append(el("h2", "Oorspronkelijke invoer"), el("p", `${input.request.site.address} · ${input.profile?.filename || `Profiel ${input.request.solar_import_id}`}`), el("p", `Profiel-SHA256: ${input.profile_sha256 || "Onbekend"}`, "muted"), el("p", `Kostenonderzoek: ${input.cost_sources_researched_on || "Onbekend"}`, "muted"));
-    out.append(table(["Parameter", "Vastgelegde waarde"], Object.entries(Analysis.parameterFields).map(([key, id]) => [fieldLabel(id), key === "objective" ? Workspace.objectives[p[key]] : p[key] == null ? "Geen maximum" : UI.formatNumber(p[key], ["start_year", "horizon_years"].includes(key) ? 0 : 2)])), table(["Contracttarief", "Vastgelegde waarde"], Object.entries(Analysis.tariffFields).map(([key, id]) => [fieldLabel(id), `${n(tariff[key], key === "annual_price_change_pct" ? 2 : 4)} ${key === "annual_price_change_pct" ? "%" : "€/kWh"}`]).concat([["Ongewijzigde vaste contractkosten", `${money(tariff.fixed_annual_eur)} / jaar`]])));
-    if (tariff.export_fee_bands.length) out.append(table(["Staffel t/m kWh", "Jaarkosten"], tariff.export_fee_bands.map(b => [b.up_to_kwh == null ? "Onbegrensd" : kwh(b.up_to_kwh), money(b.annual_eur)])));
-    const technical = { usable_capacity_kwh: ["Bruikbare interne opslag", "kWh"], charge_power_kw: ["Continu laden AC", "kW"], discharge_power_kw: ["Continu ontladen AC", "kW"], ac_round_trip_efficiency_pct: ["AC→AC round-trip-rendement", "%"], standby_w: ["Extra continu AC-standbyverbruik", "W"], annual_capacity_loss_pct: ["Capaciteitsverlies per jaar", "%"], operating_life_years: ["Technische gebruiksduur", "jaar"] };
-    const statuses = { priced: "Bedrag ingevuld", included: "Inbegrepen", not_applicable: "Niet van toepassing", unknown: "Onbekend" }, timings = { upfront: "Startmoment", annual: "Jaarlijks", event: "Gebeurtenis" };
-    for (const c of input.request.candidates) {
-      const detail = el("details", null, "panel input-option"); detail.append(el("summary", c.name), el("p", c.assumptions));
-      detail.append(table(["Techniek", "Waarde en meetgrens"], Object.entries(technical).map(([key, [label, unit]]) => [label, c.battery[key] == null ? "Onbekend" : `${n(c.battery[key])} ${unit}`])));
-      detail.append(table(["Kostenpost", "Status", "Bedrag EUR", "Moment", "Bron", "Notities"], c.costs.map(cost => [Analysis.costCatalog?.categories.find(v => v.key === cost.category)?.label || cost.category, statuses[cost.status], cost.status === "priced" ? money(cost.amount_minor / 100) : statuses[cost.status], `${timings[cost.timing]}${cost.year != null ? ` · einde jaar ${cost.year}` : ""}`, cost.source, cost.notes])));
-      detail.append(el("p", `Financiering: ${money(c.financing.loan_amount_eur)}, ${pct(c.financing.annual_interest_pct)} rente per jaar, ${years(c.financing.years)} looptijd.`)); out.append(detail);
-    }
-    out.append(el("p", "Meetgrenzen AC-opwek/bruto verbruik, technische aannames en kosten zijn vóór deze berekening bevestigd."));
-    const raw = el("details"); raw.append(el("summary", "Ruwe JSON van de vastgelegde invoer"), el("pre", JSON.stringify(input, null, 2))); out.append(raw); return out;
+  const { h, badge, button, table, stats, chart, tabs, money, kwh, pct, years, number: n, finite, palette } = UI;
+  const eur0 = value => money(value, { decimals: 0 });
+
+  const TECHNICAL = [
+    ["usable_capacity_kwh", "Bruikbare capaciteit", "kWh"], ["charge_power_kw", "Laden (AC)", "kW"],
+    ["discharge_power_kw", "Ontladen (AC)", "kW"], ["ac_round_trip_efficiency_pct", "Rendement AC → AC", "%"],
+    ["standby_w", "Sluimerverbruik", "W"], ["annual_capacity_loss_pct", "Capaciteitsverlies per jaar", "%"],
+    ["operating_life_years", "Levensduur", "jaar"]
+  ];
+  const PARAMETERS = [
+    ["start_year", "Startjaar", 0], ["horizon_years", "Looptijd (jaren)", 0], ["discount_pct", "Discontovoet (%)", 1],
+    ["annual_cost_escalation_pct", "Stijging extra jaarkosten (%)", 1], ["annual_pv_loss_pct", "Afname PV-opwek per jaar (%)", 1],
+    ["annual_load_growth_pct", "Verandering verbruik per jaar (%)", 1], ["price_uncertainty_pct", "Tariefvariatie gevoeligheid (%)", 0],
+    ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", 0]
+  ];
+  const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
+
+  const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
+  const isEstimated = run => run.result.warnings.some(w => /GESCHAT PROFIEL/.test(w));
+  function options(run) {
+    const result = run.result;
+    const baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, within_budget: true, color: "#7d847f" };
+    return [baseline, ...result.candidates.map((c, i) => ({ ...c, color: palette[i % palette.length] }))];
   }
-  // Samenvatting in gewone taal; gebruikt uitsluitend bewaarde uitkomsten.
-  function plainSummary(run) {
-    const result = run.result, p = run.input.request.parameters, box = el("section", null, "panel plain-summary"), list = el("ul");
+
+  function summary(run) {
+    const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
-    const byNpv = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
     const saving = c => c.years?.[0]?.energy_saving_eur;
-    box.append(el("h2", "Wat betekent dit voor jou?"));
     if (!rec) {
-      list.append(el("li", `Met deze aannames is géén accu de beste keuze voor het gekozen doel over ${p.horizon_years} jaar.`));
-      if (byNpv) list.append(el("li", `Het dichtst in de buurt komt ${byNpv.name}: die kost ${money(byNpv.initial_investment_eur, { decimals: 0 })} en bespaart in het eerste jaar ongeveer ${money(saving(byNpv), { decimals: 0 })}. Over de looptijd is dat netto ${money(byNpv.npv_eur, { decimals: 0 })} in geld van nu.`));
+      list.append(h("li", {}, `Met deze aannames is géén accu de beste keuze over ${p.horizon_years} jaar.`));
+      if (best) list.append(h("li", {}, `Het dichtst in de buurt komt ${best.name}: die kost ${eur0(best.initial_investment_eur)} en bespaart in het eerste jaar ongeveer ${eur0(saving(best))}. Over de looptijd is dat netto ${eur0(best.npv_eur)} in geld van nu.`));
     } else {
-      list.append(el("li", `${rec.name} komt het beste uit. Je betaalt ongeveer ${money(rec.initial_investment_eur, { decimals: 0 })} en bespaart in het eerste jaar ongeveer ${money(saving(rec), { decimals: 0 })} op je energierekening.`));
-      list.append(el("li", rec.payback_years == null ? `Binnen ${p.horizon_years} jaar verdien je dat bedrag niet terug.` : `Je hebt de investering na ongeveer ${rec.payback_years} jaar terugverdiend. Over ${p.horizon_years} jaar is het netto voordeel ${money(rec.npv_eur, { decimals: 0 })} in geld van nu.`));
-      list.append(el("li", `Je gebruikt dan ${pct(rec.first_year.self_consumption_pct)} van je zonnestroom zelf; zonder accu is dat ${pct(base.self_consumption_pct)}.`));
-      if (rec.npv_eur < 0) list.append(el("li", "Let op: financieel kost deze keuze je over de looptijd geld. Je kiest hem omdat je eigen gebruik belangrijker vond."));
+      list.append(h("li", {}, `${rec.name} komt het beste uit. Je betaalt ongeveer ${eur0(rec.initial_investment_eur)} en bespaart in het eerste jaar ongeveer ${eur0(saving(rec))} op je energierekening.`));
+      list.append(h("li", {}, rec.payback_years == null ? `Binnen ${p.horizon_years} jaar verdien je dat bedrag niet terug.` : `Je hebt de investering na ongeveer ${rec.payback_years} jaar terugverdiend. Over ${p.horizon_years} jaar is het netto voordeel ${eur0(rec.npv_eur)} in geld van nu.`));
+      list.append(h("li", {}, `Je gebruikt dan ${pct(rec.first_year.self_consumption_pct)} van je zonnestroom zelf; zonder accu is dat ${pct(base.self_consumption_pct)}.`));
+      if (rec.npv_eur < 0) list.append(h("li", {}, "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."));
+      list.append(h("li", {}, `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
     }
-    const gaps = rec ? [rec.pessimistic.npv_eur, rec.optimistic.npv_eur] : null;
-    if (gaps) list.append(el("li", `Bij ongunstiger prijzen en kosten wordt dat ${money(gaps[0], { decimals: 0 })}, bij gunstiger ${money(gaps[1], { decimals: 0 })}.`));
-    if (result.warnings.some(w => /GESCHAT PROFIEL/.test(w))) list.append(el("li", "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierdata (bijvoorbeeld via je slimme meter) wordt de uitkomst nauwkeuriger."));
-    list.append(el("li", "Vraag voor een vaste accu altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
-    box.append(list); return box;
+    if (isEstimated(run)) list.append(h("li", {}, "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
+    list.append(h("li", {}, "Vraag voor een vaste accu altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
+    return h("section", { class: "panel plain" }, h("h2", {}, "Wat betekent dit voor jou?"), list);
   }
-  function render(run, out) {
-    const result = run.result, request = run.input.request, p = request.parameters, baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, within_budget: true, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, color: "#79817d" };
-    const options = [baseline, ...result.candidates.map((r, i) => ({ ...r, color: UI.colors[i % UI.colors.length] }))];
-    out.replaceChildren(); out.classList.add("result-dashboard"); UI.$("page-title").textContent = run.title;
-    const top = el("div", null, "result-meta"); top.append(el("p", `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`}`), el("p", `${Workspace.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${result.model_version} · ${UI.date(run.created_at_unix_s)}`, "muted")); out.append(top);
-    const fictitious = run.input.profile?.options?.is_demo || result.warnings.some(w => /FICTIEF/i.test(w));
-    if (fictitious) out.append(el("p", "FICTIEVE GEGEVENS — deze analyse gebruikt fictieve invoer. Gebruik eigen meetgegevens, tarieven en offertes voor een beoordeling van je situatie.", "demo-banner"));
-    const recommendation = el("div", null, "recommendation panel"); recommendation.append(el("p", "BINNEN DIT SCENARIO", "eyebrow"), el("h2", result.recommendation), badge(options.find(c => c.key === result.recommended_key)?.name || "Onbekende optie", "accent")); out.append(recommendation, plainSummary(run));
-    const actions = UI.$("page-actions"); actions.append(button("Dupliceer en pas aan", () => Workspace.duplicate(run)), button("Exporteer CSV", () => exportRun(run)), button("Afdrukken", () => window.print(), "text-button"));
-    UI.$("service").lastChild.textContent = `Model ${result.model_version}`;
-    const overview = el("div"), cash = el("div"), energy = el("div"), sensitivity = el("div"), input = inputView(run.input), warnings = el("div");
-    for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) overview.append(el("p", warning, "callout"));
-    const tiles = el("div", null, "option-kpis");
-    for (const c of options) {
-      const card = el("article", null, "panel option-kpi"); card.style.borderTopColor = c.color; card.append(el("h3", c.name)); if (c.key === result.recommended_key) card.append(badge("Aanbevolen", "accent")); if (c.within_budget === false) card.append(badge("Boven budget", "warning"));
-      card.append(stats([["Netto startinvestering", money(c.initial_investment_eur, { decimals: 0 })], ["NPV", money(c.npv_eur, { decimals: 0 })], ["Nettowinst over looptijd", money(c.net_profit_eur, { decimals: 0 })], ["ROI over looptijd", c.key === "no_battery" ? "Niet van toepassing" : pct(c.roi_pct)], ["Blijvende terugverdientijd", c.key === "no_battery" ? "Geen investering" : years(c.payback_years)], ["Eigen gebruik · jaar 1", pct(c.first_year?.self_consumption_pct)]])); tiles.append(card);
+
+  function overview(run, all) {
+    const result = run.result, out = h("div");
+    for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p", { class: "callout" }, warning));
+    out.append(h("div", { class: "option-grid" }, all.map(c => h("article", { class: "panel option", style: `border-top-color:${c.color}` },
+      h("h3", {}, c.name),
+      c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
+      c.within_budget === false ? badge("Boven budget", "warning") : null,
+      stats([
+        ["Startinvestering", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
+        ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", c.key === "no_battery" ? "—" : pct(c.roi_pct)],
+        ["Terugverdiend na", c.key === "no_battery" ? "—" : years(c.payback_years)], ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)]
+      ])))));
+    out.append(chart("range", {
+      title: "Netto voordeel (NPV) per optie, met gevoeligheidsvarianten", unit: "EUR",
+      rows: all.map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
+      series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
+    }));
+    out.append(h("p", { class: "help" }, "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
+    return out;
+  }
+
+  function cashflows(run, all) {
+    const request = run.input.request, p = request.parameters, out = h("div");
+    const horizon = run.result.candidates[0]?.years || [];
+    const rows = [{ label: "Start", values: all.map(c => -c.initial_investment_eur) },
+      ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: all.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
+    const marks = [];
+    for (const c of all.slice(1)) {
+      if (c.payback_years != null) marks.push({ at: String(p.start_year + c.payback_years - 1), symbol: "✓", label: `${c.name}: blijvend terugverdiend na jaar ${c.payback_years}` });
+      for (const cost of request.candidates.find(v => v.key === c.key)?.costs || []) {
+        if (cost.status === "priced" && ["battery_replacement", "inverter_replacement"].includes(cost.category)) marks.push({ at: String(p.start_year + cost.year - 1), symbol: "↧", label: `${c.name}: vervanging einde jaar ${cost.year}` });
+      }
     }
-    overview.append(tiles);
-    const comparison = table(["Optie", "Netto start", "NPV", "Nettowinst", "ROI", "Blijvend terugverdiend", "Eigen gebruik jaar 1"], options.map(c => [c.name, money(c.initial_investment_eur), money(c.npv_eur), money(c.net_profit_eur), c.key === "no_battery" ? "Niet van toepassing" : pct(c.roi_pct), c.key === "no_battery" ? "Geen investering" : years(c.payback_years), pct(c.first_year?.self_consumption_pct)]));
-    options.forEach((c, i) => { if (c.key === result.recommended_key) comparison.querySelector("tbody").children[i].classList.add("recommended-row"); }); overview.append(comparison);
-    overview.append(el("p", "NPV is het netto voordeel tegenover geen accu, na disconteren. ROI is nettowinst over de hele looptijd gedeeld door de netto startinvestering; geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief.", "muted"));
-    overview.append(UI.chart("range", { title: "NPV per optie met gevoeligheidsvarianten", unit: "EUR", rows: options.map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })), series: [{ label: "Pessimistisch" }, { label: "Basis (cirkel)" }, { label: "Optimistisch" }] }));
-    const horizon = result.candidates[0]?.years || [], cashRows = [{ label: "Start", values: options.map(c => -c.initial_investment_eur) }, ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: options.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
-    const marks = []; for (const c of options.slice(1)) {
-      if (c.payback_years != null) marks.push({ year: String(p.start_year + c.payback_years - 1), label: `${c.name}: blijvend terugverdiend na jaar ${c.payback_years}`, symbol: "✓" });
-      const original = request.candidates.find(v => v.key === c.key); for (const cost of original?.costs || []) if (cost.status === "priced" && ["battery_replacement", "inverter_replacement"].includes(cost.category)) marks.push({ year: String(p.start_year + cost.year - 1), label: `${c.name}: vervanging einde jaar ${cost.year}`, symbol: "↧", offset: 15 });
+    out.append(chart("line", { title: "Cumulatief resultaat ten opzichte van geen accu", unit: "EUR", rows, series: all.map(c => ({ label: c.name, color: c.color })), marks }),
+      h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging."));
+    const pick = UI.select(all.map(c => [c.key, c.name]), run.result.recommended_key), target = h("div");
+    const render = () => {
+      const c = all.find(o => o.key === pick.value);
+      const yearRows = c.key === "no_battery"
+        ? horizon.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.baseline_bill_eur), money(0), money(0), money(0), money(0), "—"])
+        : c.years.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.battery_bill_eur), money(y.extra_costs_eur), money(y.financing_interest_eur), money(y.net_cashflow_eur), money(y.cumulative_eur), pct(y.energy.self_sufficiency_pct)]);
+      target.replaceChildren(
+        table(["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Netto voordeel", "Cumulatief", "Zelfvoorziening"], yearRows),
+        c.key === "no_battery" ? null : stats([
+          ["Extra kosten over de looptijd", money(c.lifetime_extra_costs_eur)], ["Bespaarde energiekosten", money(c.lifetime_energy_saving_eur)],
+          ["Gedisconteerd terugverdiend na", years(c.discounted_payback_years)]
+        ]));
+    };
+    pick.addEventListener("change", render); render();
+    out.append(UI.field("Jaartabel van", pick), target);
+    return out;
+  }
+
+  function energy(all) {
+    const out = h("div");
+    const demand = all.map(c => {
+      const e = c.first_year || {}, known = [e.consumption_kwh, e.direct_solar_kwh, e.battery_to_load_kwh].every(finite);
+      return { label: c.name, values: [e.direct_solar_kwh, e.battery_to_load_kwh, known ? Math.max(0, e.consumption_kwh - e.direct_solar_kwh - e.battery_to_load_kwh) : null] };
+    });
+    out.append(chart("stacked", { title: "Waar komt je verbruik vandaan? (jaar 1)", unit: "kWh", rows: demand, series: [{ label: "Direct van de panelen" }, { label: "Uit de accu" }, { label: "Van het net (afgeleid)" }] }),
+      h("p", { class: "help" }, "Het netdeel is bruto verbruik min direct gebruikte zonnestroom en accustroom. De totale netafname bevat daarnaast het sluimerverbruik van de accu."));
+    const destination = all.map(c => {
+      const e = c.first_year || {}, known = [e.production_kwh, e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh].every(finite);
+      return { label: c.name, values: [e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh, known ? Math.max(0, e.production_kwh - e.direct_solar_kwh - e.battery_charge_kwh - e.grid_export_kwh) : null] };
+    });
+    out.append(chart("stacked", { title: "Waar gaat je zonnestroom heen? (jaar 1)", unit: "kWh", rows: destination, series: [{ label: "Direct gebruikt" }, { label: "Naar de accu (incl. laadverlies)" }, { label: "Teruggeleverd" }, { label: "Overig (o.a. sluimerverbruik)" }] }));
+    for (const c of all) {
+      const e = c.first_year || {};
+      out.append(h("h3", {}, c.name), stats([
+        ["Opwek", kwh(e.production_kwh)], ["Bruto verbruik", kwh(e.consumption_kwh)], ["Netafname", kwh(e.grid_import_kwh)],
+        ["Teruglevering", kwh(e.grid_export_kwh)], ["Uit de accu", kwh(e.battery_to_load_kwh)], ["Verliezen", kwh(e.conversion_and_fade_loss_kwh)],
+        ["Sluimerverbruik", kwh(e.standby_kwh)], ["Volledige laadcycli", n(e.equivalent_cycles, 0)], ["Eigen gebruik", pct(e.self_consumption_pct)],
+        ["Zelfvoorziening", pct(e.self_sufficiency_pct)], ["Hoogste netafname per meetperiode", finite(e.max_grid_import_kw) ? `${n(e.max_grid_import_kw)} kW` : "Onbekend"]
+      ]));
     }
-    cash.append(UI.chart("line", { title: "Cumulatieve kasstroom ten opzichte van geen accu", unit: "EUR", rows: cashRows, series: options.map(c => ({ label: c.name, color: c.color })), marks }), el("p", "✓ markeert een blijvend terugverdienpunt; ↧ een ingevoerde vervanging aan het jaareinde. De volledige jaarwaarden staan hieronder.", "muted"));
-    const selectLabel = el("label", "Jaartabel van optie"), select = el("select"), yearOut = el("div"); selectLabel.append(select); options.forEach(c => { const opt = el("option", c.name); opt.value = c.key; select.append(opt); });
-    const yearly = () => {
-      const c = options.find(c => c.key === select.value), rows = c.key === "no_battery" ? horizon.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.baseline_bill_eur), money(0), money(0), money(0), money(0), "Referentie"]) : c.years.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.battery_bill_eur), money(y.extra_costs_eur), money(y.financing_interest_eur), money(y.net_cashflow_eur), money(y.cumulative_eur), pct(y.energy?.self_sufficiency_pct)]);
-      yearOut.replaceChildren(table(["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Netto voordeel", "Cumulatief", "Zelfvoorziening"], rows)); yearOut.querySelectorAll("td").forEach(td => { if (td.textContent.startsWith("−")) td.classList.add("negative"); });
-      yearOut.append(stats([["Levensduurkosten extra t.o.v. geen accu", c.key === "no_battery" ? money(0) : money(c.lifetime_extra_costs_eur)], ["Bespaarde energiekosten over looptijd", c.key === "no_battery" ? money(0) : money(c.lifetime_energy_saving_eur)], ["Gedisc. terugverdientijd", c.key === "no_battery" ? "Geen investering" : years(c.discounted_payback_years)]]));
-    }; select.addEventListener("change", yearly); cash.append(selectLabel, yearOut); select.value = result.recommended_key; yearly();
-    const demandRows = options.map(c => { const e = c.first_year || {}, grid = [e.consumption_kwh, e.direct_solar_kwh, e.battery_to_load_kwh].every(finite) ? Math.max(0, e.consumption_kwh - e.direct_solar_kwh - e.battery_to_load_kwh) : null; return { label: c.name, values: [e.direct_solar_kwh, e.battery_to_load_kwh, grid] }; });
-    energy.append(UI.chart("stacked", { title: "Dekking bruto huishoudelijk verbruik · jaar 1", unit: "kWh", rows: demandRows, series: [{ label: "Directe zonnestroom" }, { label: "Uit accu" }, { label: "Net naar huishouden (afgeleid)" }] }), el("p", "Het netdeel naar het huishouden is bruto vraag min directe zonnestroom en acculevering. Totale netafname in de statistieken bevat ook eventuele standby van de accu.", "muted"));
-    energy.append(UI.chart("stacked", { title: "Bestemming AC-zonneproductie · jaar 1", unit: "kWh", rows: options.map(c => { const e = c.first_year || {}, remainder = [e.production_kwh, e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh].every(finite) ? Math.max(0, e.production_kwh - e.direct_solar_kwh - e.battery_charge_kwh - e.grid_export_kwh) : null; return { label: c.name, values: [e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh, remainder] }; }), series: [{ label: "Direct naar huishouden" }, { label: "Naar accu (incl. laadverlies)" }, { label: "Teruglevering" }, { label: "Overig (o.a. standby)" }] }));
-    energy.append(el("p", "‘Overig’ is het resterende verschil in de AC-productiebalans, waaronder standby uit zonnestroom. Verliezen binnen de accu zijn al onderdeel van de energie naar de accu.", "muted"));
-    for (const c of options) { const e = c.first_year || {}; energy.append(el("h3", c.name), stats([["Productie", kwh(e.production_kwh)], ["Bruto verbruik", kwh(e.consumption_kwh)], ["Totale netafname", kwh(e.grid_import_kwh)], ["Teruglevering", kwh(e.grid_export_kwh)], ["Verliezen incl. capaciteitsafname", kwh(e.conversion_and_fade_loss_kwh)], ["Standby", kwh(e.standby_kwh)], ["Equivalente cycli", n(e.equivalent_cycles)], ["Zelfvoorziening", pct(e.self_sufficiency_pct)], ["Eigen gebruik", pct(e.self_consumption_pct)], ["Max. gemiddeld netafnamevermogen per meetperiode", e.max_grid_import_kw == null ? "Onbekend" : `${n(e.max_grid_import_kw)} kW`]])); }
-    sensitivity.append(el("p", `Tariefvariatie: ±${n(p.price_uncertainty_pct, 0)}%. Kostenvariatie: ±${n(p.cost_uncertainty_pct, 0)}%. De gunstige variant verhoogt de inkoopprijs, verlaagt de terugleververgoeding en verlaagt uitgaven; de ongunstige variant doet het omgekeerde. Bevestigde aftrekposten blijven gelijk. Dit zijn gevoeligheidstests, geen statistische betrouwbaarheidsbanden.`));
-    sensitivity.append(table(["Optie", "Variant", "NPV", "Nettowinst", "ROI over looptijd"], options.flatMap(c => [["Pessimistisch", c.pessimistic], ["Basis", c], ["Optimistisch", c.optimistic]].map(([label, v]) => [c.name, label, money(v?.npv_eur), money(v?.net_profit_eur), pct(v?.roi_pct)]))));
-    for (const [key, title, unit] of [["npv_eur", "NPV", "EUR"], ["net_profit_eur", "Nettowinst", "EUR"], ["roi_pct", "ROI over de hele looptijd", "%"]]) sensitivity.append(UI.chart("range", { title, unit, rows: options.filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })), series: [{ label: "Pessimistisch" }, { label: "Basis (cirkel)" }, { label: "Optimistisch" }] }));
-    warnings.append(el("h2", "Alle modelwaarschuwingen")); const list = el("ul", null, "warnings"); result.warnings.forEach(w => list.append(el("li", w))); warnings.append(list);
-    UI.tabs(out, [{ label: "Overzicht", panel: overview }, { label: "Kasstromen", panel: cash }, { label: "Energie", panel: energy }, { label: "Gevoeligheid", panel: sensitivity }, { label: "Invoer & aannames", panel: input }, { label: `Waarschuwingen (${result.warnings.length})`, panel: warnings }]);
+    return out;
   }
-  function exportRun(run) {
-    const rows = [["Scenario", run.title], ["Model", run.result.model_version], ["Profiel", run.input.profile?.filename], ["FICTIEF", run.input.profile?.options?.is_demo ? "Ja" : "Nee"], ["Aanbeveling", run.result.recommendation], ["Optie", "Netto start EUR", "NPV EUR", "Nettowinst EUR", "ROI %", "Blijvende terugverdientijd jaren"]];
-    rows.push(["Geen accu", 0, 0, 0, "Niet van toepassing", "Geen investering"]);
-    for (const c of run.result.candidates) { rows.push([c.name, n(c.initial_investment_eur), n(c.npv_eur), n(c.net_profit_eur), c.roi_pct == null ? "Niet bepaald" : n(c.roi_pct), c.payback_years ?? "Niet binnen horizon"]); rows.push([c.name, "Jaar", "Netto kasstroom EUR", "Cumulatief EUR"]); c.years.forEach(y => rows.push([c.name, y.calendar_year, n(y.net_cashflow_eur), n(y.cumulative_eur)])); }
-    run.result.warnings.forEach(w => rows.push(["Waarschuwing", w])); UI.csv("thuisaccu-scenario.csv", rows);
+
+  function sensitivity(run, all) {
+    const p = run.input.request.parameters, out = h("div");
+    out.append(h("p", {}, `Tarieven ±${n(p.price_uncertainty_pct, 0)}%, kosten ±${n(p.cost_uncertainty_pct, 0)}%. De gunstige variant verhoogt de stroomprijs, verlaagt de terugleververgoeding en verlaagt de kosten; de ongunstige doet het omgekeerde. Bevestigde aftrekposten blijven gelijk. Dit zijn gevoeligheidstests, geen betrouwbaarheidsintervallen.`));
+    out.append(table(["Optie", "Variant", "NPV", "Nettowinst", "ROI over looptijd"], all.flatMap(c =>
+      [["Ongunstig", c.pessimistic], ["Basis", c], ["Gunstig", c.optimistic]].map(([label, v]) =>
+        [c.name, label, money(v?.npv_eur), money(v?.net_profit_eur), c.key === "no_battery" ? "—" : pct(v?.roi_pct)]))));
+    for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "EUR"], ["roi_pct", "ROI over de looptijd", "%"]]) {
+      out.append(chart("range", { title, unit, rows: all.filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })), series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }] }));
+    }
+    return out;
   }
-  return { render, inputView };
+
+  function inputs(run, categories) {
+    const input = run.input, request = input.request, p = request.parameters, tariff = p.tariff, out = h("div");
+    const label = key => categories.find(c => c.key === key)?.label || key;
+    out.append(h("p", {}, `${request.site.address} · ${input.profile?.filename || `Profiel ${request.solar_import_id}`}`),
+      h("p", { class: "help" }, `Profiel-SHA-256: ${input.profile_sha256 || "Onbekend"} · kostenonderzoek ${input.cost_sources_researched_on || "onbekend"}`));
+    out.append(table(["Aanname", "Waarde"], [
+      ["Doel", Data.objectives[p.objective]], ["Budget", p.budget_eur == null ? "Geen maximum" : money(p.budget_eur)],
+      ...PARAMETERS.map(([key, text, decimals]) => [text, n(p[key], decimals)]),
+      ["Stroomprijs (€/kWh)", n(tariff.import_eur_per_kwh, 4)], ["Terugleververgoeding (€/kWh)", n(tariff.export_eur_per_kwh, 4)],
+      ["Terugleverkosten (€/kWh)", n(tariff.export_fee_eur_per_kwh, 4)], ["Prijsverandering per jaar (%)", n(tariff.annual_price_change_pct, 1)],
+      ["Ongewijzigde vaste contractkosten", `${money(tariff.fixed_annual_eur)} per jaar`]
+    ], { caption: "Tarieven en projectie" }));
+    if (tariff.export_fee_bands.length) out.append(table(["Teruglevering t/m", "Jaarkosten"], tariff.export_fee_bands.map(b => [b.up_to_kwh == null ? "Onbegrensd" : kwh(b.up_to_kwh), money(b.annual_eur)]), { caption: "Terugleverstaffel" }));
+    for (const c of request.candidates) {
+      out.append(h("details", { class: "panel" }, h("summary", {}, c.name), h("p", {}, c.assumptions),
+        table(["Techniek", "Waarde"], TECHNICAL.map(([key, text, unit]) => [text, finite(c.battery[key]) ? `${n(c.battery[key])} ${unit}` : "Onbekend"])),
+        table(["Kostenpost", "Status", "Bedrag", "Moment", "Bron", "Toelichting"], c.costs.map(cost => [
+          label(cost.category), Data.costStatus[cost.status], cost.status === "priced" ? money(cost.amount_minor / 100) : "—",
+          `${TIMING[cost.timing]}${cost.year != null ? ` · einde jaar ${cost.year}` : ""}`,
+          /^https:\/\//.test(cost.source) ? UI.external("bron", cost.source) : cost.source, cost.notes])),
+        h("p", {}, `Financiering: ${money(c.financing.loan_amount_eur)} tegen ${pct(c.financing.annual_interest_pct)} rente, ${years(c.financing.years)}.`)));
+    }
+    out.append(h("p", { class: "help" }, "Meetgrenzen, technische aannames en kosten zijn vóór deze berekening bevestigd."),
+      h("details", {}, h("summary", {}, "Vastgelegde invoer als JSON"), h("pre", {}, JSON.stringify(input, null, 2))));
+    return out;
+  }
+
+  function exportCsv(run) {
+    const result = run.result, rows = [["Berekening", run.title], ["Model", result.model_version], ["Profiel", run.input.profile?.filename], ["FICTIEF", isFictitious(run) ? "Ja" : "Nee"], ["Aanbeveling", result.recommendation], [],
+      ["Optie", "Startinvestering EUR", "NPV EUR", "Nettowinst EUR", "ROI %", "Terugverdiend na (jaar)"], ["Geen accu", 0, 0, 0, "—", "—"]];
+    for (const c of result.candidates) {
+      rows.push([c.name, n(c.initial_investment_eur), n(c.npv_eur), n(c.net_profit_eur), c.roi_pct == null ? "Niet bepaald" : n(c.roi_pct), c.payback_years ?? "Niet binnen looptijd"]);
+    }
+    for (const c of result.candidates) {
+      rows.push([], [c.name, "Jaar", "Netto voordeel EUR", "Cumulatief EUR"]);
+      c.years.forEach(y => rows.push([c.name, y.calendar_year, n(y.net_cashflow_eur), n(y.cumulative_eur)]));
+    }
+    rows.push([], ...result.warnings.map(w => ["Waarschuwing", w]));
+    UI.downloadCsv(`thuisaccu-berekening-${run.id}.csv`, rows);
+  }
+
+  async function render(run, view, actions, onDuplicate) {
+    const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
+    const categories = (await Data.costs()).categories;
+    actions.append(button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"), button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "ghost"));
+    view.append(h("p", { class: "help" }, `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · model ${result.model_version} · ${UI.dateTime(run.created_at_unix_s)}`));
+    if (isFictitious(run)) view.append(h("p", { class: "banner" }, "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
+    const recommended = all.find(c => c.key === result.recommended_key);
+    view.append(h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"), h("h2", {}, result.recommendation), badge(recommended?.name || "Onbekende optie", "accent")));
+    view.append(summary(run), tabs([
+      { label: "Overzicht", content: overview(run, all) }, { label: "Kasstromen", content: cashflows(run, all) },
+      { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
+      { label: "Invoer en aannames", content: inputs(run, categories) },
+      { label: `Waarschuwingen (${result.warnings.length})`, content: h("ul", { class: "warnings" }, result.warnings.map(w => h("li", {}, w))) }
+    ]));
+  }
+
+  return { render, isFictitious };
 })();

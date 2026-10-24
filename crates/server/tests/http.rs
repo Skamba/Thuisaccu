@@ -40,10 +40,12 @@ async fn home_and_stylesheet_are_served_without_external_services() {
     let body = to_bytes(response.into_body(), 32 * 1024).await.unwrap();
     let html = std::str::from_utf8(&body).unwrap();
     assert!(html.contains("/styles.css"));
-    assert!(html.contains(r#"id="solar-file""#));
-    assert!(html.contains("/app.js"));
-    assert!(!html.contains("analysis-demo"));
-    assert!(!html.contains("/samples/"));
+    assert!(html.contains(r#"id="nav""#));
+    assert!(html.contains(r#"id="view""#));
+    assert!(
+        !html.contains("https://"),
+        "de shell laadt geen externe bronnen"
+    );
 
     let response = app
         .oneshot(Request::get("/styles.css").body(Body::empty()).unwrap())
@@ -164,89 +166,45 @@ async fn database_failures_are_reported_without_leaking_internal_errors() {
     assert_eq!(body.as_ref(), br#"{"error":"database_error"}"#);
 }
 
+/// Elk script uit `web/` wordt met het juiste type uit de binary geserveerd en door de shell geladen.
 #[tokio::test]
-async fn shared_browser_helpers_are_embedded() {
-    let response = test_app()
-        .await
-        .oneshot(Request::get("/ui.js").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
-    let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
-    assert!(std::str::from_utf8(&body).unwrap().contains("formatMoney"));
-}
-
-#[tokio::test]
-async fn workspace_screens_are_embedded() {
-    let response = test_app()
-        .await
-        .oneshot(Request::get("/workspace.js").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
-    let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("Recente analyses")
-    );
-}
-
-#[tokio::test]
-async fn result_dashboard_is_embedded() {
-    let response = test_app()
-        .await
-        .oneshot(Request::get("/results.js").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
-    let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("Cumulatieve kasstroom")
-    );
-}
-
-#[tokio::test]
-async fn guided_flow_is_embedded_and_linked() {
+async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
     let app = test_app().await;
-    let response = app
-        .clone()
-        .oneshot(Request::get("/keuzehulp.js").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
-    let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("Bereken mijn advies")
-    );
     let home = app
+        .clone()
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    let body = to_bytes(home.into_body(), 32 * 1024).await.unwrap();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("/keuzehulp.js")
-    );
+    let home = to_bytes(home.into_body(), 32 * 1024).await.unwrap();
+    let home = std::str::from_utf8(&home).unwrap();
+    for (path, marker) in [
+        ("/ui.js", "window.UI"),
+        ("/data.js", "estimateCosts"),
+        ("/results.js", "Wat betekent dit voor jou?"),
+        ("/keuzehulp.js", "Bereken mijn advies"),
+        ("/catalog.js", "Accu’s vergelijken"),
+        ("/energy.js", "Bestand importeren"),
+        ("/scenario.js", "Zelf doorrekenen"),
+        ("/app.js", "Mijn berekeningen"),
+    ] {
+        assert!(
+            home.contains(&format!(r#"src="{path}""#)),
+            "{path} niet geladen"
+        );
+        let response = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let body = to_bytes(response.into_body(), 256 * 1024).await.unwrap();
+        let script = std::str::from_utf8(&body).unwrap();
+        assert!(script.contains(marker), "{path} mist {marker}");
+        // Gegevens gaan via tekstknopen in de DOM, nooit via innerHTML.
+        assert!(!script.contains("innerHTML"), "{path} gebruikt innerHTML");
+    }
 }

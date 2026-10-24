@@ -1,182 +1,313 @@
 "use strict";
 
-// Gedeelde presentatie: geen domeinberekeningen of stilzwijgende defaults.
+// Gedeelde bouwstenen voor alle schermen: elementen, opmaak, formulieren, wizard en grafieken.
+// Gegevens komen uitsluitend via tekstknopen in de DOM, nooit via HTML-tekenreeksen.
 window.UI = (() => {
-  const $ = id => document.getElementById(id);
-  const el = (tag, text, cls) => {
+  const SVG = "http://www.w3.org/2000/svg";
+
+  // h("p", { class: "muted", onclick: fn }, "tekst", kindElement, [meer, kinderen])
+  function h(tag, props = {}, ...children) {
     const element = document.createElement(tag);
-    if (text !== undefined && text !== null) element.textContent = String(text);
-    if (cls) element.className = cls;
+    for (const [key, value] of Object.entries(props ?? {})) {
+      if (value == null || value === false) continue;
+      if (key === "class") element.className = value;
+      else if (key === "dataset") Object.assign(element.dataset, value);
+      else if (key.startsWith("on") && typeof value === "function") element.addEventListener(key.slice(2), value);
+      else if (key in element && typeof value !== "string") element[key] = value;
+      else element.setAttribute(key, value === true ? "" : value);
+    }
+    append(element, children);
     return element;
+  }
+  function append(parent, children) {
+    for (const child of children.flat(Infinity)) {
+      if (child == null || child === false) continue;
+      parent.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return parent;
+  }
+  const $ = id => document.getElementById(id);
+  let sequence = 0;
+  const uid = prefix => `${prefix}-${++sequence}`;
+
+  // Opmaak in nl-NL. Onbekend blijft zichtbaar als ‘Onbekend’, nooit als nul.
+  const finite = value => value !== null && value !== "" && Number.isFinite(Number(value));
+  const number = (value, decimals = 2) => finite(value)
+    ? new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)
+    : "Onbekend";
+  const money = (value, { decimals = 2 } = {}) => finite(value)
+    ? `${Number(value) < 0 ? "−" : ""}€ ${number(Math.abs(value), decimals)}`
+    : "Onbekend";
+  const kwh = (value, decimals = 0) => finite(value) ? `${number(value, decimals)} kWh` : "Onbekend";
+  const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals)}%` : "Niet bepaald";
+  const years = value => value == null ? "Niet binnen de looptijd" : `${number(value, 0)} jaar`;
+  const dateTime = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleString("nl-NL");
+  const dateOnly = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleDateString("nl-NL");
+  // Getal uit een invoerveld; komma en punt als decimaalteken. Leeg geeft null.
+  const parse = raw => {
+    const text = String(raw ?? "").trim().replace(",", ".");
+    return text === "" || !Number.isFinite(Number(text)) ? null : Number(text);
   };
-  const formatNumber = (v, decimals = 2) => v == null || v === "" || !Number.isFinite(Number(v)) ? "Onbekend" : new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(v);
-  const formatMoney = (v, { decimals = 2 } = {}) => v == null || v === "" || !Number.isFinite(Number(v)) ? "Onbekend" : `${Number(v) < 0 ? "−" : ""}€ ${formatNumber(Math.abs(v), decimals)}`;
-  const formatKwh = v => v == null ? "Onbekend" : `${formatNumber(v)} kWh`;
-  const formatPct = v => v == null ? "Niet bepaald" : `${formatNumber(v, 1)}%`;
-  const formatYears = v => v == null ? "Niet binnen horizon" : `${formatNumber(v, 0)} jaar`;
-  const date = v => v == null ? "Onbekend" : new Date(v * 1000).toLocaleString("nl-NL");
-  const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
-  const write = (key, value) => { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } };
-  const toast = (text, error = false) => {
-    const host = $("toasts") || document.body.appendChild(el("div", null, "toasts")); host.id = "toasts";
-    const item = el("div", null, `toast${error ? " error" : ""}`); item.setAttribute("role", error ? "alert" : "status"); item.setAttribute("aria-live", error ? "assertive" : "polite");
-    const close = button("Sluiten", () => item.remove(), "text-button"); close.setAttribute("aria-label", "Melding sluiten");
-    item.append(el("span", text), close); host.append(item);
-    if (!error) setTimeout(() => item.remove(), 5500);
+
+  async function api(url, { method = "GET", json, body } = {}) {
+    const options = { method };
+    if (json !== undefined) { options.headers = { "content-type": "application/json" }; options.body = JSON.stringify(json); }
+    else if (body !== undefined) options.body = body;
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || `Verzoek mislukt (${response.status}).`);
+    return data;
+  }
+
+  // Browseropslag is een gemak, geen opslag van uitkomsten; werkt ook als die ontbreekt.
+  const store = {
+    get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+    set(key, value) {
+      try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); return true; }
+      catch { return false; }
+    }
   };
-  function button(text, action, cls = "secondary") { const b = el("button", text, cls); b.type = "button"; b.addEventListener("click", action); return b; }
-  function link(text, href, cls) { const a = el("a", text, cls); a.href = href; return a; }
-  function badge(text, cls = "") { return el("span", text, `badge ${cls}`); }
-  async function api(url, options) {
-    const response = await fetch(url, options), body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.message || body.error || `Verzoek mislukt (${response.status}).`);
-    return body;
+
+  function toast(text, error = false) {
+    let host = $("toasts");
+    if (!host) { host = h("div", { id: "toasts", class: "toasts" }); document.body.append(host); }
+    const item = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : "status" },
+      h("span", {}, text),
+      h("button", { type: "button", class: "ghost", "aria-label": "Melding sluiten", onclick: () => item.remove() }, "Sluiten"));
+    host.append(item);
+    if (!error) setTimeout(() => item.remove(), 6000);
   }
-  function table(headers, rows) {
-    const wrap = el("div", null, "table-scroll"); wrap.tabIndex = 0; wrap.setAttribute("role", "region"); wrap.setAttribute("aria-label", headers.join(", "));
-    const t = el("table"), head = el("thead"), tr = el("tr"), body = el("tbody");
-    headers.forEach(h => { const th = el("th", h); th.scope = "col"; tr.append(th); }); head.append(tr); t.append(head, body);
-    for (const row of rows) { const tr = el("tr"); for (const value of row) { const td = el("td"); td.append(value instanceof Node ? value : document.createTextNode(String(value ?? "Onbekend"))); tr.append(td); } body.append(tr); }
-    wrap.append(t); return wrap;
+
+  // Voert een actie uit met een uitgeschakelde knop; fouten worden als melding getoond.
+  async function busy(button, work) {
+    button.disabled = true;
+    try { return await work(); }
+    catch (error) { toast(error.message, true); return undefined; }
+    finally { button.disabled = false; }
   }
-  function csv(filename, rows) {
-    const data = rows.map(row => row.map(value => { let text = String(value ?? "Onbekend"); if (/^[=+@-]/.test(text)) text = "'" + text; return `"${text.replaceAll('"', '""')}"`; }).join(";")).join("\r\n");
-    const url = URL.createObjectURL(new Blob(["\ufeff" + data], { type: "text/csv;charset=utf-8" })), a = link("", url); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  const button = (text, onclick, variant = "primary", props = {}) =>
+    h("button", { type: "button", class: variant, onclick, ...props }, text);
+  const link = (text, href, cls) => h("a", { href, class: cls }, text);
+  const external = (text, href) => h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text);
+  const badge = (text, tone = "") => h("span", { class: `badge ${tone}` }, text);
+
+  // Formulierveld met label, optionele hulptekst en foutmelding.
+  function field(labelText, control, help) {
+    control.id ||= uid("veld");
+    const helpId = help ? `${control.id}-hulp` : null;
+    if (helpId) control.setAttribute("aria-describedby", helpId);
+    return h("div", { class: "field" },
+      h("label", { for: control.id }, labelText),
+      control,
+      help ? h("small", { id: helpId, class: "help" }, help) : null);
   }
-  // De import-API bevat geen maximale intervalduur voor cumulatieve standen.
-  function suitability(item) {
-    const s = item.summary, o = item.options;
-    if (s.consumption_kwh == null) return { ok: false, reason: "Bruto verbruik ontbreekt" };
-    if (s.gaps !== 0) return { ok: false, reason: "Gaten in de meetreeks" };
-    if (![8760, 8784].some(h => Math.abs(s.coverage_hours - h) < 0.001)) return { ok: false, reason: "Geen volledig meetjaar" };
-    if (s.rows > 110000) return { ok: false, reason: "Meer dan 110.000 intervallen" };
-    if (o.is_demo === true) return { ok: true, reason: "Geschikt voor ROI · FICTIEF" };
-    if (o.mode === "cumulative") return { ok: null, reason: "Onbekend: maximale intervalduur niet beschikbaar" };
-    if (!["5min", "10min", "15min", "30min", "hour"].includes(o.period)) return { ok: false, reason: "Uur- of fijnere waarden vereist" };
-    const hours = ({ "5min": 1 / 12, "10min": 1 / 6, "15min": .25, "30min": .5, hour: 1 })[o.period];
-    if (Math.abs(s.rows * hours - s.coverage_hours) > .001 || Math.abs((s.to_unix_s - s.from_unix_s) / 3600 - s.coverage_hours) > .001) return { ok: null, reason: "Onbekend: intervaldekking niet eenduidig" };
-    return { ok: true, reason: "Geschikt voor ROI" };
+  const input = (props = {}) => h("input", { type: "text", ...props });
+  const numberInput = (props = {}) => h("input", { type: "number", step: "any", inputmode: "decimal", ...props });
+  function select(options, value, props = {}) {
+    const element = h("select", props, options.map(([v, text]) => h("option", { value: v }, text)));
+    if (value != null) element.value = String(value);
+    return element;
   }
-  function tabs(host, entries, onChange = () => {}) {
-    const list = el("div", null, "tabs"); list.setAttribute("role", "tablist"); list.setAttribute("aria-label", "Tabbladen");
-    const uid = `tabs-${++tabs.sequence}`;
-    const activate = index => {
-      entries.forEach((entry, i) => { entry.panel.hidden = i !== index; entry.tab.tabIndex = i === index ? 0 : -1; entry.tab.setAttribute("aria-selected", String(i === index)); });
-      onChange(index);
-    };
-    entries.forEach((entry, index) => {
-      const tab = button(entry.label, () => activate(index), "tab"); tab.id = `${uid}-tab-${index}`; tab.setAttribute("role", "tab");
-      entry.panel.id ||= `${uid}-panel-${index}`; tab.setAttribute("aria-controls", entry.panel.id); entry.panel.setAttribute("role", "tabpanel"); entry.panel.setAttribute("aria-labelledby", tab.id);
-      tab.addEventListener("keydown", event => { let next; if (event.key === "ArrowRight") next = (index + 1) % entries.length; if (event.key === "ArrowLeft") next = (index + entries.length - 1) % entries.length; if (event.key === "Home") next = 0; if (event.key === "End") next = entries.length - 1; if (next !== undefined) { event.preventDefault(); activate(next); entries[next].tab.focus(); } });
-      entry.tab = tab; list.append(tab);
-    });
-    host.append(list, ...entries.map(e => e.panel)); activate(0); return { activate, list };
+  // Keuzerondjes als kaarten: [waarde, titel, toelichting].
+  function choice(legend, name, options, value, onChange, help) {
+    return h("fieldset", { class: "choice" },
+      h("legend", {}, legend),
+      options.map(([v, title, detail]) => h("label", { class: "choice-option" },
+        h("input", { type: "radio", name, value: v, checked: value === v, onchange: () => onChange(v) }),
+        h("span", {}, h("strong", {}, title), detail ? h("small", {}, detail) : null))),
+      help ? h("p", { class: "help" }, help) : null);
   }
-  tabs.sequence = 0;
-  function invalid(field, text) {
-    field.id ||= `field-${++tabs.sequence}`;
-    const id = `${field.id}-error`; let message = $(id);
-    if (!message) { message = el("small", null, "field-error"); message.id = id; field.after(message); }
-    message.textContent = text; message.hidden = !text; field.setAttribute("aria-invalid", String(Boolean(text)));
-    field.setAttribute("aria-describedby", [...new Set([...(field.getAttribute("aria-describedby") || "").split(" ").filter(Boolean), id])].join(" "));
-  }
+  const checkbox = (labelText, props = {}) => {
+    const box = h("input", { type: "checkbox", ...props });
+    return { box, element: h("label", { class: "check" }, box, h("span", {}, labelText)) };
+  };
+  // Markeert ongeldige velden met een zichtbare melding; geeft het eerste ongeldige veld terug.
   function validate(root) {
-    let first;
-    root.querySelectorAll("input,select,textarea").forEach(field => { const valid = field.checkValidity(); invalid(field, valid ? "" : field.validationMessage); if (!valid && !first) first = field; });
-    if (first) { first.focus(); first.reportValidity(); } return !first;
+    let first = null;
+    for (const control of root.querySelectorAll("input, select, textarea")) {
+      const valid = control.checkValidity();
+      control.setAttribute("aria-invalid", String(!valid));
+      const holder = control.closest(".field");
+      holder?.querySelector(".error")?.remove();
+      if (!valid) { holder?.append(h("small", { class: "error" }, control.validationMessage)); first ||= control; }
+    }
+    first?.focus();
+    return !first;
   }
-  function wizard(host, entries, { validateStep = panel => validate(panel), onChange = () => {} } = {}) {
-    const stepper = el("ol", null, "stepper"), footer = el("div", null, "wizard-footer"); let current = 0;
-    const previous = button("← Vorige", () => show(current - 1)), next = button("Volgende →", () => { if (validateStep(entries[current].panel, current)) show(current + 1); }, "");
-    footer.append(previous, next);
-    const show = index => { current = Math.max(0, Math.min(entries.length - 1, index)); entries.forEach((e, i) => { e.panel.hidden = i !== current; if (i === current) e.control.setAttribute("aria-current", "step"); else e.control.removeAttribute("aria-current"); e.control.disabled = i > current; }); previous.disabled = current === 0; next.hidden = current === entries.length - 1; onChange(current); };
-    entries.forEach((entry, i) => { const li = el("li"), b = button(`${i + 1}. ${entry.label}`, () => show(i), "text-button"); entry.control = b; li.append(b); stepper.append(li); });
-    host.prepend(stepper); host.append(footer); show(0); return { show, next, previous, footer, get current() { return current; } };
+
+  function table(headers, rows, { caption, className = "" } = {}) {
+    return h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": caption || headers.join(", ") },
+      h("table", { class: className },
+        caption ? h("caption", {}, caption) : null,
+        h("thead", {}, h("tr", {}, headers.map(text => h("th", { scope: "col" }, text)))),
+        h("tbody", {}, rows.map(row => h("tr", {}, row.map(cell => h("td", {}, cell ?? "Onbekend")))))));
   }
-  const colors = ["#28785c", "#397abe", "#b86520", "#9b5b99", "#008b91", "#8b6b23", "#6d75bf", "#bd5479", "#65753b", "#7e695e", "#2d6e86", "#ab6815", "#587384"];
-  function chart(type, { title, rows, series, unit = "", format = v => formatNumber(v, 0), marks = [] }) {
-    const figure = el("figure", null, "chart"); figure.append(el("figcaption", title));
-    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), width = 880, height = type === "range" || type === "stacked" ? Math.max(240, rows.length * 58 + 90) : 340;
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", `${title}. Waarden staan ook in de tabel hieronder.`);
-    const draw = (tag, attrs, label) => { const e = document.createElementNS(ns, tag); for (const [key, value] of Object.entries(attrs)) e.setAttribute(key, value); if (label) { const t = document.createElementNS(ns, "title"); t.textContent = label; e.append(t); e.setAttribute("tabindex", "0"); e.setAttribute("aria-label", label); } svg.append(e); return e; };
-    const text = (x, y, value, anchor = "start") => { const t = draw("text", { x, y, "text-anchor": anchor, fill: "currentColor", "font-size": 12 }); t.textContent = value; };
-    const horizontal = ["range", "stacked"].includes(type), left = horizontal ? 210 : 82, right = 25, top = 24, bottom = 52, plotW = width - left - right, plotH = height - top - bottom;
-    const numbers = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0), 0)] : r.values).filter(v => v != null && Number.isFinite(v));
-    const min = Math.min(0, ...numbers), max = Math.max(0, ...numbers), span = max - min || 1;
-    const x = v => left + (v - min) / span * plotW, y = v => top + (max - v) / span * plotH;
-    for (let i = 0; i <= 4; i++) { const value = min + i * span / 4; if (horizontal) { const at = x(value); draw("line", { x1: at, x2: at, y1: top, y2: height - bottom, stroke: "var(--line)" }); text(at, height - 26, format(value), "middle"); } else { const at = y(value); draw("line", { x1: left, x2: width - right, y1: at, y2: at, stroke: "var(--line)" }); text(left - 10, at + 4, format(value), "end"); } }
-    if (horizontal) draw("line", { x1: x(0), x2: x(0), y1: top, y2: height - bottom, stroke: "currentColor", "stroke-width": 1.4 });
-    else draw("line", { x1: left, x2: width - right, y1: y(0), y2: y(0), stroke: "currentColor", "stroke-width": 1.4 });
-    if (type === "line") {
-      const pointX = i => left + i / Math.max(1, rows.length - 1) * plotW;
-      series.forEach((s, si) => { const points = rows.map((r, i) => r.values[si] == null ? null : `${pointX(i)},${y(r.values[si])}`).filter(Boolean).join(" "); draw("polyline", { points, fill: "none", stroke: s.color || colors[si % colors.length], "stroke-width": 2.5, "stroke-dasharray": si > 5 ? "8 3" : "none" }); rows.forEach((r, i) => { if (r.values[si] != null) draw("circle", { cx: pointX(i), cy: y(r.values[si]), r: 4, fill: s.color || colors[si % colors.length] }, `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); }); });
-      rows.forEach((r, i) => { if (i % Math.max(1, Math.ceil(rows.length / 8)) === 0 || i === rows.length - 1) text(pointX(i), height - 30, r.label, "middle"); });
-      marks.forEach(mark => { const index = rows.findIndex(r => r.label === mark.year); if (index < 0) return; const at = pointX(index); draw("line", { x1: at, x2: at, y1: top, y2: height - bottom, stroke: "var(--muted)", "stroke-dasharray": "3 4" }, mark.label); text(at, top + 12 + (mark.offset || 0), mark.symbol || "↧", "middle"); });
-    } else rows.forEach((r, ri) => {
-      if (horizontal) {
-        const at = top + (ri + .5) / rows.length * plotH; text(left - 12, at + 4, r.label, "end");
-        if (type === "range") { const values = r.values.filter(v => v != null); if (!values.length) return; if (r.values[1] != null) draw("rect", { x: Math.min(x(0), x(r.values[1])), y: at - 13, width: Math.abs(x(r.values[1]) - x(0)), height: 26, fill: r.color || colors[ri % colors.length], opacity: .25 }, `${r.label}, basis: ${format(r.values[1])} ${unit}`); draw("line", { x1: x(Math.min(...values)), x2: x(Math.max(...values)), y1: at, y2: at, stroke: r.color || colors[ri % colors.length], "stroke-width": 9 }, `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`); r.values.forEach((v, i) => { if (v != null) draw(i === 1 ? "circle" : "rect", i === 1 ? { cx: x(v), cy: at, r: 6, fill: "var(--surface)", stroke: "currentColor", "stroke-width": 2 } : { x: x(v) - 2, y: at - 9, width: 4, height: 18, fill: "currentColor" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`); }); }
-        else { let start = 0; r.values.forEach((v, si) => { if (v == null) return; draw("rect", { x: x(start), y: at - 13, width: Math.max(0, x(start + v) - x(start)), height: 26, fill: series[si].color || colors[si % colors.length] }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`); start += v; }); }
-      } else {
-        const groupW = plotW / rows.length, barW = groupW / (series.length + 1);
-        r.values.forEach((v, si) => { if (v == null) return; draw("rect", { x: left + ri * groupW + si * barW + barW / 2, y: Math.min(y(v), y(0)), width: barW * .86, height: Math.max(1, Math.abs(y(v) - y(0))), fill: series[si].color || colors[si % colors.length] }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`); }); text(left + (ri + .5) * groupW, height - 30, r.label, "middle");
-      }
+  const stats = items => h("dl", { class: "stats" }, items.map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
+  const empty = (title, text, ...actions) => h("div", { class: "empty" }, h("h2", {}, title), h("p", {}, text), h("div", { class: "actions" }, actions));
+
+  // Tabbladen met pijltjestoetsen, Home en End.
+  function tabs(entries, initial = 0) {
+    const id = uid("tabs"), list = h("div", { class: "tabs", role: "tablist" }), panels = [];
+    const show = index => entries.forEach((_, i) => {
+      list.children[i].setAttribute("aria-selected", String(i === index));
+      list.children[i].tabIndex = i === index ? 0 : -1;
+      panels[i].hidden = i !== index;
     });
-    text(width - right, height - 5, unit, "end"); figure.append(svg);
-    const legend = el("div", null, "legend"); series.forEach((s, i) => { const item = el("span", s.label), dot = el("span", type === "range" ? i === 1 ? "○" : "│" : "●"); dot.style.color = type === "range" ? "var(--ink)" : s.color || colors[i % colors.length]; item.prepend(dot, " "); legend.append(item); }); figure.append(legend);
-    const details = el("details"); details.append(el("summary", "Toon als tabel"), table(["Reeks", ...series.map(s => `${s.label} (${unit})`)], rows.map(r => [r.label, ...r.values.map(v => v == null ? "Onbekend" : format(v))]))); figure.append(details); return figure;
+    entries.forEach(({ label, content }, index) => {
+      const tab = h("button", { type: "button", role: "tab", id: `${id}-tab-${index}`, "aria-controls": `${id}-panel-${index}`, onclick: () => show(index) }, label);
+      tab.addEventListener("keydown", event => {
+        const next = { ArrowRight: (index + 1) % entries.length, ArrowLeft: (index - 1 + entries.length) % entries.length, Home: 0, End: entries.length - 1 }[event.key];
+        if (next === undefined) return;
+        event.preventDefault(); show(next); list.children[next].focus();
+      });
+      list.append(tab);
+      panels.push(h("div", { role: "tabpanel", id: `${id}-panel-${index}`, "aria-labelledby": tab.id }, content));
+    });
+    show(initial);
+    return h("div", { class: "tabset" }, list, panels);
   }
-  const screens = new Map(), routes = [
-    ["keuzehulp", "Keuzehulp", "Welke thuisaccu past bij jou? Vijf stappen, in gewone taal."],
-    ["dashboard", "Dashboard", "Onderbouwen, niet raden. Je onderzoek op één plek."],
-    ["accus", "Accu’s", "Brongebonden uitvoeringen, zonder automatische winnaar."],
-    ["accus/vergelijk", "Accu’s vergelijken", "Elke claim behoudt haar bron en meetgrens."],
-    ["opwek", "Opwek & verbruik", "Bewaarde energieprofielen op je eigen computer."],
-    ["opwek/import", "Energieprofiel importeren", "Van bestand naar gecontroleerd overzicht."],
-    ["opwek/detail", "Energieprofiel", "Opwek, verbruik en datakwaliteit."],
-    ["scenarios", "Scenario’s", "Bewaarde analyses met hun oorspronkelijke invoer."],
-    ["scenarios/nieuw", "Nieuw scenario", "Vier stappen naar een onderbouwde vergelijking."],
-    ["scenarios/detail", "Resultaat", "Vergelijking met geen accu, binnen jouw aannames."],
-    ["instellingen", "Instellingen", "Standaardaannames en voorkeuren voor deze browser."]
-  ];
-  function route() {
-    let path = location.hash.slice(2), key = path, id = null;
-    if (/^opwek\/\d+$/.test(path)) { key = "opwek/detail"; id = path.split("/")[1]; }
-    if (/^scenarios\/\d+$/.test(path)) { key = "scenarios/detail"; id = path.split("/")[1]; }
-    if (!screens.has(key)) { location.replace(path === "" ? "#/keuzehulp" : "#/dashboard"); return; }
-    screens.forEach((s, name) => { s.hidden = name !== key; });
-    document.querySelectorAll(".app-nav a").forEach(a => { const active = path.split("/")[0] === a.hash.slice(2); if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-    document.body.classList.remove("menu-open"); $("menu-toggle").setAttribute("aria-expanded", "false");
-    const info = routes.find(r => r[0] === key); $("page-title").textContent = info[1]; $("page-subtitle").textContent = info[2]; $("page-actions").replaceChildren();
-    window.dispatchEvent(new CustomEvent("app:route", { detail: { key, id } }));
-    $("page-title").focus(); window.scrollTo(0, 0);
+
+  // Wizard: stappen [{ label, render(body) }]; validate(index, body) mag blokkeren.
+  function wizard(steps, { validate: check = () => true, onShow = () => {}, finish } = {}) {
+    const stepper = h("ol", { class: "stepper" }), body = h("div", { class: "wizard-body" });
+    const previous = button("← Vorige", () => show(current - 1), "secondary");
+    const next = button("Volgende →", async () => { if (await check(current, body)) show(current + 1); });
+    const footer = h("div", { class: "wizard-footer" }, previous, next, finish ?? null);
+    let current = 0, reached = 0;
+    steps.forEach((step, index) => stepper.append(h("li", {},
+      h("button", { type: "button", class: "ghost", onclick: () => index <= reached && show(index) }, `${index + 1}. ${step.label}`))));
+    function show(index) {
+      current = Math.max(0, Math.min(steps.length - 1, index)); reached = Math.max(reached, current);
+      [...stepper.children].forEach((li, i) => {
+        const control = li.firstChild; control.disabled = i > reached;
+        if (i === current) control.setAttribute("aria-current", "step"); else control.removeAttribute("aria-current");
+      });
+      body.replaceChildren(); steps[current].render(body);
+      previous.disabled = current === 0; next.hidden = current === steps.length - 1;
+      onShow(current, body);
+      body.querySelector("h2, h3")?.setAttribute("tabindex", "-1");
+    }
+    const element = h("div", { class: "wizard" }, stepper, body, footer);
+    return { element, show, rerender: () => show(current), get current() { return current; } };
   }
-  const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", () => {
-    const sidebar = el("aside", null, "sidebar"); sidebar.append(link("▤ Thuisaccu", "#/dashboard", "brand"), el("p", "LOKAAL ONDERZOEK", "eyebrow"));
-    const nav = el("nav", null, "app-nav"); nav.setAttribute("aria-label", "Hoofdnavigatie");
-    const icons = {
-      keuzehulp: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14 M12 17.5v.5",
-      dashboard: "M3 10L12 3l9 7v11H3z M9 21v-8h6v8",
-      scenarios: "M4 20V10h4v10 M10 20V4h4v16 M16 20v-7h4v7",
-      accus: "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6",
-      opwek: "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0",
-      instellingen: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"
+
+  function dialog(title, ...content) {
+    const close = () => { element.close(); element.remove(); };
+    const element = h("dialog", { "aria-label": title },
+      h("div", { class: "dialog-head" }, h("h2", {}, title), button("✕", close, "ghost", { "aria-label": "Sluiten" })),
+      content);
+    element.addEventListener("close", () => element.remove());
+    document.body.append(element); element.showModal();
+    return { element, close };
+  }
+
+  // CSV met puntkomma en BOM voor Excel; voorkomt formule-injectie.
+  function downloadCsv(filename, rows) {
+    const cell = value => {
+      let text = String(value ?? "Onbekend");
+      if (/^[=+@-]/.test(text)) text = `'${text}`;
+      return `"${text.replaceAll('"', '""')}"`;
     };
-    [["keuzehulp", "dashboard", "scenarios"], ["accus", "opwek", "instellingen"]].forEach((names, index) => {
-      const group = el("div", null, index === 0 ? "nav-group" : "nav-group nav-secondary");
-      names.forEach(name => { const a = link("", `#/${name}`), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(svg.namespaceURI, "path"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); p.setAttribute("d", icons[name]); svg.append(p); a.append(svg, el("span", routes.find(r => r[0] === name)[1])); group.append(a); });
-      nav.append(group);
-    });
-    const status = el("div", null, "service"); status.id = "service"; status.append(el("p", "● Service controleren…"), el("small", "Modelversie na een berekening")); sidebar.append(nav, status); document.body.prepend(sidebar);
-    const menu = button("☰ Menu", () => { const open = document.body.classList.toggle("menu-open"); menu.setAttribute("aria-expanded", String(open)); }); menu.id = "menu-toggle"; menu.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-controls", "app-navigation"); nav.id = "app-navigation"; document.body.prepend(menu);
-    const main = $("main"), header = el("header", null, "page-header"), titleGroup = el("div"), title = el("h1"); title.id = "page-title"; title.tabIndex = -1; const sub = el("p", null, "muted"); sub.id = "page-subtitle"; titleGroup.append(title, sub); const actions = el("div", null, "actions"); actions.id = "page-actions"; header.append(titleGroup, actions); main.prepend(header);
-    document.querySelector(".skip").addEventListener("click", event => { event.preventDefault(); title.focus(); title.scrollIntoView(); });
-    document.addEventListener("invalid", event => { if (event.target.matches("input,select,textarea")) invalid(event.target, event.target.validationMessage); }, true);
-    // Schermen met vaste opmaak staan in index.html; de overige worden door de scripts gevuld.
-    routes.forEach(([key]) => { const section = main.querySelector(`:scope > section[data-screen="${key}"]`) || el("section"); section.dataset.screen = key; section.hidden = true; screens.set(key, section); main.append(section); });
-    window.addEventListener("hashchange", route); route();
-    api("/api/v1/health").then(() => { status.firstChild.textContent = "● Lokale service actief"; status.classList.add("online"); }).catch(() => { status.firstChild.textContent = "● Service onbereikbaar"; status.classList.add("offline"); });
-    resolve();
-  }));
-  return { $, el, button, link, badge, formatNumber, formatMoney, formatKwh, formatPct, formatYears, date, read, write, toast, api, table, csv, suitability, tabs, invalid, validate, wizard, chart, colors, screens, route, ready };
+    const blob = new Blob(["﻿" + rows.map(row => row.map(cell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob), a = h("a", { href: url, download: filename });
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Grafieken in inline SVG, altijd met een tabel als tekstalternatief.
+  const palette = ["#2b7a5f", "#3f7cc0", "#c06a1f", "#8f5aa0", "#00858b", "#8b6b23", "#5e68b8", "#b84d74", "#5f7338", "#7a6a5e"];
+  function chart(type, { title, rows, series, unit = "", format = v => number(v, 0), marks = [] }) {
+    const width = 880, horizontal = type === "range" || type === "stacked";
+    const height = horizontal ? Math.max(220, rows.length * 56 + 80) : 320;
+    const longest = Math.max(0, ...rows.map(r => String(r.label).length));
+    const left = horizontal ? Math.min(330, Math.max(110, longest * 6.6 + 24)) : 80, right = 24, top = 20, bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `${title}. De waarden staan ook in de tabel onder de grafiek.`);
+    const draw = (tag, attrs, label) => {
+      const node = document.createElementNS(SVG, tag);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+      if (label) {
+        const tip = document.createElementNS(SVG, "title"); tip.textContent = label; node.append(tip);
+        node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", label);
+      }
+      svg.append(node); return node;
+    };
+    const text = (x, y, value, anchor = "start") => { draw("text", { x, y, "text-anchor": anchor, class: "chart-text" }).textContent = value; };
+    const colour = (i, s) => s?.color || palette[i % palette.length];
+    const values = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0), 0)] : r.values).filter(finite);
+    const min = Math.min(0, ...values), max = Math.max(0, ...values), span = max - min || 1;
+    const x = v => left + (v - min) / span * plotW, y = v => top + (max - v) / span * plotH;
+    for (let i = 0; i <= 4; i++) {
+      const value = min + i * span / 4;
+      if (horizontal) { draw("line", { x1: x(value), x2: x(value), y1: top, y2: height - bottom, class: "chart-grid" }); text(x(value), height - 26, format(value), "middle"); }
+      else { draw("line", { x1: left, x2: width - right, y1: y(value), y2: y(value), class: "chart-grid" }); text(left - 10, y(value) + 4, format(value), "end"); }
+    }
+    if (horizontal) draw("line", { x1: x(0), x2: x(0), y1: top, y2: height - bottom, class: "chart-axis" });
+    else draw("line", { x1: left, x2: width - right, y1: y(0), y2: y(0), class: "chart-axis" });
+
+    if (type === "line") {
+      const px = i => left + i / Math.max(1, rows.length - 1) * plotW;
+      series.forEach((s, si) => {
+        const points = rows.map((r, i) => finite(r.values[si]) ? `${px(i)},${y(r.values[si])}` : null).filter(Boolean).join(" ");
+        draw("polyline", { points, fill: "none", stroke: colour(si, s), "stroke-width": 2.5, "stroke-dasharray": si > 4 ? "7 3" : "none" });
+        rows.forEach((r, i) => { if (finite(r.values[si])) draw("circle", { cx: px(i), cy: y(r.values[si]), r: 4, fill: colour(si, s) }, `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); });
+      });
+      const step = Math.max(1, Math.ceil(rows.length / 10));
+      rows.forEach((r, i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
+      for (const mark of marks) {
+        const index = rows.findIndex(r => r.label === mark.at); if (index < 0) continue;
+        draw("line", { x1: px(index), x2: px(index), y1: top, y2: height - bottom, class: "chart-mark" }, mark.label);
+        text(px(index), top + 12, mark.symbol, "middle");
+      }
+    } else {
+      rows.forEach((r, ri) => {
+        if (horizontal) {
+          const cy = top + (ri + 0.5) / rows.length * plotH;
+          const name = String(r.label), short = name.length > 48 ? `${name.slice(0, 47)}…` : name;
+          text(left - 12, cy + 4, short, "end");
+          if (type === "stacked") {
+            let start = 0;
+            r.values.forEach((v, si) => {
+              if (!finite(v)) return;
+              draw("rect", { x: x(start), y: cy - 13, width: Math.max(0, x(start + v) - x(start)), height: 26, fill: colour(si, series[si]) }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
+              start += v;
+            });
+          } else {
+            const known = r.values.filter(finite); if (!known.length) return;
+            draw("line", { x1: x(Math.min(...known)), x2: x(Math.max(...known)), y1: cy, y2: cy, stroke: r.color || colour(ri), "stroke-width": 8 },
+              `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`);
+            r.values.forEach((v, i) => {
+              if (!finite(v)) return;
+              if (i === 1) draw("circle", { cx: x(v), cy, r: 6, class: "chart-base" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
+              else draw("rect", { x: x(v) - 2, y: cy - 9, width: 4, height: 18, class: "chart-tick" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
+            });
+          }
+        } else {
+          const groupW = plotW / rows.length, barW = groupW / (series.length + 1);
+          r.values.forEach((v, si) => {
+            if (!finite(v)) return;
+            draw("rect", { x: left + ri * groupW + si * barW + barW / 2, y: Math.min(y(v), y(0)), width: barW * 0.86, height: Math.max(1, Math.abs(y(v) - y(0))), fill: colour(si, series[si]) }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
+          });
+          text(left + (ri + 0.5) * groupW, height - 28, r.label, "middle");
+        }
+      });
+    }
+    text(width - right, height - 6, unit, "end");
+    const legend = h("ul", { class: "legend" }, series.map((s, i) => h("li", {},
+      h("span", { class: "swatch", style: `background:${type === "range" ? "currentColor" : colour(i, s)}` }), s.label)));
+    const data = h("details", {}, h("summary", {}, "Toon als tabel"),
+      table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")])));
+    return h("figure", { class: "chart" }, h("figcaption", {}, title), svg, legend, data);
+  }
+
+  // Schermregistratie; app.js verzorgt navigatie en routering.
+  const pages = new Map();
+  const page = (key, definition) => pages.set(key, definition);
+
+  return {
+    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, api, store, toast, busy,
+    button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, table, stats, empty,
+    tabs, wizard, dialog, downloadCsv, chart, palette, pages, page
+  };
 })();

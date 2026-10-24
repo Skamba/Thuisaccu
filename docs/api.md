@@ -7,12 +7,7 @@ De volgende routes bestaan:
 | `/` | `200`, `text/html; charset=utf-8` | App-shell; taakschermen via de URL-hash |
 | `/styles.css` | `200`, `text/css; charset=utf-8` | Stijlblad |
 | `/api/v1/health` | `200`, `application/json` | Servicestatus |
-| `/app.js` | `200`, JavaScript | Browserapplicatie |
-| `/analysis.js` | `200`, JavaScript | Scenario-invoer, concepten en dupliceren |
-| `/ui.js` | `200`, JavaScript | Router, opmaak, meldingen, tabs en SVG-helpers |
-| `/workspace.js` | `200`, JavaScript | Dashboard, lijsten, wizards en instellingen |
-| `/results.js` | `200`, JavaScript | Resultaatdashboard, grafieken en export |
-| `/keuzehulp.js` | `200`, JavaScript | Begeleide keuzehulp voor consumenten |
+| `/ui.js`, `/data.js`, `/results.js`, `/keuzehulp.js`, `/catalog.js`, `/energy.js`, `/scenario.js`, `/app.js` | `200`, `text/javascript; charset=utf-8` | Browserscripts uit de tabel `ASSETS` |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |

@@ -1,6 +1,6 @@
 # Keuzehulp
 
-De keuzehulp (`#/keuzehulp`, ook het startscherm) is de begeleide route voor consumenten zonder technische voorkennis. Hij stelt vragen in gewone taal, maakt zo nodig een geschat energieprofiel, laat zien welke accugrootte zinvol is, filtert de catalogus op praktische eisen en rekent passende accu’s door met dezelfde rekenkern als de scenariotool. ‘Geen accu’ blijft een volwaardige uitkomst. Het resultaat is een gewone, onveranderlijke analyse die je kunt dupliceren en in de scenariotool verder kunt verfijnen.
+De keuzehulp (`#/keuzehulp`, ook het startscherm) is de begeleide route voor consumenten zonder technische voorkennis. Hij stelt vragen in gewone taal, maakt zo nodig een geschat energieprofiel, laat zien welke accugrootte zinvol is, filtert de catalogus op praktische eisen en rekent passende accu’s door met dezelfde rekenkern als de scenariotool. ‘Geen accu’ blijft een volwaardige uitkomst. Het resultaat is een gewone, onveranderlijke analyse; met ‘Pas aan en reken opnieuw’ neem je hem over in Zelf doorrekenen.
 
 ## Stappen
 
@@ -46,7 +46,7 @@ Uitvoeringen met een niet doorrekenbaar gegeven of een harde mismatch (bijvoorbe
 
 ## Kosten en indicaties
 
-Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Keuzehulp.estimateCosts` uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont ‘Bron’ met link of ‘Aanname’ met reden, en is in de keuzehulp aan te passen; een ingevuld bedrag vervangt de indicatie en wordt als eigen invoer vastgelegd. De scenariotool heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
+Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Data.estimateCosts` (`web/data.js`) uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont ‘Bron’ met link of ‘Aanname’ met reden, en is in de keuzehulp aan te passen; een ingevuld bedrag vervangt de indicatie en wordt als eigen invoer vastgelegd. Zelf doorrekenen heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
 
 | Post | Stekkerbatterij | Vaste installatie | Bron of aanname |
 | --- | --- | --- | --- |

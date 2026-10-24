@@ -17,15 +17,16 @@ pub mod typical_profile;
 
 /// Bouwt de routes zonder een netwerkpoort te openen.
 pub fn app(catalog: Catalog) -> Router {
-    Router::new()
+    let assets = ASSETS
+        .iter()
+        .fold(Router::new(), |router, &(path, body, kind)| {
+            router.route(
+                path,
+                get(move || async move { ([(header::CONTENT_TYPE, kind)], body) }),
+            )
+        });
+    assets
         .route("/", get(index))
-        .route("/styles.css", get(styles))
-        .route("/app.js", get(script))
-        .route("/ui.js", get(ui_script))
-        .route("/workspace.js", get(workspace_script))
-        .route("/results.js", get(results_script))
-        .route("/analysis.js", get(analysis_script))
-        .route("/keuzehulp.js", get(keuzehulp_script))
         .route("/api/v1/analysis/costs", get(scenario_api::costs))
         .route(
             "/api/v1/analysis/runs",
@@ -56,57 +57,31 @@ pub fn app(catalog: Catalog) -> Router {
         .with_state(catalog)
 }
 
+const JS: &str = "text/javascript; charset=utf-8";
+
+/// Ingebakken webbestanden: pad, inhoud en content-type. Een nieuw bestand in `web/` komt hier.
+const ASSETS: &[(&str, &str, &str)] = &[
+    (
+        "/styles.css",
+        include_str!("../../../web/styles.css"),
+        "text/css; charset=utf-8",
+    ),
+    ("/ui.js", include_str!("../../../web/ui.js"), JS),
+    ("/data.js", include_str!("../../../web/data.js"), JS),
+    ("/results.js", include_str!("../../../web/results.js"), JS),
+    (
+        "/keuzehulp.js",
+        include_str!("../../../web/keuzehulp.js"),
+        JS,
+    ),
+    ("/catalog.js", include_str!("../../../web/catalog.js"), JS),
+    ("/energy.js", include_str!("../../../web/energy.js"), JS),
+    ("/scenario.js", include_str!("../../../web/scenario.js"), JS),
+    ("/app.js", include_str!("../../../web/app.js"), JS),
+];
+
 async fn index() -> Html<&'static str> {
     Html(include_str!("../../../web/index.html"))
-}
-
-async fn styles() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
-        include_str!("../../../web/styles.css"),
-    )
-}
-
-async fn script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/app.js"),
-    )
-}
-
-async fn ui_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/ui.js"),
-    )
-}
-
-async fn workspace_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/workspace.js"),
-    )
-}
-
-async fn results_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/results.js"),
-    )
-}
-
-async fn analysis_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/analysis.js"),
-    )
-}
-
-async fn keuzehulp_script() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../../../web/keuzehulp.js"),
-    )
 }
 
 #[derive(Serialize)]
