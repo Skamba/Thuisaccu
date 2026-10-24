@@ -102,6 +102,88 @@ window.Workspace = (() => {
     form.addEventListener("submit", event => { if (wizard.current !== 1 || !UI.validate(panels[1])) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
     save.addEventListener("click", event => { if (!UI.validate(panels[3])) { event.stopImmediatePropagation(); } }, true);
   }
+  let scenarioFlow;
+  function scenarioWizard() {
+    const form = $("analysis-form"), section = screen("scenarios/nieuw"), panels = Array.from({ length: 4 }, () => el("div", null, "wizard-step"));
+    const originalLayout = form.querySelector(".solar-layout"); panels[0].append(originalLayout.children[0]); panels[1].append(originalLayout.children[0]); originalLayout.remove();
+    const confirmations = form.querySelector(":scope > fieldset"), submit = $("analysis-run").parentElement;
+    for (const child of [...form.children]) if (child !== confirmations && child !== submit) panels[2].append(child);
+    const review = el("div", null, "panel scenario-review"); review.id = "scenario-review"; panels[3].append(review, confirmations, submit);
+    const sourcePanel = $("analysis-cost-sources").closest("details"), sourceDialog = el("dialog"); sourceDialog.id = "sources-dialog"; sourceDialog.setAttribute("aria-label", "Kostenonderzoek en bronnen"); sourceDialog.append(button("Sluiten", () => sourceDialog.close()), sourcePanel); sourcePanel.open = true; document.body.append(sourceDialog);
+    const sourceButton = button("ⓘ Bronnen en kostenonderzoek", () => sourceDialog.showModal(), "text-button"); panels[2].prepend(sourceButton);
+    const optionsSelectLabel = el("label", "Uit catalogus"); $("analysis-catalog").before(optionsSelectLabel); optionsSelectLabel.append($("analysis-catalog"));
+    const optionsList = el("div"); optionsList.id = "candidate-tabs"; panels[2].append(optionsList); optionsList.append($("analysis-candidates"));
+    form.append(...panels); form.noValidate = true;
+    const summary = el("aside", null, "panel scenario-summary"); summary.id = "scenario-summary"; summary.setAttribute("aria-label", "Samenvatting van je concept");
+    const layout = el("div", null, "scenario-layout"); form.before(layout); layout.append(form, summary);
+    const fieldStep = field => panels.findIndex(panel => panel.contains(field));
+    const reveal = field => {
+      const step = fieldStep(field); if (step >= 0) scenarioFlow.show(step);
+      const card = field.closest(".analysis-candidate"); if (card) { const index = [...Analysis.candidateCards.values()].indexOf(card); optionsTabs?.activate(index); card._tabs?.activate(field.closest(".cost-details") ? 1 : 0); card.querySelectorAll(".cost-filter").forEach(check => check.checked = false); card.querySelectorAll(".cost-row").forEach(row => row.hidden = false); }
+      let parent = field.parentElement; while (parent && parent !== form) { if (parent.tagName === "DETAILS") parent.open = true; parent = parent.parentElement; }
+      UI.invalid(field, field.validationMessage || "Beoordeel deze invoer."); field.focus(); field.scrollIntoView({ block: "center" });
+    };
+    function problems(includeConfirmations = true) {
+      const result = [...form.querySelectorAll("input,select,textarea")].filter(f => !f.checkValidity() && (includeConfirmations || !confirmations.contains(f))).map(field => ({ field, message: `${field.closest("label")?.firstChild?.textContent?.trim() || "Invoer"}: ${field.validationMessage}` }));
+      for (const [key, card] of Analysis.candidateCards) {
+        for (const row of card.querySelectorAll(".cost-row")) { const status = row.querySelector('[data-cost="status"]'), amount = row.querySelector('[data-cost="amount"]'), year = row.querySelector('[data-cost="year"]'); if (status.value === "unknown") result.push({ field: status, message: `${card.querySelector('[data-field="name"]').value}: ${row.querySelector("strong").textContent} is nog onbekend.` }); else if (status.value === "priced") { if (!/^\d+(?:[.,]\d{1,2})?$/.test(amount.value.trim())) result.push({ field: amount, message: "Geprijsde kosten: vul een bedrag in met maximaal twee decimalen." }); if (year && (!year.value || Number(year.value) > Number($("analysis-years").value))) result.push({ field: year, message: "Vul een gebeurtenisjaar binnen de horizon in." }); } }
+        try { Analysis.collectCandidate(key, card); } catch (error) { if (!result.some(p => card.contains(p.field))) result.push({ field: card.querySelector("input"), message: error.message }); }
+      }
+      if (!Analysis.candidateCards.size) result.push({ field: $("analysis-add"), message: "Voeg minimaal één accu-optie toe." });
+      try { Analysis.parameters(); } catch (error) { result.push({ field: $("export-fee-bands"), message: error.message }); }
+      return result;
+    }
+    function updateReview() {
+      review.replaceChildren(el("h2", "Controleer je scenario"));
+      const chosen = data.imports.find(i => String(i.id) === $("analysis-profile").value);
+      review.append(el("p", `${$("analysis-name").value} · ${$("analysis-address").value}`), el("p", `${chosen?.options.is_demo ? "FICTIEF · " : ""}${chosen?.filename || "Geen profiel"} · ${objectives[$("analysis-objective").value]} · ${$("analysis-years").value} jaar vanaf ${$("analysis-start").value}`), el("p", `Inkoop ${$("tariff-import").value || "Onbekend"} €/kWh · terugleververgoeding ${$("tariff-export").value || "Onbekend"} €/kWh · ${Analysis.candidateCards.size} accu-opties`));
+      const errors = problems(), list = el("ul", null, "validation-list");
+      for (const problem of errors) { const li = el("li"); li.append(button(problem.message, () => reveal(problem.field), "text-button")); list.append(li); }
+      review.append(el("p", errors.length ? `${errors.length} punten vereisen nog aandacht. Klik op een punt om de invoer te openen.` : "De invoer en bevestigingen zijn compleet. Je kunt de vergelijking berekenen."), list);
+      for (const card of Analysis.candidateCards.values()) { const detail = el("details"); detail.append(el("summary", card.querySelector('[data-field="name"]').value), table(["Techniek", "Waarde"], [...card.querySelectorAll('[data-field]')].map(f => [f.closest("label")?.firstChild.textContent, f.value || "Onbekend"])), table(["Kostenpost", "Status", "Bedrag", "Bron"], [...card.querySelectorAll(".cost-row")].map(row => [row.querySelector("strong").textContent, row.querySelector('[data-cost="status"]').selectedOptions[0].textContent, row.querySelector('[data-cost="amount"]').value || "Niet geprijsd", row.querySelector('[data-cost="source"]').value]))); review.append(detail); }
+    }
+    scenarioFlow = UI.wizard(form, panels.map((panel, i) => ({ label: ["Locatie & profiel", "Tarieven & horizon", "Accu-opties", "Controle & bevestigen"][i], panel })), { validateStep: (panel, index) => {
+      if (index === 2) { const problem = problems(false).find(p => fieldStep(p.field) === 2); if (problem) { UI.toast(problem.message, true); reveal(problem.field); return false; } }
+      return UI.validate(panel);
+    }, onChange: index => { if (index === 3 && window.Analysis) updateReview(); } });
+    const removeDraft = button("Concept verwijderen", () => { UI.write("thuisaccu-draft", null); form.reset(); Analysis.candidateCards.clear(); $("analysis-candidates").replaceChildren(); Analysis.restore({ version: 1, fields: {}, candidates: [], site: null, fixedAnnual: 0 }); window.Settings?.applyDefaults(); scenarioFlow.show(0); update(); UI.toast("Concept verwijderd."); }, "text-button"); scenarioFlow.footer.append(removeDraft);
+    let optionsTabs, activeOption = 0;
+    function enhanceOptions() {
+      for (const card of Analysis.candidateCards.values()) if (!card.dataset.enhanced) {
+        card.dataset.enhanced = "true";
+        const tech = el("div"), costs = card.querySelector(".cost-details"), finance = card.lastElementChild;
+        tech.append(card.querySelector(".field-grid"), card.querySelector('textarea[data-field="assumptions"]').closest("label"), finance); costs.open = true;
+        card._tabs = UI.tabs(card, [{ label: "Techniek", panel: tech }, { label: "Kosten", panel: costs }]);
+        const progress = el("p", null, "cost-progress"); costs.prepend(progress);
+        const filterLabel = el("label", null, "inline"), filter = el("input"); filter.type = "checkbox"; filter.className = "cost-filter"; filterLabel.append(filter, "Toon alleen nog onbekend"); progress.after(filterLabel);
+        const rows = costs.querySelector(".cost-rows"), groups = new Map();
+        for (const row of [...rows.children]) { const category = row.dataset.category, group = ["grant", "vat_refund", "residual_value"].includes(category) ? "Aftrekposten" : row.dataset.timing === "annual" ? "Jaarlijkse kosten" : row.dataset.timing === "event" ? "Gebeurtenissen en vervanging" : ["meter_cabinet", "grid_connection"].includes(category) ? "Netaansluiting & meter" : "Aanschaf & installatie";
+          if (!groups.has(group)) { const detail = el("details", null, "cost-group"); detail.open = true; detail.append(el("summary", group)); rows.append(detail); groups.set(group, detail); } groups.get(group).append(row);
+        }
+        const updateProgress = () => { const all = [...card.querySelectorAll(".cost-row")], unknown = all.filter(row => row.querySelector('[data-cost="status"]').value === "unknown"); progress.textContent = `${all.length - unknown.length}/${all.length} kostenposten beoordeeld${unknown.length ? " · onbekende posten blokkeren de berekening" : " · compleet"}`; all.forEach(row => row.hidden = filter.checked && !unknown.includes(row)); };
+        card.addEventListener("input", updateProgress); card.addEventListener("change", updateProgress); card.addEventListener("click", () => queueMicrotask(updateProgress)); card._updateProgress = updateProgress; updateProgress();
+      }
+      optionsTabs?.list.remove();
+      const cards = [...Analysis.candidateCards.values()]; $("analysis-candidates").replaceChildren(...cards);
+      if (cards.length) { const desiredOption = activeOption; optionsTabs = UI.tabs($("analysis-candidates"), cards.map(card => ({ label: card.querySelector('[data-field="name"]').value, panel: card })), index => activeOption = index); optionsTabs.activate(Math.min(desiredOption, cards.length - 1)); }
+    }
+    function update() {
+      const profile = data.imports.find(i => String(i.id) === $("analysis-profile").value), rows = [...form.querySelectorAll(".cost-row")], unknown = rows.filter(row => row.querySelector('[data-cost="status"]').value === "unknown").length;
+      summary.replaceChildren(el("p", "JOUW SCENARIO", "eyebrow"), el("h3", $("analysis-name").value), el("p", `${profile?.options.is_demo ? "FICTIEF · " : ""}${profile?.filename || "Kies een profiel"}`), el("p", objectives[$("analysis-objective").value]), el("p", `Inkoop: ${$("tariff-import").value || "Onbekend"} €/kWh`), el("p", `Teruglevering: ${$("tariff-export").value || "Onbekend"} €/kWh`), el("p", `${Analysis.candidateCards.size} opties · ${rows.length - unknown}/${rows.length} kostenposten beoordeeld`), badge(unknown ? `${unknown} onbekend` : "Kosten beoordeeld", unknown ? "warning" : "success"), el("small", "Concepten staan alleen in deze browser. Een geslaagde analyse legt haar eigen volledige invoer vast."));
+      if (scenarioFlow.current === 3) updateReview();
+    }
+    let draftTimer;
+    const saveDraft = () => { clearTimeout(draftTimer); draftTimer = setTimeout(() => { if (!UI.write("thuisaccu-draft", Analysis.capture())) UI.toast("Dit concept kan niet in deze browser worden bewaard.", true); }, 400); };
+    form.addEventListener("input", event => { if (event.target.matches("input,select,textarea")) UI.invalid(event.target, ""); update(); saveDraft(); }); form.addEventListener("change", () => { update(); saveDraft(); });
+    form.addEventListener("click", event => { if (event.target.closest("button") && event.target.id !== "analysis-run" && event.target !== removeDraft) queueMicrotask(() => { update(); saveDraft(); }); });
+    form.addEventListener("submit", event => { const errors = problems(); if (scenarioFlow.current !== 3 || errors.length) { event.preventDefault(); event.stopImmediatePropagation(); if (errors.length) { scenarioFlow.show(3); updateReview(); UI.toast("Controleer de gemarkeerde invoer voordat je rekent.", true); } else scenarioFlow.show(3); } }, true);
+    window.addEventListener("analysis:candidates", () => { enhanceOptions(); update(); });
+    window.addEventListener("analysis:loaded", () => { enhanceOptions(); for (const card of Analysis.candidateCards.values()) card._updateProgress?.(); scenarioFlow.show(0); update(); });
+    Analysis.ready.then(() => { const draft = UI.read("thuisaccu-draft", null); if (draft) { try { Analysis.restore(draft); UI.toast("Je concept is hersteld. Bevestigingen moet je opnieuw controleren."); } catch { UI.toast("Het concept kon niet worden hersteld.", true); } } update(); });
+    window.addEventListener("app:route", () => update());
+    // Bestaande uitleg blijft contextueel beschikbaar boven de wizard.
+    const help = el("details", null, "context-help"); help.append(el("summary", "Over deze schatting en je gegevens")); for (const child of [...section.children]) if (child.tagName === "P") help.append(child); section.prepend(help);
+  }
   async function onRoute({ detail: { key, id } }) {
     try {
       await refresh();
@@ -112,6 +194,6 @@ window.Workspace = (() => {
       if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { const result = el("div"); out.append(profileName(item), result); Research.renderSolar(item.summary, item.filename, item.options.timezone, result); $("page-actions").append(button("Start scenario met dit profiel", () => { location.hash = "/scenarios/nieuw"; $("analysis-profile").value = String(item.id); })); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
     } catch (error) { UI.toast(error.message, true); }
   }
-  UI.ready.then(() => { researchScreens(); importWizard(); window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
+  UI.ready.then(() => { researchScreens(); importWizard(); scenarioWizard(); window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
   return { get data() { return data; }, screen, refresh, duplicate, objectives, kpi, empty, demo, resolution, profileName, actionBar };
 })();
