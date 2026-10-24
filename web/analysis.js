@@ -16,7 +16,9 @@
   function field(parent, labelText, key, value = "", attrs = {}) { const label = make("label", labelText); const input = make("input"); input.dataset.field = key; Object.assign(input, { type: "number", step: "any", min: "0", value: String(value), ...attrs }); label.append(input); parent.append(label); return input; }
   function addCandidate(initial = {}) {
     if (candidateCards.size >= 12) { message("Je kunt maximaal twaalf rekenopties vergelijken.", true); return; }
-    const key = initial.key || `option-${++sequence}`;
+    sequence += 1;
+    let key = initial.key || `option-${sequence}`;
+    while (candidateCards.has(key)) key = `option-${++sequence}`;
     const panel = make("article", null, "panel analysis-candidate"); panel.dataset.key = key;
     panel.dataset.configurationId = initial.configuration_id || "";
     const heading = make("div", null, "section-heading"), headingText = make("h3", initial.name || `Rekenoptie ${sequence}`), remove = make("button", "Verwijder optie", "text-button"); remove.type = "button";
@@ -44,7 +46,7 @@
       const amountLabel = make("label", category.timing === "annual" ? "€/jaar" : "€"), amount = make("input"); amount.dataset.cost = "amount"; amount.inputMode = "decimal"; amount.placeholder = "Nog onbekend"; amountLabel.append(amount);
       const statusLabel = make("label", "Status"), status = make("select"); status.dataset.cost = "status";
       for (const [value, label] of [["unknown", "Nog onbekend"], ["priced", "Bedrag ingevuld"], ["included", "Inbegrepen"], ["not_applicable", "Niet van toepassing"]]) { const option = make("option", label); option.value = value; status.append(option); } statusLabel.append(status);
-      const sourceLabel = make("label", "Bron / aanname"), source = make("input"); source.dataset.cost = "source"; source.type = "text"; source.value = "Eigen offerte of expliciete aanname"; sourceLabel.append(source);
+      const sourceLabel = make("label", "Bron / aanname"), source = make("input"); source.dataset.cost = "source"; source.type = "text"; source.required = true; source.value = "Eigen offerte of expliciete aanname"; sourceLabel.append(source);
       row.append(intro, amountLabel, statusLabel);
       if (category.timing === "event") { const label = make("label", "Na jaar"), input = make("input"); input.type = "number"; input.min = "1"; input.max = "30"; input.step = "1"; input.dataset.cost = "year"; label.append(input); row.append(label); }
       row.append(sourceLabel); rows.append(row);
@@ -95,6 +97,7 @@
     for (const c of catalog.configurations) { const option = make("option", `${c.manufacturer_name} · ${c.product_name} · ${c.name}`); option.value = String(c.id); byId("analysis-catalog").append(option); }
     byId("analysis-history").replaceChildren(); const pick = make("option", "Kies een bewaarde analyse…"); pick.value = ""; byId("analysis-history").append(pick);
     for (const run of savedRuns) { const option = make("option", `${run.title} · ${new Date(run.created_at_unix_s * 1000).toLocaleString("nl-NL")}`); option.value = String(run.id); byId("analysis-history").append(option); }
+    window.dispatchEvent(new CustomEvent("analysis:data", { detail: { imports: profiles.imports, runs: savedRuns } }));
   }
   byId("analysis-add").addEventListener("click", () => costCatalog && addCandidate());
   byId("analysis-add-catalog").addEventListener("click", () => {
@@ -133,9 +136,11 @@
   function restore(raw) {
     if (!raw || raw.version !== 1 || !Array.isArray(raw.candidates)) return;
     candidateCards.clear(); byId("analysis-candidates").replaceChildren(); sequence = 0;
+    for (const id of ["confirm-gross", "confirm-technical", "confirm-costs"]) byId(id).checked = false;
+    sites = []; byId("address-results-label").hidden = true; byId("address-results").replaceChildren();
     for (const [id, value] of Object.entries(raw.fields || {})) { const field = byId(id); if (field?.matches("input,select,textarea")) { if (field.type === "checkbox") field.checked = false; else field.value = value; } }
     selectedSite = raw.site || null; fixedAnnual = raw.fixedAnnual ?? 0;
-    for (const saved of raw.candidates) { const card = addCandidate({ configuration_id: saved.configuration_id }); for (const [key, value] of Object.entries(saved.fields)) { const field = card.querySelector(`[data-field="${key}"]`); if (field) field.value = value; } for (const cost of saved.costs) { const row = [...card.querySelectorAll(".cost-row")].find(row => row.dataset.category === cost.category); if (row) { if (cost.notes !== undefined) row.dataset.notes = cost.notes; for (const [key, value] of Object.entries(cost.fields)) { const field = row.querySelector(`[data-cost="${key}"]`); if (field) field.value = value; } } } card.querySelector("h3").textContent = saved.fields.name; }
+    for (const saved of raw.candidates) { const card = addCandidate({ key: saved.key, configuration_id: saved.configuration_id }); for (const [key, value] of Object.entries(saved.fields)) { const field = card.querySelector(`[data-field="${key}"]`); if (field) field.value = value; } for (const cost of saved.costs) { const row = [...card.querySelectorAll(".cost-row")].find(row => row.dataset.category === cost.category); if (row) { if (cost.notes !== undefined) row.dataset.notes = cost.notes; for (const [key, value] of Object.entries(cost.fields)) { const field = row.querySelector(`[data-cost="${key}"]`); if (field) field.value = value; } } } card.querySelector("h3").textContent = saved.fields.name; }
     window.dispatchEvent(new Event("analysis:loaded"));
   }
   async function load(input) {
@@ -143,7 +148,7 @@
     const raw = { version: 1, fields: { "analysis-name": `${input.title} (kopie)`, "analysis-address": input.site.address, "analysis-profile": String(input.solar_import_id), "export-fee-bands": input.parameters.tariff.export_fee_bands.map(b => `${b.up_to_kwh ?? ""};${b.annual_eur}`).join("\n") }, site: input.site, fixedAnnual: input.parameters.tariff.fixed_annual_eur, candidates: [] };
     for (const [key, id] of Object.entries(parameterFields)) raw.fields[id] = input.parameters[key] ?? "";
     for (const [key, id] of Object.entries(tariffFields)) raw.fields[id] = input.parameters.tariff[key];
-    raw.candidates = input.candidates.map(c => ({ configuration_id: c.configuration_id, fields: { name: c.name, ...c.battery, assumptions: c.assumptions, loan_amount_eur: c.financing.loan_amount_eur, annual_interest_pct: c.financing.annual_interest_pct, loan_years: c.financing.years }, costs: c.costs.map(cost => ({ category: cost.category, notes: cost.notes, fields: { amount: cost.status === "priced" ? (cost.amount_minor / 100).toFixed(2) : "", status: cost.status, source: cost.source, year: cost.year ?? "" } })) }));
+    raw.candidates = input.candidates.map(c => ({ key: c.key, configuration_id: c.configuration_id, fields: { name: c.name, ...c.battery, assumptions: c.assumptions, loan_amount_eur: c.financing.loan_amount_eur, annual_interest_pct: c.financing.annual_interest_pct, loan_years: c.financing.years }, costs: c.costs.map(cost => ({ category: cost.category, notes: cost.notes, fields: { amount: cost.status === "priced" ? `${Math.trunc(cost.amount_minor / 100)}.${String(cost.amount_minor % 100).padStart(2, "0")}` : "", status: cost.status, source: cost.source, year: cost.year ?? "" } })) }));
     restore(raw); UI.write("thuisaccu-draft", capture());
   }
   window.Analysis = { refreshData, addCandidate, capture, restore, load, parameterFields, tariffFields, parameters, collectCandidate, get candidateCards() { return candidateCards; }, get costCatalog() { return costCatalog; }, get savedRuns() { return savedRuns; } };

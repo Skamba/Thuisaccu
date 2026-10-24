@@ -14,16 +14,8 @@
   </head>
   <body>
     <a class="skip" href="#main">Naar de inhoud</a>
-    <nav class="topbar" aria-label="Hoofdnavigatie"><a class="brand" href="/">▤ Thuisaccu</a><div><a href="#compare">Accu’s</a><a href="#solar">Opwek</a><a href="#analysis">ROI</a></div><span class="badge">Onderzoeksmodel</span></nav>
     <main id="main">
-      <header class="hero">
-        <p class="eyebrow">Onderzoeken · Vergelijken · Onderbouwen</p>
-        <h1>Welke accu past<br>bij jouw situatie?</h1>
-        <p class="intro">Zet uitvoeringen naast elkaar. Bekijk wat een specificatie betekent, waar de gegevens vandaan komen en wat nog ontbreekt.</p>
-        <div class="actions"><a class="button" href="#analysis">Bereken jouw scenario <span aria-hidden="true">↗</span></a><a class="button secondary" href="#compare">Onderzoek accu’s</a></div>
-      </header>
-      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
-      <section id="compare" aria-labelledby="compare-title">
+      <section hidden id="compare" aria-labelledby="compare-title">
         <div class="section-heading"><div><p class="eyebrow">01 · Productonderzoek</p><h2 id="compare-title">Een vergelijking die je kunt controleren.</h2></div><button id="add-open" class="secondary">+ Eigen accu of offerte</button></div>
         <div class="toolbar"><label class="search">Zoek fabrikant of uitvoering<input id="search" type="search" placeholder="Bijvoorbeeld: Enphase, HVS…"></label><button id="references" class="secondary">Laad onderzochte voorbeelden</button></div>
         <p class="muted">De voorbeelden zijn bronmomentopnamen van 24 oktober 2026, zonder verzonnen prijzen. Kies maximaal vier uitvoeringen. Markt en installatieomvang kunnen verschillen.</p>
@@ -33,7 +25,7 @@
         <div class="table-scroll" tabindex="0" role="region" aria-label="Vergelijkingstabel"><table id="comparison-table"><caption>Selecteer uitvoeringen om ze te vergelijken.</caption></table></div>
         <p class="muted">Prijzen kunnen een andere valuta, btw-basis of pakketomvang hebben. Prijs per kWh is een kengetal, geen terugverdientijd of complete kostenraming. Er wordt geen automatische winnaar gekozen.</p>
       </section>
-      <section id="solar" aria-labelledby="solar-title">
+      <section hidden id="solar" aria-labelledby="solar-title">
         <div class="section-heading"><div><p class="eyebrow">02 · Jouw zonne-opwek</p><h2 id="solar-title">Begin bij je eigen gegevens.</h2></div><span class="badge">CSV · Excel · JSON</span></div>
         <p>Upload je productie-export en controleer de kolommen voordat je opslaat. Optioneel kun je gelijktijdig verbruik meenemen. De bestanden worden door je eigen lokale server verwerkt.</p>
         <div class="solar-layout"><form id="solar-form" class="panel">
@@ -58,11 +50,10 @@
         </form><div class="panel result-panel"><h3>Je opwek in beeld</h3><div id="solar-result"><p class="muted">Na de controle zie je de bestreken periode, totale opwek, eventuele ontbrekende perioden en een maandoverzicht.</p></div><label>Bewaarde overzichten<select id="solar-history"><option value="">Kies een overzicht…</option></select></label></div></div>
         <p class="callout">Gebruik voor ROI hieronder een volledig jaar met AC-opwek én bruto huishoudelijk verbruik op uur- of fijnere basis. Dag- en maandtotalen missen het verloop binnen de dag. Vul daarnaast je contracttarieven en accukosten in.</p>
       </section>
-      <section id="analysis" aria-labelledby="analysis-title">
+      <section hidden id="analysis" aria-labelledby="analysis-title">
         <div class="section-heading"><div><p class="eyebrow">03 · Scenario en rendement</p><h2 id="analysis-title">Wat werkt het beste voor jou?</h2></div><span class="badge">Nederland · EUR</span></div>
         <p>Simuleer zonnestroom opslaan voor eigen gebruik. Vergelijk accu-opties met geen accu, inclusief aanschaf, extra jaarkosten en vervanging. Kies zelf wat ‘beste’ betekent.</p>
         <p class="callout">Dit model gebruikt ingevoerde vaste all-in tarieven. Het berekent geen dynamische handel of onbalansinkomsten. Gebruik één volledig, aaneengesloten jaar met uur- of fijnere waarden van AC-opwek en bruto huishoudelijk verbruik.</p>
-        <p id="analysis-message" role="status" aria-live="polite" hidden></p>
         <form id="analysis-form">
           <div class="solar-layout"><div class="panel">
             <h3>Adres en energiegegevens</h3>

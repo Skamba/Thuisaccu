@@ -108,7 +108,7 @@ function priceCell(config, perKwh = false) {
     block.append(node("strong", `${c.currency === "EUR" ? UI.formatMoney(amount) : `${c.currency} ${fmt(amount)}`}${perKwh ? " / kWh" : ""}`));
     block.append(node("small", `${({ included: "Incl. belasting", excluded: "Excl. belasting", unknown: "Belastingbasis onbekend" })[c.tax_basis]}; installatie ${c.includes_installation === null ? "onbekend" : c.includes_installation ? "inbegrepen" : "niet inbegrepen"}`));
     if (c.valid_until_unix_s && c.valid_until_unix_s < Date.now() / 1000) block.append(node("small", "Aanbieding verlopen", "warning"));
-    if (c.recurring_amount_minor !== null) block.append(node("small", `Plus ${c.currency} ${fmt(c.recurring_amount_minor / 10 ** c.minor_unit_exponent)} per ${c.recurring_period === "month" ? "maand" : "jaar"}`));
+    if (c.recurring_amount_minor !== null) block.append(node("small", `Plus ${c.currency === "EUR" ? UI.formatMoney(c.recurring_amount_minor / 10 ** c.minor_unit_exponent) : `${c.currency} ${fmt(c.recurring_amount_minor / 10 ** c.minor_unit_exponent)}`} per ${c.recurring_period === "month" ? "maand" : "jaar"}`));
     block.append(sourceDetails(c));
     if (perKwh) { const evidence = node("div"); evidence.append(node("small", "Capaciteitsbron voor dit kengetal:"), sourceDetails(capacities[0])); block.append(evidence); }
     wrap.append(block);
@@ -180,7 +180,7 @@ function renderCatalog() {
     const claims = ["numbers", "features", "texts", "warranties", "offers"].flatMap(k => dataset[k].filter(v => v.configuration_id === c.id));
     const capacities = dataset.numbers.filter(v => v.configuration_id === c.id && v.metric_key === "usable_energy_wh");
     const capacity = capacities.length === 1 && capacities[0].qualifier === "exact" ? `${fmt(capacities[0].value / 1000)} kWh · ${boundaries[capacities[0].boundary]}` : capacities.length > 1 ? "Meerdere claims: zie vergelijking" : "Onbekend";
-    return [checkbox, c.manufacturer_name, c.product_name, c.name, c.product_kind === "battery_module" ? "Accumodule" : "Accusysteem", [...new Set(claims.map(v => v.market))].filter(Boolean).join(" · ") || "Onbekend", capacity, String(new Set(claims.map(v => `${v.source_title}|${v.source_url}|${v.locator}`)).size), UI.badge(claims.length && claims.every(v => v.review_status === "reviewed") ? "Gecontroleerd" : "Niet gecontroleerd", "warning")];
+    return [checkbox, c.manufacturer_name, c.product_name, c.name, c.product_kind === "battery_module" ? "Accumodule" : "Accusysteem", [...new Set(claims.map(v => v.market))].filter(Boolean).join(" · ") || "Onbekend", capacity, String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size), UI.badge(claims.length && claims.every(v => v.review_status === "reviewed") ? "Gecontroleerd" : "Niet gecontroleerd", "warning")];
   })));
   renderTray();
 }
@@ -237,7 +237,7 @@ $("candidate-form").addEventListener("submit", async event => {
 $("export-comparison").addEventListener("click", () => {
   if (!selected.size) { notice("Selecteer eerst een uitvoering."); return; }
   const rows = [...$("comparison-table").querySelectorAll("tr")].map(row => [...row.children].map(cell => {
-    let text = cell.innerText.replace(/\s+/g, " ").trim();
+    let text = (cell.innerText ?? cell.textContent).replace(/\s+/g, " ").trim();
     const sources = [...new Set([...cell.querySelectorAll("a[href]")].map(a => a.href))];
     if (sources.length) text += " Bronnen: " + sources.join(" | ");
     if (/^[=+@-]/.test(text)) text = "'" + text;
@@ -277,7 +277,9 @@ $("import-profile").addEventListener("change", () => {
 ["header-row", "delimiter", "sheet"].forEach(id => $(id).addEventListener("change", () => { $("mapping").hidden = true; invalidatePreview(); }));
 $("solar-file").addEventListener("change", () => { $("mapping").hidden = true; $("sheet").replaceChildren(); $("sheet-label").hidden = true; });
 $("inspect-file").addEventListener("click", () => busy($("inspect-file"), async () => {
-  invalidatePreview(); const result = await api("/api/v1/solar/inspect", { method: "POST", body: multipart() });
+  invalidatePreview(); const sentSignature = signature();
+  const result = await api("/api/v1/solar/inspect", { method: "POST", body: multipart() });
+  if (signature() !== sentSignature) throw new Error("De bestandsinstellingen zijn veranderd. Lees de kolommen opnieuw.");
   const currentSheet = $("sheet").value; $("sheet").replaceChildren();
   for (const sheet of result.sheets) { const option = node("option", sheet); option.value = sheet; $("sheet").append(option); }
   if (result.sheets.includes(currentSheet)) $("sheet").value = currentSheet;

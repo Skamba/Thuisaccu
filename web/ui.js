@@ -9,8 +9,8 @@ window.UI = (() => {
     if (cls) element.className = cls;
     return element;
   };
-  const formatNumber = (v, decimals = 2) => v == null || !Number.isFinite(Number(v)) ? "Onbekend" : new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(v);
-  const formatMoney = (v, { decimals = 2 } = {}) => v == null || !Number.isFinite(Number(v)) ? "Onbekend" : `${Number(v) < 0 ? "−" : ""}€ ${formatNumber(Math.abs(v), decimals)}`;
+  const formatNumber = (v, decimals = 2) => v == null || v === "" || !Number.isFinite(Number(v)) ? "Onbekend" : new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(v);
+  const formatMoney = (v, { decimals = 2 } = {}) => v == null || v === "" || !Number.isFinite(Number(v)) ? "Onbekend" : `${Number(v) < 0 ? "−" : ""}€ ${formatNumber(Math.abs(v), decimals)}`;
   const formatKwh = v => v == null ? "Onbekend" : `${formatNumber(v)} kWh`;
   const formatPct = v => v == null ? "Niet bepaald" : `${formatNumber(v, 1)}%`;
   const formatYears = v => v == null ? "Niet binnen horizon" : `${formatNumber(v, 0)} jaar`;
@@ -19,7 +19,7 @@ window.UI = (() => {
   const write = (key, value) => { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } };
   const toast = (text, error = false) => {
     const host = $("toasts") || document.body.appendChild(el("div", null, "toasts")); host.id = "toasts";
-    const item = el("div", null, `toast${error ? " error" : ""}`); item.setAttribute("role", error ? "alert" : "status");
+    const item = el("div", null, `toast${error ? " error" : ""}`); item.setAttribute("role", error ? "alert" : "status"); item.setAttribute("aria-live", error ? "assertive" : "polite");
     const close = button("Sluiten", () => item.remove(), "text-button"); close.setAttribute("aria-label", "Melding sluiten");
     item.append(el("span", text), close); host.append(item);
     if (!error) setTimeout(() => item.remove(), 5500);
@@ -115,7 +115,7 @@ window.UI = (() => {
     } else rows.forEach((r, ri) => {
       if (horizontal) {
         const at = top + (ri + .5) / rows.length * plotH; text(left - 12, at + 4, r.label, "end");
-        if (type === "range") { const values = r.values.filter(v => v != null); if (!values.length) return; draw("line", { x1: x(Math.min(...values)), x2: x(Math.max(...values)), y1: at, y2: at, stroke: r.color || colors[ri % colors.length], "stroke-width": 9 }, `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`); r.values.forEach((v, i) => { if (v != null) draw(i === 1 ? "circle" : "rect", i === 1 ? { cx: x(v), cy: at, r: 6, fill: "var(--surface)", stroke: "currentColor", "stroke-width": 2 } : { x: x(v) - 2, y: at - 9, width: 4, height: 18, fill: "currentColor" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`); }); }
+        if (type === "range") { const values = r.values.filter(v => v != null); if (!values.length) return; if (r.values[1] != null) draw("rect", { x: Math.min(x(0), x(r.values[1])), y: at - 13, width: Math.abs(x(r.values[1]) - x(0)), height: 26, fill: r.color || colors[ri % colors.length], opacity: .25 }, `${r.label}, basis: ${format(r.values[1])} ${unit}`); draw("line", { x1: x(Math.min(...values)), x2: x(Math.max(...values)), y1: at, y2: at, stroke: r.color || colors[ri % colors.length], "stroke-width": 9 }, `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`); r.values.forEach((v, i) => { if (v != null) draw(i === 1 ? "circle" : "rect", i === 1 ? { cx: x(v), cy: at, r: 6, fill: "var(--surface)", stroke: "currentColor", "stroke-width": 2 } : { x: x(v) - 2, y: at - 9, width: 4, height: 18, fill: "currentColor" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`); }); }
         else { let start = 0; r.values.forEach((v, si) => { if (v == null) return; draw("rect", { x: x(start), y: at - 13, width: Math.max(0, x(start + v) - x(start)), height: 26, fill: series[si].color || colors[si % colors.length] }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`); start += v; }); }
       } else {
         const groupW = plotW / rows.length, barW = groupW / (series.length + 1);
@@ -151,7 +151,6 @@ window.UI = (() => {
     $("page-title").focus(); window.scrollTo(0, 0);
   }
   const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", () => {
-    document.querySelector(".hero")?.remove(); document.querySelector(".topbar")?.remove(); $("notice")?.remove(); $("analysis-message")?.remove();
     const sidebar = el("aside", null, "sidebar"); sidebar.append(link("▤ Thuisaccu", "#/dashboard", "brand"), el("p", "LOKAAL ONDERZOEK", "eyebrow"));
     const nav = el("nav", null, "app-nav"); nav.setAttribute("aria-label", "Hoofdnavigatie");
     const icons = ["M3 10L12 3l9 7v11H3z M9 21v-8h6v8", "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6", "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0", "M4 20V10h4v10 M10 20V4h4v16 M16 20v-7h4v7", "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"];
@@ -159,6 +158,8 @@ window.UI = (() => {
     const status = el("div", null, "service"); status.id = "service"; status.append(el("p", "● Service controleren…"), el("small", "Modelversie na een berekening")); sidebar.append(nav, status); document.body.prepend(sidebar);
     const menu = button("☰ Menu", () => { const open = document.body.classList.toggle("menu-open"); menu.setAttribute("aria-expanded", String(open)); }); menu.id = "menu-toggle"; menu.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-controls", "app-navigation"); nav.id = "app-navigation"; document.body.prepend(menu);
     const main = $("main"), header = el("header", null, "page-header"), titleGroup = el("div"), title = el("h1"); title.id = "page-title"; title.tabIndex = -1; const sub = el("p", null, "muted"); sub.id = "page-subtitle"; titleGroup.append(title, sub); const actions = el("div", null, "actions"); actions.id = "page-actions"; header.append(titleGroup, actions); main.prepend(header);
+    document.querySelector(".skip").addEventListener("click", event => { event.preventDefault(); title.focus(); title.scrollIntoView(); });
+    document.addEventListener("invalid", event => { if (event.target.matches("input,select,textarea")) invalid(event.target, event.target.validationMessage); }, true);
     const old = { accus: $("compare"), "opwek/import": $("solar"), "scenarios/nieuw": $("analysis") };
     routes.forEach(([key]) => { const section = old[key] || el("section"); section.dataset.screen = key; section.hidden = true; screens.set(key, section); main.append(section); });
     document.querySelectorAll("a[href='#analysis']").forEach(a => a.href = "#/scenarios/nieuw");

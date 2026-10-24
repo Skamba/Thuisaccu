@@ -4,11 +4,14 @@ De volgende routes bestaan:
 
 | Route | Succesresponse | Doel |
 | --- | --- | --- |
-| `/` | `200`, `text/html; charset=utf-8` | Vergelijkings- en importinterface |
+| `/` | `200`, `text/html; charset=utf-8` | App-shell; taakschermen via de URL-hash |
 | `/styles.css` | `200`, `text/css; charset=utf-8` | Stijlblad |
 | `/api/v1/health` | `200`, `application/json` | Servicestatus |
 | `/app.js` | `200`, JavaScript | Browserapplicatie |
-| `/analysis.js` | `200`, JavaScript | Scenario-invoer en resultaatweergave |
+| `/analysis.js` | `200`, JavaScript | Scenario-invoer, concepten en dupliceren |
+| `/ui.js` | `200`, JavaScript | Router, opmaak, meldingen, tabs en SVG-helpers |
+| `/workspace.js` | `200`, JavaScript | Dashboard, lijsten, wizards en instellingen |
+| `/results.js` | `200`, JavaScript | Resultaatdashboard, grafieken en export |
 | `/samples/solar.csv`, `/samples/solar.json`, `/samples/solar.xlsx` | `200`, download | Fictieve voorbeelddata |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
