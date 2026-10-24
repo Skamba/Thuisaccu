@@ -93,6 +93,39 @@ window.UI = (() => {
     entries.forEach((entry, i) => { const li = el("li"), b = button(`${i + 1}. ${entry.label}`, () => show(i), "text-button"); entry.control = b; li.append(b); stepper.append(li); });
     host.prepend(stepper); host.append(footer); show(0); return { show, next, previous, footer, get current() { return current; } };
   }
+  const colors = ["#28785c", "#397abe", "#b86520", "#9b5b99", "#008b91", "#8b6b23", "#6d75bf", "#bd5479", "#65753b", "#7e695e", "#2d6e86", "#ab6815", "#587384"];
+  function chart(type, { title, rows, series, unit = "", format = v => formatNumber(v, 0), marks = [] }) {
+    const figure = el("figure", null, "chart"); figure.append(el("figcaption", title));
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), width = 880, height = type === "range" || type === "stacked" ? Math.max(240, rows.length * 58 + 90) : 340;
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", `${title}. Waarden staan ook in de tabel hieronder.`);
+    const draw = (tag, attrs, label) => { const e = document.createElementNS(ns, tag); for (const [key, value] of Object.entries(attrs)) e.setAttribute(key, value); if (label) { const t = document.createElementNS(ns, "title"); t.textContent = label; e.append(t); e.setAttribute("tabindex", "0"); e.setAttribute("aria-label", label); } svg.append(e); return e; };
+    const text = (x, y, value, anchor = "start") => { const t = draw("text", { x, y, "text-anchor": anchor, fill: "currentColor", "font-size": 12 }); t.textContent = value; };
+    const horizontal = ["range", "stacked"].includes(type), left = horizontal ? 210 : 82, right = 25, top = 24, bottom = 52, plotW = width - left - right, plotH = height - top - bottom;
+    const numbers = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0), 0)] : r.values).filter(v => v != null && Number.isFinite(v));
+    const min = Math.min(0, ...numbers), max = Math.max(0, ...numbers), span = max - min || 1;
+    const x = v => left + (v - min) / span * plotW, y = v => top + (max - v) / span * plotH;
+    for (let i = 0; i <= 4; i++) { const value = min + i * span / 4; if (horizontal) { const at = x(value); draw("line", { x1: at, x2: at, y1: top, y2: height - bottom, stroke: "var(--line)" }); text(at, height - 26, format(value), "middle"); } else { const at = y(value); draw("line", { x1: left, x2: width - right, y1: at, y2: at, stroke: "var(--line)" }); text(left - 10, at + 4, format(value), "end"); } }
+    if (horizontal) draw("line", { x1: x(0), x2: x(0), y1: top, y2: height - bottom, stroke: "currentColor", "stroke-width": 1.4 });
+    else draw("line", { x1: left, x2: width - right, y1: y(0), y2: y(0), stroke: "currentColor", "stroke-width": 1.4 });
+    if (type === "line") {
+      const pointX = i => left + i / Math.max(1, rows.length - 1) * plotW;
+      series.forEach((s, si) => { const points = rows.map((r, i) => r.values[si] == null ? null : `${pointX(i)},${y(r.values[si])}`).filter(Boolean).join(" "); draw("polyline", { points, fill: "none", stroke: s.color || colors[si % colors.length], "stroke-width": 2.5, "stroke-dasharray": si > 5 ? "8 3" : "none" }); rows.forEach((r, i) => { if (r.values[si] != null) draw("circle", { cx: pointX(i), cy: y(r.values[si]), r: 4, fill: s.color || colors[si % colors.length] }, `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); }); });
+      rows.forEach((r, i) => { if (i % Math.max(1, Math.ceil(rows.length / 8)) === 0 || i === rows.length - 1) text(pointX(i), height - 30, r.label, "middle"); });
+      marks.forEach(mark => { const index = rows.findIndex(r => r.label === mark.year); if (index < 0) return; const at = pointX(index); draw("line", { x1: at, x2: at, y1: top, y2: height - bottom, stroke: "var(--muted)", "stroke-dasharray": "3 4" }, mark.label); text(at, top + 12 + (mark.offset || 0), mark.symbol || "↧", "middle"); });
+    } else rows.forEach((r, ri) => {
+      if (horizontal) {
+        const at = top + (ri + .5) / rows.length * plotH; text(left - 12, at + 4, r.label, "end");
+        if (type === "range") { const values = r.values.filter(v => v != null); if (!values.length) return; draw("line", { x1: x(Math.min(...values)), x2: x(Math.max(...values)), y1: at, y2: at, stroke: r.color || colors[ri % colors.length], "stroke-width": 9 }, `${r.label}: ${r.values.map((v, i) => `${series[i].label} ${format(v)} ${unit}`).join(", ")}`); r.values.forEach((v, i) => { if (v != null) draw(i === 1 ? "circle" : "rect", i === 1 ? { cx: x(v), cy: at, r: 6, fill: "var(--surface)", stroke: "currentColor", "stroke-width": 2 } : { x: x(v) - 2, y: at - 9, width: 4, height: 18, fill: "currentColor" }, `${r.label}, ${series[i].label}: ${format(v)} ${unit}`); }); }
+        else { let start = 0; r.values.forEach((v, si) => { if (v == null) return; draw("rect", { x: x(start), y: at - 13, width: Math.max(0, x(start + v) - x(start)), height: 26, fill: series[si].color || colors[si % colors.length] }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`); start += v; }); }
+      } else {
+        const groupW = plotW / rows.length, barW = groupW / (series.length + 1);
+        r.values.forEach((v, si) => { if (v == null) return; draw("rect", { x: left + ri * groupW + si * barW + barW / 2, y: Math.min(y(v), y(0)), width: barW * .86, height: Math.max(1, Math.abs(y(v) - y(0))), fill: series[si].color || colors[si % colors.length] }, `${r.label}, ${series[si].label}: ${format(v)} ${unit}`); }); text(left + (ri + .5) * groupW, height - 30, r.label, "middle");
+      }
+    });
+    text(width - right, height - 5, unit, "end"); figure.append(svg);
+    const legend = el("div", null, "legend"); series.forEach((s, i) => { const item = el("span", s.label), dot = el("span", "●"); dot.style.color = s.color || colors[i % colors.length]; item.prepend(dot, " "); legend.append(item); }); figure.append(legend);
+    const details = el("details"); details.append(el("summary", "Toon als tabel"), table(["Reeks", ...series.map(s => `${s.label} (${unit})`)], rows.map(r => [r.label, ...r.values.map(v => v == null ? "Onbekend" : format(v))]))); figure.append(details); return figure;
+  }
   const screens = new Map(), routes = [
     ["dashboard", "Dashboard", "Onderbouwen, niet raden. Je onderzoek op één plek."],
     ["accus", "Accu’s", "Brongebonden uitvoeringen, zonder automatische winnaar."],
@@ -133,5 +166,5 @@ window.UI = (() => {
     api("/api/v1/health").then(() => { status.firstChild.textContent = "● Lokale service actief"; status.classList.add("online"); }).catch(() => { status.firstChild.textContent = "● Service onbereikbaar"; status.classList.add("offline"); });
     resolve();
   }));
-  return { $, el, button, link, badge, formatNumber, formatMoney, formatKwh, formatPct, formatYears, date, read, write, toast, api, table, csv, suitability, tabs, invalid, validate, wizard, screens, route, ready };
+  return { $, el, button, link, badge, formatNumber, formatMoney, formatKwh, formatPct, formatYears, date, read, write, toast, api, table, csv, suitability, tabs, invalid, validate, wizard, chart, colors, screens, route, ready };
 })();

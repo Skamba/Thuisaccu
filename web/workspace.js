@@ -75,6 +75,33 @@ window.Workspace = (() => {
     $("add-open").addEventListener("click", () => wizard.show(0));
     form.addEventListener("input", event => { if (event.target.matches("input,select,textarea")) UI.invalid(event.target, ""); });
   }
+  function importWizard() {
+    const form = $("solar-form"), mapping = $("mapping"), section = screen("opwek/import"), panels = Array.from({ length: 4 }, () => el("div", null, "wizard-step"));
+    for (const child of [...form.children]) if (child !== mapping) panels[0].append(child);
+    panels[1].append(mapping); const examples = $("file-preview").parentElement; examples.before($("file-preview")); examples.remove();
+    const preview = $("preview-file"), save = $("save-file"), results = $("solar-result"); preview.textContent = "Controleer overzicht →"; save.textContent = "Bewaar energieprofiel";
+    panels[1].append(preview); panels[2].append(results); panels[3].append(el("h2", "Bewaren in de lokale database"), el("p", "De bestandsnaam wordt de titel. Het originele bestand wordt niet bewaard; de gecontroleerde intervallen en importinstellingen wel."));
+    const filename = el("input"); filename.id = "import-filename"; filename.required = true; filename.maxLength = 240; const label = el("label", "Naam van het bestand / profiel"); label.append(filename); panels[3].append(label, save);
+    const helper = el("aside", null, "panel import-help"); helper.append(el("h3", "Hulp bij je export"), $("profile-help"), $("profile-source")); panels[0].append(helper);
+    section.querySelector(".solar-layout").before(form); section.querySelector(".solar-layout").remove(); form.classList.remove("panel"); form.append(...panels);
+    const wizard = UI.wizard(form, panels.map((panel, i) => ({ label: ["Bestand", "Kolommen & eenheden", "Controle", "Bewaren"][i], panel })), { validateStep: (panel, index) => {
+      if (index === 0) { $("inspect-file").click(); return false; }
+      if (index === 1) { preview.click(); return false; }
+      return UI.validate(panel);
+    }, onChange: index => { wizardState(index); } });
+    function wizardState(index) { if (index === 0) { /* De expliciete inspectie bepaalt stap 2. */ } }
+    window.addEventListener("solar:inspected", () => { wizard.show(1); markColumns(); }); window.addEventListener("solar:previewed", () => wizard.show(2));
+    $("solar-history").parentElement.hidden = true; section.append($("solar-history").parentElement);
+    $("solar-file").addEventListener("change", () => { filename.value = $("solar-file").files[0]?.name || ""; });
+    filename.addEventListener("change", () => { const original = $("solar-file").files[0]; if (!original || !filename.value.trim()) return; const transfer = new DataTransfer(); transfer.items.add(new File([original], filename.value.trim(), { type: original.type, lastModified: original.lastModified })); $("solar-file").files = transfer.files; Research.acceptFilename?.(); });
+    const drop = $("solar-file").closest("label"); drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("dragover"); }); drop.addEventListener("dragleave", () => drop.classList.remove("dragover")); drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("dragover"); if (e.dataTransfer.files.length) { $("solar-file").files = e.dataTransfer.files; $("solar-file").dispatchEvent(new Event("change", { bubbles: true })); wizard.show(0); } });
+    function markColumns() { const chosen = ["time-column", "time-part-column", "production-column", "consumption-column"].map(id => $(id).value).filter(v => v !== "").map(Number); $("file-preview").querySelectorAll("tr").forEach(row => [...row.children].forEach((cell, i) => cell.classList.toggle("mapped-column", chosen.includes(i)))); }
+    panels[1].addEventListener("change", markColumns);
+    form.addEventListener("change", event => { if (event.target !== filename && !panels[0].contains(event.target) && event.target !== $("solar-file")) return; if (event.target !== filename) wizard.show(0); });
+    form.noValidate = true;
+    form.addEventListener("submit", event => { if (wizard.current !== 1 || !UI.validate(panels[1])) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    save.addEventListener("click", event => { if (!UI.validate(panels[3])) { event.stopImmediatePropagation(); } }, true);
+  }
   async function onRoute({ detail: { key, id } }) {
     try {
       await refresh();
@@ -82,9 +109,9 @@ window.Workspace = (() => {
       if (key === "dashboard") dashboard();
       lists(key);
       if (key === "scenarios/detail") { const run = data.runs.find(r => String(r.id) === id); const out = screen(key); out.replaceChildren(); if (run) { out.append($("analysis-result")); Analysis.renderResult(run.result, run.input.request); } else out.append(empty("Analyse niet gevonden", "De API toont maximaal de laatste 100 analyses.", link("Terug naar scenario’s", "#/scenarios"))); }
-      if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { out.append(profileName(item), $("solar-result")); Research.renderSolar(item.summary, item.filename, item.options.timezone); $("page-actions").append(button("Start scenario met dit profiel", () => { location.hash = "/scenarios/nieuw"; $("analysis-profile").value = String(item.id); })); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
+      if (key === "opwek/detail") { const item = data.imports.find(i => String(i.id) === id); const out = screen(key); out.replaceChildren(); if (item) { const result = el("div"); out.append(profileName(item), result); Research.renderSolar(item.summary, item.filename, item.options.timezone, result); $("page-actions").append(button("Start scenario met dit profiel", () => { location.hash = "/scenarios/nieuw"; $("analysis-profile").value = String(item.id); })); } else out.append(empty("Import niet gevonden", "Kies een bewaard energieprofiel.", link("Terug naar imports", "#/opwek"))); }
     } catch (error) { UI.toast(error.message, true); }
   }
-  UI.ready.then(() => { researchScreens(); window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
+  UI.ready.then(() => { researchScreens(); importWizard(); window.addEventListener("app:route", onRoute); window.addEventListener("app:data", () => { if (["#/dashboard", "#/opwek", "#/scenarios"].includes(location.hash)) UI.route(); }); UI.route(); });
   return { get data() { return data; }, screen, refresh, duplicate, objectives, kpi, empty, demo, resolution, profileName, actionBar };
 })();

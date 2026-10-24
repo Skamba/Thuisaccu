@@ -258,7 +258,7 @@ function multipart() {
   const body = new FormData(); body.append("file", file); body.append("options", JSON.stringify(importOptions())); return body;
 }
 function invalidatePreview() { previewSignature = null; $("save-file").disabled = true; }
-$("solar-form").addEventListener("change", invalidatePreview);
+$("solar-form").addEventListener("change", event => { if (event.target.id !== "import-filename") invalidatePreview(); });
 const profiles = {
   solaredge: ["Gebruik installatieproductie uit Monitoring (CSV/Excel) of een bewaarde Site Energy JSON-export. Kies bij JSON date/value; eenheid en periode komen uit de metadata. Kies de tijdzone van de installatie. Ontbrekende waarden zijn geen nul.", "https://knowledge-center.solaredge.com/sites/kc/files/se_monitoring_api.pdf"],
   enphase: ["Open Reports in Enlighten en exporteer Site Energy Production, eventueel met Site Energy Consumption. Gebruik het installatietotaal; tel een totaal en de losse panelen niet samen. Recent Power bevat vermogen, geen periode-energie. Controleer Wh/kWh en de datumnotatie.", "https://enphase.com/sites/default/files/2025-08/Enphase-solar-troubleshooting-guide-ING-00061-2.0-EN-INT-2025-08-14.pdf"],
@@ -301,23 +301,18 @@ $("inspect-file").addEventListener("click", () => busy($("inspect-file"), async 
   const table = node("table"), head = node("tr"); result.headers.forEach(h => head.append(node("th", h))); table.append(head);
   result.preview.forEach(row => { const tr = node("tr"); row.forEach(cell => tr.append(node("td", cell))); table.append(tr); });
   $("file-preview").replaceChildren(table); $("mapping").hidden = false;
+  window.dispatchEvent(new Event("solar:inspected"));
   notice(`${fmt(result.row_count, 0)} gegevensrijen ingelezen. Controleer kolommen, eenheden, periode en tijdzone.`);
 }));
-function renderSolar(summary, title = "Gecontroleerde preview", timeZone = importOptions().timezone) {
-  const result = $("solar-result"); result.replaceChildren(node("p", title, "eyebrow"));
+function renderSolar(summary, title = "Gecontroleerde preview", timeZone = importOptions().timezone, result = $("solar-result")) { result.replaceChildren(node("p", title, "eyebrow"));
   const stats = node("div", null, "stats");
   const addStat = (label, value) => { const item = node("div"); item.append(node("small", label), node("strong", value)); stats.append(item); };
   addStat("Zonne-opwek", `${fmt(summary.production_kwh)} kWh`); addStat("Meetperioden", fmt(summary.rows, 0));
   if (summary.consumption_kwh !== null) addStat("Verbruik", `${fmt(summary.consumption_kwh)} kWh`);
   addStat("Dekking", `${fmt(summary.coverage_hours)} uur`); result.append(stats, node("p", `${date(summary.from_unix_s, timeZone)} t/m ${date(summary.to_unix_s, timeZone)}`, "muted"));
   if (summary.interval_surplus_kwh !== null) result.append(node("p", `Opwek boven verbruik per meetperiode: ${fmt(summary.interval_surplus_kwh)} kWh. Verbruik boven opwek: ${fmt(summary.interval_deficit_kwh)} kWh. Dit zijn geaggregeerde verschillen, geen accubesparing.`));
-  const chart = node("div", null, "bar-chart"); chart.setAttribute("aria-label", "Zonne-opwek per maand");
-  const max = Math.max(1, ...summary.months.map(m => m.production_kwh));
-  for (const month of summary.months) {
-    const row = node("div", null, "bar-row"), track = node("div", null, "bar-track"), bar = node("div", null, "bar");
-    bar.style.width = `${100 * month.production_kwh / max}%`; track.append(bar); row.append(node("span", month.label), track, node("strong", `${fmt(month.production_kwh)} kWh`)); chart.append(row);
-  }
-  result.append(chart);
+  result.append(UI.chart("bar", { title: "Maandtotalen opwek en verbruik", unit: "kWh", series: [{ label: "Zonne-opwek" }, ...(summary.consumption_kwh === null ? [] : [{ label: "Bruto verbruik" }])], rows: summary.months.map(m => ({ label: m.label, values: [m.production_kwh, ...(summary.consumption_kwh === null ? [] : [m.consumption_kwh])] })) }));
+  result.append(node("p", `Ontbrekende perioden: ${fmt(summary.gaps, 0)}. Tijdzone: ${timeZone}.`));
   const warnings = node("ul", null, "warnings"); summary.warnings.forEach(w => warnings.append(node("li", w))); result.append(warnings);
 }
 $("solar-form").addEventListener("submit", event => {
@@ -326,7 +321,7 @@ $("solar-form").addEventListener("submit", event => {
     invalidatePreview(); const sentSignature = signature();
     const result = await api("/api/v1/solar/preview", { method: "POST", body: multipart() });
     if (sentSignature !== signature()) throw new Error("De instellingen zijn veranderd. Controleer de preview opnieuw.");
-    renderSolar(result); previewSignature = sentSignature; $("save-file").disabled = false; notice("Preview gecontroleerd. Bewaar het overzicht als de interpretatie klopt.");
+    renderSolar(result); previewSignature = sentSignature; $("save-file").disabled = false; window.dispatchEvent(new Event("solar:previewed")); notice("Preview gecontroleerd. Bewaar het overzicht als de interpretatie klopt.");
   });
 });
 async function reloadHistory() {
@@ -336,8 +331,8 @@ async function reloadHistory() {
 }
 $("save-file").addEventListener("click", () => busy($("save-file"), async () => {
   if (!previewSignature || previewSignature !== signature()) throw new Error("Controleer eerst opnieuw de preview.");
-  const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen in SQLite"); await reloadHistory(); $("solar-history").value = String(result.id); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard.");
+  const result = await api("/api/v1/solar/imports", { method: "POST", body: multipart() }); renderSolar(result.summary, "Opgeslagen in SQLite"); await reloadHistory(); $("solar-history").value = String(result.id); notice("Zonne-opwek opgeslagen. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel bewaard."); location.hash = `/opwek/${result.id}`;
 }));
 $("solar-history").addEventListener("change", () => { const item = history.find(i => String(i.id) === $("solar-history").value); if (item) renderSolar(item.summary, `Bewaard: ${item.filename} · ${item.options.timezone}`, item.options.timezone); });
-window.Research = { renderSolar, renderCatalog, renderComparison, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
+window.Research = { acceptFilename() { if (previewSignature) previewSignature = signature(); }, renderSolar, renderCatalog, renderComparison, reloadCatalog, reloadHistory, get dataset() { return dataset; }, selected };
 Research.ready = Promise.all([reloadCatalog(), reloadHistory()]).catch(error => notice(error.message, true));
