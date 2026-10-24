@@ -32,6 +32,22 @@ pub struct Parameters {
     pub tariff: Tariff,
     pub price_uncertainty_pct: f64,
     pub cost_uncertainty_pct: f64,
+    /// Optionele tweede doorrekening met een lagere waarde voor teruglevering.
+    /// Ontbreekt in runs van vóór deze uitbreiding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_variant: Option<ExportVariant>,
+}
+
+/// Alternatieve terugleverprijzen vanaf een kalenderjaar, bijvoorbeeld wanneer het
+/// wettelijke minimum voor de terugleververgoeding vervalt. Alleen deze twee
+/// tariefdelen wijzigen; al het andere blijft gelijk aan de basis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportVariant {
+    pub label: String,
+    pub from_calendar_year: u32,
+    pub export_eur_per_kwh: f64,
+    pub export_fee_eur_per_kwh: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +83,15 @@ pub struct VariantResult {
     pub roi_pct: Option<f64>,
 }
 
+/// Uitkomst van de terugleveringsvariant, zonder prijs- en kostenstress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportVariantResult {
+    pub npv_eur: f64,
+    pub net_profit_eur: f64,
+    pub roi_pct: Option<f64>,
+    pub payback_years: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandidateResult {
     pub key: String,
@@ -84,6 +109,8 @@ pub struct CandidateResult {
     pub pessimistic: VariantResult,
     pub optimistic: VariantResult,
     pub within_budget: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_variant: Option<ExportVariantResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,6 +121,9 @@ pub struct AnalysisResult {
     pub baseline_first_year: EnergyYear,
     pub candidates: Vec<CandidateResult>,
     pub warnings: Vec<String>,
+    /// Beste optie volgens hetzelfde doel, maar binnen de terugleveringsvariant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_variant_recommended_key: Option<String>,
 }
 
 fn ensure(condition: bool, message: &str) -> Result<(), AnalysisError> {
@@ -102,6 +132,11 @@ fn ensure(condition: bool, message: &str) -> Result<(), AnalysisError> {
     } else {
         Err(AnalysisError(message.into()))
     }
+}
+
+/// Bedrag met vier decimalen en een decimale komma, zoals in de interface.
+fn euro(value: f64) -> String {
+    format!("{value:.4}").replace('.', ",")
 }
 
 fn bounded(value: f64, low: f64, high: f64) -> bool {
@@ -161,6 +196,18 @@ pub fn validate(
             && bounded(t.annual_price_change_pct, -20.0, 30.0),
         "Ongeldige all-in tarieven.",
     )?;
+    if let Some(v) = &p.export_variant {
+        ensure(
+            !v.label.trim().is_empty() && v.label.chars().count() <= 200,
+            "Geef de terugleveringsvariant een korte omschrijving.",
+        )?;
+        ensure(
+            (p.start_year..=2100).contains(&v.from_calendar_year)
+                && bounded(v.export_eur_per_kwh, -10.0, 10.0)
+                && bounded(v.export_fee_eur_per_kwh, 0.0, 10.0),
+            "Ongeldige terugleveringsvariant; het beginjaar ligt op of na het startjaar.",
+        )?;
+    }
     let mut previous = -1.0;
     for (index, band) in t.export_fee_bands.iter().enumerate() {
         ensure(
@@ -285,6 +332,7 @@ fn project(
     p: &Parameters,
     c: &Candidate,
     stress: i32,
+    variant: Option<&ExportVariant>,
 ) -> CandidateResult {
     let price_shift = stress as f64 * p.price_uncertainty_pct / 100.0;
     let cost_factor = 1.0 - stress as f64 * p.cost_uncertainty_pct / 100.0;
@@ -292,6 +340,11 @@ fn project(
     tariff.import_eur_per_kwh += tariff.import_eur_per_kwh.abs() * price_shift;
     tariff.export_eur_per_kwh -= tariff.export_eur_per_kwh.abs() * price_shift;
     // Een lagere vergoeding verhoogt de waarde van minder terugleveren.
+    let mut varied = tariff.clone();
+    if let Some(v) = variant {
+        varied.export_eur_per_kwh = v.export_eur_per_kwh;
+        varied.export_fee_eur_per_kwh = v.export_fee_eur_per_kwh;
+    }
     let scaled = |l: &CostLine| {
         if finance::is_credit(&l.category) {
             finance::cost_eur(l, 1.0)
@@ -326,17 +379,21 @@ fn project(
         state = energy.end_storage_kwh;
         let price_factor = (1.0 + p.tariff.annual_price_change_pct / 100.0).powi((year - 1) as i32);
         let calendar_year = p.start_year + year - 1;
+        let tariff = match variant {
+            Some(v) if calendar_year >= v.from_calendar_year => &varied,
+            _ => &tariff,
+        };
         let baseline_bill = finance::energy_bill(
             baseline.grid_import_kwh,
             baseline.grid_export_kwh,
-            &tariff,
+            tariff,
             calendar_year,
             price_factor,
         );
         let battery_bill = finance::energy_bill(
             energy.grid_import_kwh,
             energy.grid_export_kwh,
-            &tariff,
+            tariff,
             calendar_year,
             price_factor,
         );
@@ -407,7 +464,44 @@ fn project(
         pessimistic: variant.clone(),
         optimistic: variant,
         within_budget: p.budget_eur.is_none_or(|budget| upfront <= budget),
+        export_variant: None,
     }
+}
+
+/// Kiest de beste optie volgens het doel; "geen accu" wint bij gelijkspel.
+fn choose<'a>(
+    objective: Objective,
+    baseline_self_consumption_pct: f64,
+    options: impl Iterator<Item = (&'a CandidateResult, f64, Option<f64>, Option<u32>)>,
+) -> String {
+    let mut best_key = "no_battery".to_owned();
+    let mut best_score = match objective {
+        Objective::SelfConsumption => baseline_self_consumption_pct,
+        Objective::Payback => f64::NEG_INFINITY,
+        _ => 0.0,
+    };
+    for (r, npv, roi, payback) in options {
+        if !r.within_budget {
+            continue;
+        }
+        let score = match objective {
+            Objective::NetPresentValue => npv,
+            Objective::Roi => roi.unwrap_or(f64::NEG_INFINITY),
+            Objective::Payback => {
+                if npv >= 0.0 {
+                    payback.map_or(f64::NEG_INFINITY, |v| -(v as f64))
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Objective::SelfConsumption => r.first_year.self_consumption_pct,
+        };
+        if score > best_score + 1e-8 {
+            best_score = score;
+            best_key = r.key.clone();
+        }
+    }
+    best_key
 }
 
 pub fn analyze(
@@ -418,9 +512,18 @@ pub fn analyze(
     validate(profile, parameters, candidates)?;
     let mut results = Vec::new();
     for c in candidates {
-        let mut base = project(profile, parameters, c, 0);
-        let low = project(profile, parameters, c, -1);
-        let high = project(profile, parameters, c, 1);
+        let mut base = project(profile, parameters, c, 0, None);
+        let low = project(profile, parameters, c, -1, None);
+        let high = project(profile, parameters, c, 1, None);
+        if let Some(v) = &parameters.export_variant {
+            let varied = project(profile, parameters, c, 0, Some(v));
+            base.export_variant = Some(ExportVariantResult {
+                npv_eur: varied.npv_eur,
+                net_profit_eur: varied.net_profit_eur,
+                roi_pct: varied.roi_pct,
+                payback_years: varied.payback_years,
+            });
+        }
         base.pessimistic = VariantResult {
             npv_eur: low.npv_eur,
             net_profit_eur: low.net_profit_eur,
@@ -434,33 +537,24 @@ pub fn analyze(
         results.push(base);
     }
     let baseline = sizing::simulate_year(profile, None, 0, 1.0, 1.0, 0.0);
-    let mut best_key = "no_battery".to_owned();
-    let mut best_score = match parameters.objective {
-        Objective::SelfConsumption => baseline.self_consumption_pct,
-        Objective::Payback => f64::NEG_INFINITY,
-        _ => 0.0,
-    };
-    for r in &results {
-        if !r.within_budget {
-            continue;
-        }
-        let score = match parameters.objective {
-            Objective::NetPresentValue => r.npv_eur,
-            Objective::Roi => r.roi_pct.unwrap_or(f64::NEG_INFINITY),
-            Objective::Payback => {
-                if r.npv_eur >= 0.0 {
-                    r.payback_years.map_or(f64::NEG_INFINITY, |v| -(v as f64))
-                } else {
-                    f64::NEG_INFINITY
-                }
-            }
-            Objective::SelfConsumption => r.first_year.self_consumption_pct,
-        };
-        if score > best_score + 1e-8 {
-            best_score = score;
-            best_key = r.key.clone();
-        }
-    }
+    let best_key = choose(
+        parameters.objective,
+        baseline.self_consumption_pct,
+        results
+            .iter()
+            .map(|r| (r, r.npv_eur, r.roi_pct, r.payback_years)),
+    );
+    let export_variant_recommended_key = parameters.export_variant.as_ref().map(|_| {
+        choose(
+            parameters.objective,
+            baseline.self_consumption_pct,
+            results.iter().filter_map(|r| {
+                r.export_variant
+                    .as_ref()
+                    .map(|v| (r, v.npv_eur, v.roi_pct, v.payback_years))
+            }),
+        )
+    });
     let recommendation = if best_key == "no_battery" {
         "Geen accu komt binnen deze aannames en het gekozen doel als beste uit de vergelijking."
             .into()
@@ -480,6 +574,15 @@ pub fn analyze(
     if parameters.start_year <= 2026 {
         warnings.push("Voor 2026 gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf 2027 wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.".into());
     }
+    if let Some(v) = &parameters.export_variant {
+        warnings.push(format!(
+            "Terugleveringsvariant ‘{}’: vanaf {} rekent deze variant met € {} vergoeding en € {} terugleverkosten per kWh, met verder dezelfde aannames. Het is een aanname over toekomstige contracten, geen prognose.",
+            v.label,
+            v.from_calendar_year,
+            euro(v.export_eur_per_kwh),
+            euro(v.export_fee_eur_per_kwh)
+        ));
+    }
     if matches!(parameters.objective, Objective::SelfConsumption) {
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
@@ -490,5 +593,6 @@ pub fn analyze(
         baseline_first_year: baseline,
         candidates: results,
         warnings,
+        export_variant_recommended_key,
     })
 }

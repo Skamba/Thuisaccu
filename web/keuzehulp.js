@@ -6,24 +6,61 @@
   const { h, field, numberInput, select, choice, checkbox, badge, button, link, external, table, chart, money, kwh, number: n, parse, store } = UI;
   const STORE = "thuisaccu-keuzehulp";
 
-  // Gedateerde indicaties uit openbare bronnen; alleen na een klik ingevuld.
+  // Gedateerde indicaties uit openbare bronnen; alleen na een klik of keuze gebruikt.
   const INDICATION = {
-    import: 0.2596, export: 0.0615,
-    importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
-    exportText: "Indicatie € 0,06: van 2027 tot 2030 is de terugleververgoeding volgens de ACM minstens 50% van je stroomprijs zonder energiebelasting en btw. Bij het gemiddelde variabele tarief van september 2026 (€ 0,1229 zonder btw, CBS) is dat ongeveer € 0,06. Je contract kan hoger zijn; terugleverkosten kunnen volgens de ACM ook hoger uitvallen dan de vergoeding.",
-    sources: [
+    import: 0.2596,
+    importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
+      "plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
+    importSources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)", "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
-      ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"],
-      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)", "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"]
+      ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"]
+    ],
+    // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
+    export: 0.0615, exportFee: 0.0515,
+    exportText: "Wat telt is het verschil tussen vergoeding en terugleverkosten. Voor een 1-jarig vast contract " +
+      "vanaf 2027 lag dat bij 15 leveranciers tussen −4,3 en +4,4 cent per kWh, met een mediaan van 1,0 cent " +
+      "(overzicht van salderingcheck.nl, peildatum 16 oktober 2026). Eneco rekent in een eigen voorbeeld met " +
+      "€ 0,0506 vergoeding en € 0,0387 kosten: 1,2 cent netto. De indicatie gebruikt € 0,0615 vergoeding " +
+      "(het wettelijke minimum van 50% van het kale leveringstarief volgens de ACM, bij het CBS-gemiddelde) " +
+      "en € 0,0515 terugleverkosten: 1 cent netto.",
+    exportSources: [
+      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)", "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"],
+      ["Salderingcheck.nl: terugleververgoeding 2027 per leverancier", "https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/"],
+      ["Eneco: rekenvoorbeelden met en zonder salderen (peildatum 25 februari 2026)", "https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/"],
+      ["Vattenfall: einde salderingsregeling 2027", "https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/"]
+    ],
+    variantYear: 2030,
+    variantText: "Tot 2030 moet de vergoeding minstens 50% van het kale leveringstarief zijn. Voor daarna is geen minimum " +
+      "aangekondigd, en sommige leveranciers rekenen nu al meer kosten dan ze vergoeden. Deze variant rekent vanaf 2030 met " +
+      "€ 0 vergoeding en dezelfde terugleverkosten. Het is een aanname, geen voorspelling."
+  };
+  // Regels en veiligheidsadvies rond aansluiten; gedateerde bronnen, geen juridisch advies.
+  const RULES = {
+    register: "Meld je thuisaccu aan bij je netbeheerder via energieleveren.nl. Volgens Netbeheer Nederland is dat verplicht, " +
+      "net als voor zonnepanelen; dat geldt sinds een wijziging van de Netcode elektriciteit voor opslag vanaf 0,8 kW die op het " +
+      "net is aangesloten. Aanmelden is gratis. Naar schatting is minder dan 40% van de thuisaccu’s aangemeld.",
+    plug: "Milieu Centraal raadt stekkerbatterijen op dit moment niet aan, onder meer vanwege brandrisico: in één groep kan " +
+      "stroom van twee kanten komen, van het net en van de accu. Een installateur sluit een accu volgens de NEN 1010-norm aan " +
+      "op een aparte groep in de meterkast, niet op een stopcontact. Kies je toch voor een stekkerbatterij, gebruik dan een " +
+      "vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, en houd het " +
+      "terugleververmogen op 800 W of minder. Die laatste adviezen geeft Milieu Centraal voor stekkerzonnepanelen; " +
+      "ze gelden ook logisch voor een stekkerbatterij, maar zijn daarvoor niet afzonderlijk gepubliceerd.",
+    sources: [
+      ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)", "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
+      ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)", "https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd"],
+      ["Milieu Centraal: thuisbatterij (gewijzigd 28 september 2026)", "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/"],
+      ["Milieu Centraal: zonnepanelen met een stekker (gewijzigd 30 juni 2026)", "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/"]
     ]
   };
   const BLANK = {
     panels: "yes", data: "totals", importId: "", gridImport: "", gridExport: "", production: "", kwp: "", orientation: "south",
     install: "any", phases: "unknown", place: "any", backup: "no",
-    contract: "unknown", tariffImport: "", tariffExport: "", exportFee: "0",
+    contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
     objective: "net_present_value", budget: "", horizon: "15"
   };
   let answers = { ...BLANK, ...store.get(STORE, {}) }, yields = null, flow = null;
+  // Concepten van vóór de terugleververgoedingsvraag: een ingevulde vergoeding blijft leidend.
+  if (!("feedin" in store.get(STORE, {})) && answers.tariffExport) answers.feedin = "known";
   const save = () => store.set(STORE, answers);
   Data.typicalSources().then(s => { yields = s.pv.annual_kwh_per_kwp; }).catch(() => {});
 
@@ -100,9 +137,11 @@
   function stepHome(body) {
     body.append(h("h2", {}, "Je woning"), h("p", { class: "lead" }, "Deze vragen bepalen welke accu’s praktisch passen."),
       pick("install", "Hoe wil je de accu aansluiten?", [
-        ["plug", "Zelf, met de stekker", "Stekkerbatterij tot 800 W in een gewoon stopcontact. Goedkoper en kleiner, geen installateur."],
+        ["plug", "Zelf, met de stekker", "Stekkerbatterij tot 800 W in een gewoon stopcontact. Goedkoper en kleiner, " +
+          "geen installateur. Lees wel het veiligheidsadvies hieronder."],
         ["fixed", "Laten installeren", "Vaste aansluiting in de meterkast. Meer vermogen en capaciteit, hogere kosten."],
         ["any", "Weet ik nog niet", "We laten beide soorten zien."]]),
+      answers.install === "fixed" ? null : h("div", { class: "callout" }, h("p", {}, RULES.plug)),
       pick("phases", "Wat voor aansluiting heb je?", [
         ["1", "1-fase", "Eén hoofdschakelaar in de meterkast, vaak 1×35 A of 1×40 A."],
         ["3", "3-fase", "Drie hoofdschakelaars of een brede driepolige schakelaar, vaak 3×25 A."],
@@ -113,15 +152,41 @@
 
   function stepContract(body) {
     body.append(h("h2", {}, "Je energiecontract"),
-      h("p", { class: "lead" }, "Vanaf 1 januari 2027 stopt de salderingsregeling. Stroom die je teruglevert, levert dan minder op dan stroom die je koopt. Dat verschil bepaalt wat een accu bespaart."),
-      pick("contract", "Wat voor contract heb je?", [["fixed", "Vast"], ["variable", "Variabel"], ["dynamic", "Dynamisch (prijs per uur)"], ["unknown", "Weet ik niet"]]));
-    if (answers.contract === "dynamic") body.append(h("p", { class: "callout" }, "Met een dynamisch contract kan een accu ook verdienen door goedkoop te laden en duur te gebruiken. Dat rekent de keuzehulp nog niet: we rekenen met een gemiddelde prijs, dus de uitkomst kan lager uitvallen dan in werkelijkheid."));
-    body.append(h("div", { class: "grid" },
-      amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport", { min: "-1", max: "2", step: "0.0001", required: true }, INDICATION.importText),
-      amount("Vergoeding voor teruglevering vanaf 2027 (€ per kWh)", "tariffExport", { min: "-1", max: "2", step: "0.0001", required: true }, INDICATION.exportText),
-      amount("Terugleverkosten (€ per kWh)", "exportFee", { min: "0", max: "2", step: "0.0001" }, "Staat dit niet in je contract, laat dan 0 staan. Hogere terugleverkosten maken een accu gunstiger.")),
-      button("Gebruik de indicaties", () => { answers.tariffImport = String(INDICATION.import); answers.tariffExport = String(INDICATION.export); save(); rerender(); }, "secondary"),
-      sourceList(INDICATION.sources));
+      h("p", { class: "lead" }, "Vanaf 1 januari 2027 stopt de salderingsregeling. Stroom die je teruglevert, " +
+        "levert dan minder op dan stroom die je koopt. Dat verschil bepaalt wat een accu bespaart."),
+      pick("contract", "Wat voor contract heb je?", [
+        ["fixed", "Vast"], ["variable", "Variabel"], ["dynamic", "Dynamisch (prijs per uur)"], ["unknown", "Weet ik niet"]]));
+    if (answers.contract === "dynamic") {
+      body.append(h("p", { class: "callout" }, "Met een dynamisch contract kan een accu ook verdienen door goedkoop te laden " +
+        "en duur te gebruiken. Dat rekent de keuzehulp nog niet: we rekenen met een gemiddelde prijs, dus de uitkomst kan " +
+        "lager uitvallen dan in werkelijkheid."));
+    }
+    const useImport = () => { answers.tariffImport = String(INDICATION.import); save(); rerender(); };
+    body.append(
+      h("div", { class: "grid" }, amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport",
+        { min: "-1", max: "2", step: "0.0001", required: true }, INDICATION.importText)),
+      h("p", { class: "actions" }, button("Gebruik de indicatie", useImport, "secondary")),
+      sourceList(INDICATION.importSources),
+      pick("feedin", "Wat krijg je vanaf 2027 voor teruggeleverde stroom?", [
+        ["known", "Ik weet mijn vergoeding en terugleverkosten", "Staan in je contract of tariefoverzicht, per kWh."],
+        ["indication", "Weet ik niet: reken met een indicatie", "€ 0,0615 vergoeding en € 0,0515 terugleverkosten per kWh."]
+      ]));
+    if (answers.feedin === "known") {
+      body.append(h("div", { class: "grid" },
+        amount("Terugleververgoeding vanaf 2027 (€ per kWh)", "tariffExport", { min: "-1", max: "2", step: "0.0001", required: true },
+          "Bij een vast contract dat doorloopt na 2027: de vergoeding die in je contract staat."),
+        amount("Terugleverkosten vanaf 2027 (€ per kWh)", "exportFee", { min: "0", max: "2", step: "0.0001", required: true },
+          "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger.")));
+    }
+    body.append(h("p", { class: "help" }, INDICATION.exportText), sourceList(INDICATION.exportSources),
+      pick("variant", `Ook doorrekenen: vanaf ${INDICATION.variantYear} geen terugleververgoeding meer?`, [
+        ["yes", "Ja, laat ook die uitkomst zien"], ["no", "Nee"]], INDICATION.variantText));
+  }
+
+  // Terugleverprijzen volgens de gekozen bron: eigen contract of de gedateerde indicatie.
+  function feedIn() {
+    if (answers.feedin === "indication") return { export: INDICATION.export, fee: INDICATION.exportFee };
+    return { export: parse(answers.tariffExport), fee: parse(answers.exportFee) };
   }
 
   function stepGoal(body) {
@@ -249,8 +314,15 @@
   }
 
   function buildRequest(importId, chosen) {
-    const d = Data.defaults(), tariffImport = parse(answers.tariffImport), tariffExport = parse(answers.tariffExport);
-    if (tariffImport == null || tariffExport == null) throw new Error("Vul in stap 3 je stroomprijs en terugleververgoeding in, of kies ‘Gebruik de indicaties’.");
+    const d = Data.defaults(), tariffImport = parse(answers.tariffImport), feed = feedIn();
+    if (tariffImport == null) throw new Error("Vul in stap 3 je stroomprijs in, of kies ‘Gebruik de indicatie’.");
+    if (feed.export == null || feed.fee == null) {
+      throw new Error("Vul in stap 3 je terugleververgoeding en terugleverkosten in, of kies de indicatie.");
+    }
+    const variant = answers.variant === "yes" ? {
+      label: `Geen terugleververgoeding vanaf ${INDICATION.variantYear}`, from_calendar_year: INDICATION.variantYear,
+      export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
+    } : undefined;
     const candidates = chosen.map(({ p, priceInput, editor }) => {
       const price = parse(priceInput.value);
       if (!(price > 0)) throw new Error(`Vul een aanschafprijs in voor ${p.name}.`);
@@ -270,8 +342,12 @@
       parameters: {
         start_year: 2027, horizon_years: Number(answers.horizon), discount_pct: d.discount_pct, annual_cost_escalation_pct: d.annual_cost_escalation_pct,
         annual_pv_loss_pct: d.annual_pv_loss_pct, annual_load_growth_pct: d.annual_load_growth_pct, objective: answers.objective, budget_eur: parse(answers.budget),
-        tariff: { import_eur_per_kwh: tariffImport, export_eur_per_kwh: tariffExport, export_fee_eur_per_kwh: parse(answers.exportFee) ?? 0, export_fee_bands: [], fixed_annual_eur: 0, annual_price_change_pct: d.annual_price_change_pct },
-        price_uncertainty_pct: d.price_uncertainty_pct, cost_uncertainty_pct: d.cost_uncertainty_pct
+        tariff: {
+          import_eur_per_kwh: tariffImport, export_eur_per_kwh: feed.export, export_fee_eur_per_kwh: feed.fee,
+          export_fee_bands: [], fixed_annual_eur: 0, annual_price_change_pct: d.annual_price_change_pct
+        },
+        price_uncertainty_pct: d.price_uncertainty_pct, cost_uncertainty_pct: d.cost_uncertainty_pct,
+        export_variant: variant
       },
       candidates, costs_confirmed: true, technical_assumptions_confirmed: true, consumption_is_gross: true, production_is_ac: true
     };
@@ -333,7 +409,11 @@
     const run = h("section", { class: "panel" }, h("h3", {}, "3. Reken het door"),
       h("p", {}, "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
       h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), go, status);
-    body.append(size, pickSection, run);
+    const rules = h("section", { class: "panel" }, h("h3", {}, "4. Voordat je koopt"),
+      h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
+      h("p", { class: "help" }, "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
+      sourceList(RULES.sources));
+    body.append(size, pickSection, run, rules);
   }
 
   function check(index, body) {

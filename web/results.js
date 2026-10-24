@@ -24,7 +24,8 @@ window.Results = (() => {
   const isEstimated = run => run.result.warnings.some(w => /GESCHAT PROFIEL/.test(w));
   function options(run) {
     const result = run.result;
-    const baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, within_budget: true, color: "#7d847f" };
+    const baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, within_budget: true, color: "#7d847f",
+      export_variant: result.export_variant_recommended_key == null ? undefined : { npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null } };
     return [baseline, ...result.candidates.map((c, i) => ({ ...c, color: palette[i % palette.length] }))];
   }
 
@@ -43,6 +44,15 @@ window.Results = (() => {
       if (rec.npv_eur < 0) list.append(h("li", {}, "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."));
       list.append(h("li", {}, `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
     }
+    const variant = p.export_variant, variantKey = result.export_variant_recommended_key;
+    if (variant && variantKey != null) {
+      const alt = result.candidates.find(c => c.key === variantKey);
+      const same = variantKey === result.recommended_key;
+      list.append(h("li", {}, `Als teruglevering vanaf ${variant.from_calendar_year} niets meer oplevert ` +
+        `(variant ‘${variant.label}’): ` + (alt
+          ? `${same ? "dan blijft" : "dan wordt"} ${alt.name} de beste keuze, met een netto voordeel van ${eur0(alt.export_variant.npv_eur)}.`
+          : "dan blijft géén accu de beste keuze.")));
+    }
     if (isEstimated(run)) list.append(h("li", {}, "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {}, "Vraag voor een vaste accu altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
     return h("section", { class: "panel plain" }, h("h2", {}, "Wat betekent dit voor jou?"), list);
@@ -58,8 +68,11 @@ window.Results = (() => {
       stats([
         ["Startinvestering", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", c.key === "no_battery" ? "—" : pct(c.roi_pct)],
-        ["Terugverdiend na", c.key === "no_battery" ? "—" : years(c.payback_years)], ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)]
-      ])))));
+        ["Terugverdiend na", c.key === "no_battery" ? "—" : years(c.payback_years)], ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
+        c.export_variant && run.input.request.parameters.export_variant
+          ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`, eur0(c.export_variant.npv_eur)] : null
+      ].filter(Boolean)),
+      c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null))));
     out.append(chart("range", {
       title: "Netto voordeel (NPV) per optie, met gevoeligheidsvarianten", unit: "EUR",
       rows: all.map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
@@ -132,6 +145,15 @@ window.Results = (() => {
     out.append(table(["Optie", "Variant", "NPV", "Nettowinst", "ROI over looptijd"], all.flatMap(c =>
       [["Ongunstig", c.pessimistic], ["Basis", c], ["Gunstig", c.optimistic]].map(([label, v]) =>
         [c.name, label, money(v?.npv_eur), money(v?.net_profit_eur), c.key === "no_battery" ? "—" : pct(v?.roi_pct)]))));
+    const variant = p.export_variant;
+    if (variant && run.result.export_variant_recommended_key != null) {
+      out.append(h("h3", {}, `Terugleveringsvariant: ${variant.label}`),
+        h("p", {}, `Vanaf ${variant.from_calendar_year} ${n(variant.export_eur_per_kwh, 4)} €/kWh vergoeding en ` +
+          `${n(variant.export_fee_eur_per_kwh, 4)} €/kWh terugleverkosten; verder de basisaannames. Een aanname, geen voorspelling.`),
+        table(["Optie", "NPV basis", "NPV variant", "Nettowinst variant", "ROI variant", "Terugverdiend na"], all.map(c => [
+          c.name, money(c.npv_eur), money(c.export_variant?.npv_eur), money(c.export_variant?.net_profit_eur),
+          c.key === "no_battery" ? "—" : pct(c.export_variant?.roi_pct), c.key === "no_battery" ? "—" : years(c.export_variant?.payback_years)])));
+    }
     for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "EUR"], ["roi_pct", "ROI over de looptijd", "%"]]) {
       out.append(chart("range", { title, unit, rows: all.filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color, values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })), series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }] }));
     }
@@ -148,8 +170,10 @@ window.Results = (() => {
       ...PARAMETERS.map(([key, text, decimals]) => [text, n(p[key], decimals)]),
       ["Stroomprijs (€/kWh)", n(tariff.import_eur_per_kwh, 4)], ["Terugleververgoeding (€/kWh)", n(tariff.export_eur_per_kwh, 4)],
       ["Terugleverkosten (€/kWh)", n(tariff.export_fee_eur_per_kwh, 4)], ["Prijsverandering per jaar (%)", n(tariff.annual_price_change_pct, 1)],
-      ["Ongewijzigde vaste contractkosten", `${money(tariff.fixed_annual_eur)} per jaar`]
-    ], { caption: "Tarieven en projectie" }));
+      ["Ongewijzigde vaste contractkosten", `${money(tariff.fixed_annual_eur)} per jaar`],
+      p.export_variant ? ["Terugleveringsvariant", `${p.export_variant.label}: vanaf ${p.export_variant.from_calendar_year} ` +
+        `${n(p.export_variant.export_eur_per_kwh, 4)} / ${n(p.export_variant.export_fee_eur_per_kwh, 4)} €/kWh (vergoeding / kosten)`] : null
+    ].filter(Boolean), { caption: "Tarieven en projectie" }));
     if (tariff.export_fee_bands.length) out.append(table(["Teruglevering t/m", "Jaarkosten"], tariff.export_fee_bands.map(b => [b.up_to_kwh == null ? "Onbegrensd" : kwh(b.up_to_kwh), money(b.annual_eur)]), { caption: "Terugleverstaffel" }));
     for (const c of request.candidates) {
       out.append(h("details", { class: "panel" }, h("summary", {}, c.name), h("p", {}, c.assumptions),
@@ -167,9 +191,11 @@ window.Results = (() => {
 
   function exportCsv(run) {
     const result = run.result, rows = [["Berekening", run.title], ["Model", result.model_version], ["Profiel", run.input.profile?.filename], ["FICTIEF", isFictitious(run) ? "Ja" : "Nee"], ["Aanbeveling", result.recommendation], [],
-      ["Optie", "Startinvestering EUR", "NPV EUR", "Nettowinst EUR", "ROI %", "Terugverdiend na (jaar)"], ["Geen accu", 0, 0, 0, "—", "—"]];
+      ["Optie", "Startinvestering EUR", "NPV EUR", "Nettowinst EUR", "ROI %", "Terugverdiend na (jaar)", "NPV terugleveringsvariant EUR"],
+      ["Geen accu", 0, 0, 0, "—", "—", result.export_variant_recommended_key == null ? "" : 0]];
     for (const c of result.candidates) {
-      rows.push([c.name, n(c.initial_investment_eur), n(c.npv_eur), n(c.net_profit_eur), c.roi_pct == null ? "Niet bepaald" : n(c.roi_pct), c.payback_years ?? "Niet binnen looptijd"]);
+      rows.push([c.name, n(c.initial_investment_eur), n(c.npv_eur), n(c.net_profit_eur), c.roi_pct == null ? "Niet bepaald" : n(c.roi_pct),
+        c.payback_years ?? "Niet binnen looptijd", c.export_variant ? n(c.export_variant.npv_eur) : ""]);
     }
     for (const c of result.candidates) {
       rows.push([], [c.name, "Jaar", "Netto voordeel EUR", "Cumulatief EUR"]);

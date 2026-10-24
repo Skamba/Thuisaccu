@@ -102,6 +102,64 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
 }
 
 #[tokio::test]
+async fn export_variant_is_optional_saved_with_the_run_and_strictly_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    // Zonder variant (zoals oudere runs) bevat het resultaat geen variantvelden.
+    let plain = body(
+        app.clone()
+            .oneshot(post("/api/v1/analysis/runs", input(id)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        plain["result"]
+            .get("export_variant_recommended_key")
+            .is_none()
+    );
+    assert!(
+        plain["result"]["candidates"][0]
+            .get("export_variant")
+            .is_none()
+    );
+
+    let mut request = input(id);
+    request["parameters"]["export_variant"] = json!({"label":"Geen vergoeding vanaf 2030","from_calendar_year":2030,"export_eur_per_kwh":0,"export_fee_eur_per_kwh":0.05});
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let varied = body(response).await;
+    let base = varied["result"]["candidates"][0]["npv_eur"]
+        .as_f64()
+        .unwrap();
+    let low = varied["result"]["candidates"][0]["export_variant"]["npv_eur"]
+        .as_f64()
+        .unwrap();
+    // Minder vergoeding en meer kosten per teruggeleverde kWh maken opslaan waardevoller.
+    assert!(low > base);
+    assert!(varied["result"]["export_variant_recommended_key"].is_string());
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(
+        saved[0].input["request"]["parameters"]["export_variant"]["from_calendar_year"],
+        2030
+    );
+
+    request["parameters"]["export_variant"]["surprise"] = json!(1);
+    assert_eq!(
+        app.oneshot(post("/api/v1/analysis/runs", request))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
 async fn cost_catalog_covers_every_cost_category() {
     let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
     let response = app

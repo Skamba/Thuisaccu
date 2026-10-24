@@ -46,6 +46,7 @@ fn parameters() -> Parameters {
             fixed_annual_eur: 0.0,
             annual_price_change_pct: 0.0,
         },
+        export_variant: None,
     }
 }
 
@@ -327,4 +328,53 @@ fn capacity_curve_is_bounded_by_the_daily_surplus_and_evening_deficit() {
     close(points[0].self_consumption_pct, 0.0);
     close(points[3].self_consumption_pct, 20.0 / 30.0 * 100.0);
     close(points[3].self_sufficiency_pct, 100.0);
+}
+
+#[test]
+fn export_variant_changes_only_the_years_from_its_start_and_can_flip_the_recommendation() {
+    // Referentie: 8760 kWh per jaar verschuift volledig via de accu.
+    // Basis: besparing per kWh 0,30 − 0,08 = 0,22. Variant vanaf 2028: 0,30 − (0 − 0,05) = 0,35.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.export_variant = Some(analysis::ExportVariant {
+        label: "Geen vergoeding na 2027".into(),
+        from_calendar_year: 2028,
+        export_eur_per_kwh: 0.0,
+        export_fee_eur_per_kwh: 0.05,
+    });
+    let r = analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)]).unwrap();
+    let c = &r.candidates[0];
+    close(c.net_profit_eur, 8760.0 * 0.22 * 2.0 - 500.0);
+    let v = c.export_variant.as_ref().unwrap();
+    close(v.net_profit_eur, 8760.0 * 0.22 + 8760.0 * 0.35 - 500.0);
+    close(v.npv_eur, v.net_profit_eur);
+    close(v.roi_pct.unwrap(), v.net_profit_eur / 500.0 * 100.0);
+    assert_eq!(v.payback_years, Some(1));
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("Terugleveringsvariant"))
+    );
+
+    // € 4000: basis 3854,40 besparing (verlies), variant 4993,20 (winst).
+    let r = analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 400_000)]).unwrap();
+    assert_eq!(r.recommended_key, "no_battery");
+    assert_eq!(r.export_variant_recommended_key.as_deref(), Some("battery"));
+
+    p.export_variant = None;
+    let r = analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 400_000)]).unwrap();
+    assert!(r.export_variant_recommended_key.is_none());
+    assert!(r.candidates[0].export_variant.is_none());
+}
+
+#[test]
+fn export_variant_before_the_start_year_is_rejected() {
+    let mut p = parameters();
+    p.export_variant = Some(analysis::ExportVariant {
+        label: "Te vroeg".into(),
+        from_calendar_year: 2026,
+        export_eur_per_kwh: 0.0,
+        export_fee_eur_per_kwh: 0.0,
+    });
+    assert!(analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)]).is_err());
 }

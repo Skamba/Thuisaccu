@@ -26,7 +26,8 @@ window.Scenario = (() => {
     return {
       title: "Mijn berekening", address: "", site: null, profile: "", objective: "net_present_value", budget: "",
       params: Object.fromEntries(PARAMS.map(([key]) => [key, String(d[key])])),
-      tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 }, options: []
+      tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
+      variant: { on: false, label: "Geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" }, options: []
     };
   }
   let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null;
@@ -41,6 +42,10 @@ window.Scenario = (() => {
       objective: request.parameters.objective, budget: request.parameters.budget_eur == null ? "" : String(request.parameters.budget_eur),
       params: Object.fromEntries(PARAMS.map(([key]) => [key, String(request.parameters[key])])),
       tariff: { import: String(request.parameters.tariff.import_eur_per_kwh), export: String(request.parameters.tariff.export_eur_per_kwh), fee: String(request.parameters.tariff.export_fee_eur_per_kwh), change: String(request.parameters.tariff.annual_price_change_pct), bands: request.parameters.tariff.export_fee_bands.map(b => `${b.up_to_kwh ?? ""};${b.annual_eur}`).join("\n"), fixed: request.parameters.tariff.fixed_annual_eur },
+      variant: request.parameters.export_variant ? {
+        on: true, label: request.parameters.export_variant.label, year: String(request.parameters.export_variant.from_calendar_year),
+        export: String(request.parameters.export_variant.export_eur_per_kwh), fee: String(request.parameters.export_variant.export_fee_eur_per_kwh)
+      } : blank().variant,
       options: request.candidates.map((c, i) => ({
         key: c.key, name: c.name, configuration_id: c.configuration_id, kind: "fixed", assumptions: c.assumptions,
         battery: Object.fromEntries(TECH.map(([key]) => [key, String(c.battery[key])])),
@@ -77,6 +82,14 @@ window.Scenario = (() => {
       objective: state.objective, budget_eur: parse(state.budget),
       tariff: { import_eur_per_kwh: number(state.tariff.import, "Stroomprijs"), export_eur_per_kwh: number(state.tariff.export, "Terugleververgoeding"), export_fee_eur_per_kwh: number(state.tariff.fee, "Terugleverkosten"), export_fee_bands: exportBands, fixed_annual_eur: state.tariff.fixed, annual_price_change_pct: number(state.tariff.change, "Prijsverandering") }
     };
+    if (state.variant.on) {
+      if (!state.variant.label.trim()) problems.push("Geef de terugleveringsvariant een omschrijving.");
+      parameters.export_variant = {
+        label: state.variant.label.trim(), from_calendar_year: number(state.variant.year, "Beginjaar terugleveringsvariant"),
+        export_eur_per_kwh: number(state.variant.export, "Vergoeding in de variant"),
+        export_fee_eur_per_kwh: number(state.variant.fee, "Terugleverkosten in de variant")
+      };
+    }
     const candidates = state.options.map(option => {
       const battery = Object.fromEntries(TECH.map(([key, label]) => [key, number(option.battery[key], `${option.name}: ${label}`)]));
       if (!option.assumptions.trim()) problems.push(`${option.name}: beschrijf bron en aannames van de techniek.`);
@@ -126,6 +139,25 @@ window.Scenario = (() => {
         field("Maximale startinvestering (€, optioneel)", bindValue(numberInput({ min: "0", step: "0.01", placeholder: "Geen maximum" }), () => state.budget, v => { state.budget = v; }))));
   }
 
+  // Optionele tweede doorrekening met andere terugleverprijzen vanaf een gekozen jaar.
+  function variantFields() {
+    const v = state.variant, toggle = checkbox("Reken ook een variant met andere terugleverprijzen door");
+    const own = (label, key, props, help) =>
+      field(label, bindValue(numberInput({ step: "0.0001", required: true, ...props }), () => v[key], value => { v[key] = value; }), help);
+    const fields = h("div", { class: "grid" },
+      field("Omschrijving", bindValue(input({ required: true, maxlength: "200" }), () => v.label, value => { v.label = value; })),
+      own("Vanaf kalenderjaar", "year", { min: "2026", max: "2100", step: "1" }, "Moet op of na het startjaar liggen."),
+      own("Vergoeding in de variant (€/kWh)", "export", { min: "-10", max: "10" }),
+      own("Terugleverkosten in de variant (€/kWh)", "fee", { min: "0", max: "10" }));
+    // Uitgeschakelde velden tellen niet mee in de formuliercontrole.
+    const show = () => { fields.hidden = !v.on; fields.querySelectorAll("input").forEach(control => { control.disabled = !v.on; }); };
+    toggle.box.checked = v.on; show();
+    toggle.box.addEventListener("change", () => { v.on = toggle.box.checked; show(); persist(); });
+    return h("fieldset", {}, h("legend", {}, "Terugleveringsvariant (optioneel)"),
+      h("p", { class: "help" }, "Bijvoorbeeld: wat als de vergoeding na 2030 vervalt? Alleen vergoeding en terugleverkosten wijzigen; de uitkomst staat naast de basis."),
+      toggle.element, fields);
+  }
+
   function stepTariffs(body) {
     const tariff = (label, key, props, help) => field(label, bindValue(numberInput({ step: "0.0001", required: true, ...props }), () => state.tariff[key], v => { state.tariff[key] = v; }), help);
     body.append(h("h2", {}, "Tarieven en looptijd"),
@@ -138,6 +170,7 @@ window.Scenario = (() => {
         h("details", {}, h("summary", {}, "Terugleverkosten via vaste staffels"),
           field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; }),
             "Per regel: maximale teruglevering in kWh, puntkomma, jaarkosten in euro. Laat de laatste grens leeg. Alleen aanvullende staffelkosten."))),
+      variantFields(),
       h("fieldset", {}, h("legend", {}, "Looptijd en aannames"), h("div", { class: "grid" },
         PARAMS.map(([key, label, min, max, step]) => field(label, bindValue(numberInput({ min, max, step, required: true }), () => state.params[key], v => { state.params[key] = v; }))))));
   }

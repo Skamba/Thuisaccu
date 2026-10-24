@@ -5,10 +5,10 @@ De keuzehulp (`#/keuzehulp`, ook het startscherm) is de begeleide route voor con
 ## Stappen
 
 1. **Je energie.** Zonnepanelen ja/nee en welke gegevens je hebt. Met jaartotalen vul je netafname, teruglevering en opwek (of kWp en ligging) in. Bruto verbruik wordt afgeleid als `netafname + opwek − teruglevering`. Dat klopt alleen zonder bestaande accu. Met een bestand kies je een bewaard, ROI-geschikt profiel.
-2. **Je woning.** Stekker of vaste installatie, 1- of 3-fase, binnen of buiten en of noodstroom nodig is.
-3. **Je contract.** Contractsoort, all-in stroomprijs, terugleververgoeding vanaf 2027 en terugleverkosten. Een knop vult gedateerde indicaties in (zie hieronder). Bij een dynamisch contract meldt de keuzehulp dat handelswaarde nog niet wordt berekend.
+2. **Je woning.** Stekker of vaste installatie, 1- of 3-fase, binnen of buiten en of noodstroom nodig is. Wie een stekkerbatterij overweegt, ziet direct het veiligheidsadvies (zie [Aansluitregels](#aansluitregels)).
+3. **Je contract.** Contractsoort en all-in stroomprijs (met een knop voor de gedateerde indicatie). Daarna een expliciete keuze voor teruglevering vanaf 2027: eigen vergoeding en terugleverkosten uit het contract, of de indicatie. Een leeg veld telt nooit als nul. Tot slot de vraag of ook de terugleveringsvariant ‘geen vergoeding vanaf 2030’ moet worden doorgerekend (standaard ja). Bij een dynamisch contract meldt de keuzehulp dat handelswaarde nog niet wordt berekend.
 4. **Wat je belangrijk vindt.** Doel (NPV, terugverdientijd of eigen gebruik), optioneel budget en horizon van 10, 15 of 20 jaar.
-5. **Advies.** Capaciteitscurve, passende accu’s met redenen, een expliciete keuze voor installatiekosten, drie bevestigingen en de berekening.
+5. **Advies.** Capaciteitscurve, passende accu’s met redenen, de kostenopbouw per accu, drie bevestigingen en de berekening, plus ‘Voordat je koopt’ met de aanmeldplicht en het stekkeradvies.
 
 Antwoorden worden als concept in `localStorage` (`thuisaccu-keuzehulp`) bewaard; zonder browseropslag werkt de keuzehulp gewoon. Er gaat niets naar externe diensten.
 
@@ -77,8 +77,19 @@ Tariefindicaties, geraadpleegd op 24 oktober 2026:
 | Waarde | Indicatie | Onderbouwing |
 | --- | --- | --- |
 | All-in stroomprijs | € 0,2596/kWh | [CBS](https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026): gemiddeld variabel leveringstarief september 2026 € 0,1487 incl. btw, exclusief energiebelasting; plus [energiebelasting 2026](https://www.anwb.nl/huis/energie/energiebelasting) € 0,11085 incl. btw |
-| Terugleververgoeding vanaf 2027 | € 0,0615/kWh | Tot 1 januari 2030 minstens 50% van de stroomprijs zonder energiebelasting en btw ([ACM](https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen)); 50% × € 0,1229 (CBS, september 2026, excl. btw) = € 0,06145, naar boven afgerond. Tegenstrijdig: Zonneplan noemt ‘zo’n 0,25 cent per kWh’ bij de meeste vaste contracten ([10 juni 2026](https://www.zonneplan.nl/blog/zijn-zonnepanelen-nu-en-na-2027-rendabel/)); de keuzehulp volgt de toezichthouder |
-| Terugleverkosten | € 0 | Alleen als je contract er geen noemt. Volgens de ACM kunnen terugleverkosten hoger uitvallen dan de vergoeding; hogere kosten maken een accu gunstiger |
+| Terugleververgoeding vanaf 2027 | € 0,0615/kWh | Tot 1 januari 2030 minstens 50% van de stroomprijs zonder energiebelasting en btw ([ACM](https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen), bevestigd door [Vattenfall](https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/)); 50% × € 0,1229 (CBS, september 2026, excl. btw) = € 0,06145, naar boven afgerond |
+| Terugleverkosten vanaf 2027 | € 0,0515/kWh | Gekozen zodat vergoeding min kosten 1,0 cent per kWh is: de mediaan van 15 leveranciers voor een 1-jarig vast contract vanaf 2027 (spreiding −4,32 tot +4,37 cent), volgens het overzicht van [salderingcheck.nl](https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/) met peildatum 16 oktober 2026 (secundaire bron op basis van tariefbladen en Keuze.nl). Primaire controle: [Eneco](https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/) rekent met € 0,05058 vergoeding (excl. btw) en € 0,03865 kosten (incl. btw), 1,2 cent netto, peildatum 25 februari 2026. Alleen het verschil telt in het model; de losse bedragen zijn geen leveranciersprijs |
+| Terugleveringsvariant | Vanaf 2030: € 0 vergoeding, terugleverkosten gelijk | Aanname. Het wettelijke minimum geldt tot 2030; voor daarna is geen minimum gevonden, en één leverancier in het overzicht rekent nu al 4,32 cent per kWh meer kosten dan vergoeding |
+
+Eerdere versies van de keuzehulp rekenden met € 0,0615 vergoeding en € 0 terugleverkosten. Dat is 6,15 cent netto, meer dan bij elke leverancier in het overzicht, en onderschatte daardoor de waarde van een accu. Bewaarde berekeningen houden hun oorspronkelijke invoer.
+
+## Aansluitregels
+
+Geraadpleegd op 24 oktober 2026; dit is een samenvatting, geen juridisch of installatieadvies.
+
+- **Aanmelden.** Volgens [Netbeheer Nederland](https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf) (december 2024) is aanmelden van een thuisaccu via energieleveren.nl verplicht, net als bij zonnepanelen; naar schatting is minder dan 40% aangemeld. De plicht volgt uit een wijziging van de Netcode elektriciteit en geldt voor opslag vanaf 0,8 kW die op het net is aangesloten ([Solar Magazine, 8 mei 2024](https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd)); het artikelnummer in de Netcode is niet gevonden. De website energieleveren.nl zelf was niet leesbaar voor controle.
+- **Stekkerbatterij.** [Milieu Centraal](https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/) (gewijzigd 28 september 2026) raadt stekkerbatterijen op dit moment niet aan, onder meer vanwege brandrisico: in één groep kan stroom van twee kanten komen. Installateurs sluiten een accu volgens NEN 1010 aan op een aparte groep, niet op een stopcontact.
+- **800 W.** Milieu Centraal adviseert voor [stekkerzonnepanelen](https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/) (gewijzigd 30 juni 2026) maximaal 800 W per groep, een groep met weinig andere apparaten en geen verlengsnoeren. De keuzehulp past dat advies toe op stekkerbatterijen en zegt erbij dat het daarvoor niet afzonderlijk is gepubliceerd. Commerciële bronnen noemen de NVWA of Europese regels als herkomst van de 800 W-grens; dat is niet in een primaire bron bevestigd.
 
 Overige projectie-aannames komen uit de standaardaannames in Instellingen (anders 4% discontovoet, 2% kostenstijging, 0% PV-afname, verbruiksgroei en prijsverandering, 20% en 15% gevoeligheid). Startjaar is 2027, het eerste jaar zonder salderen. Een adres is optioneel; zonder adres wordt ‘Nederland (keuzehulp, geen adres opgegeven)’ vastgelegd.
 

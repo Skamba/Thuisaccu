@@ -107,6 +107,10 @@ Een optioneel budget begrenst de netto startinvestering; het is geen plafond voo
 
 Gunstige en ongunstige varianten combineren de opgegeven afwijking in inkoop-/terugleverprijzen en kosten. De gunstige variant verhoogt de inkoopprijs, verlaagt de terugleververgoeding en verlaagt uitgaven; de ongunstige doet het omgekeerde. Bevestigde aftrekposten blijven gelijk. Dit zijn gevoeligheidstests, geen statistische betrouwbaarheidsbanden; bij negatieve tarieven of niet-standaard kasstromen hoeft de volgorde van de uitkomsten niet vanzelf gunstig/ongunstig te zijn.
 
+### Terugleveringsvariant
+
+Optioneel bevat `parameters.export_variant` een tweede set terugleverprijzen (`export_eur_per_kwh`, `export_fee_eur_per_kwh`) vanaf `from_calendar_year`. Voor die jaren rekent de kern de rekening met en zonder accu opnieuw met deze twee tariefdelen; al het andere blijft gelijk en er is geen prijs- of kostenstress. Per optie staat de uitkomst in `export_variant` (NPV, nettowinst, ROI, blijvende terugverdientijd) en `export_variant_recommended_key` geeft de beste optie volgens hetzelfde doel en budget. De basisuitkomst en de aanbeveling veranderen niet. Omdat bestaande velden hun betekenis houden en de nieuwe velden alleen verschijnen als de variant is opgegeven, blijft de modelversie `nl-self-consumption-v1`. Het referentiegeval in `crates/core/tests/analysis.rs` rekent een besparing van 0,22 €/kWh in 2027 en 0,35 €/kWh vanaf 2028 met de hand na.
+
 ## Opslag, controle en grenzen
 
 Een analyse bewaart de volledige invoer, gebruikte importmetadata, SHA-256 van het genormaliseerde profiel, onderzoeksdatum, modelversie en resultaat in SQLite. De bronintervallen blijven gekoppeld via import-ID. Historie toont de oorspronkelijke invoer, onafhankelijk van de huidige editor. Een hash detecteert veranderingen maar is geen reservekopie van alle intervallen of een onveranderbaar auditlog.
