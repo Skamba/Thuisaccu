@@ -4,9 +4,17 @@
 // rekengegevens en kostenindicaties. Elke aanname wordt met naam vastgelegd.
 window.Data = (() => {
   const { api, number: n } = UI;
-  let catalogCache = null, costsCache = null, typicalCache = null;
+  let catalogCache = null, costsCache = null, typicalCache = null, referencesLoaded = null;
 
-  const catalog = async (fresh = false) => (catalogCache = (!fresh && catalogCache) || await api("/api/v1/comparison"));
+  // Ontbrekende ingebouwde referentiesets worden één keer per bezoek bijgeladen, zodat de catalogus
+  // altijd de nieuwste set bevat. Eerder geladen sets en eigen claims blijven ongewijzigd.
+  const loadReferences = () => (referencesLoaded ||= (async () => {
+    if ((await api("/api/v1/references")).pending > 0) await api("/api/v1/references", { method: "POST" });
+  })().catch(error => { referencesLoaded = null; throw error; }));
+  const catalog = async (fresh = false) => {
+    await loadReferences();
+    return (catalogCache = (!fresh && catalogCache) || await api("/api/v1/comparison"));
+  };
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   const typicalSources = async () => (typicalCache ||= await api("/api/v1/solar/typical"));
   const imports = async () => (await api("/api/v1/solar/imports")).imports;

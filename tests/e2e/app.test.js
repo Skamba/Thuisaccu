@@ -158,8 +158,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0.2596");
   await next(page);
   await next(page);
-  // Lege catalogus: de onderzochte accu's worden pas op verzoek geladen.
-  await page.click("button:has-text('Laad onderzochte accu’s')");
+  // Ook een lege catalogus krijgt de onderzochte accu's: de app laadt ontbrekende sets zelf bij.
   await page.waitForSelector(".product-group", { timeout: 30000 });
   // Opwek 3.800 − teruglevering 2.900 kWh: 24% direct zelf gebruikt, naast het geschatte profiel.
   assert.match(await page.textContent(".wizard-body [role=note]"),
@@ -250,10 +249,7 @@ test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async ()
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
   await page.goto(`${base}/#/accus`);
-  // De browserversie begint per test met een lege database; de server deelt er één.
-  const load = page.getByRole("button", { name: "Laad onderzochte uitvoeringen" });
-  await page.locator("table").or(load).first().waitFor();
-  if (!await page.locator("table").count()) await load.click();
+  // De browserversie begint per test met een lege database; de onderzochte sets komen er vanzelf in.
   await page.waitForSelector("table", { timeout: 30000 });
   assert.equal(await page.locator(".callout", { hasText: "verouderd" }).count(), 0);
   await page.clock.setFixedTime(new Date("2027-02-01T12:00:00"));
@@ -282,7 +278,6 @@ test("smal scherm: menu werkt met het toetsenbord", async () => {
 test("browserversie bewaart gegevens in deze browser en maakt een back-up", { skip: !BROWSER_MODE }, async () => {
   const { page, problems, close } = await open({ acceptDownloads: true });
   await page.goto(`${base}/#/accus`);
-  await page.click("button:has-text('Laad onderzochte uitvoeringen')");
   await page.waitForSelector("table tbody tr", { timeout: 30000 });
   const rows = await page.locator("table tbody tr").count();
   // Na herladen komt de catalogus uit IndexedDB, niet van een server.

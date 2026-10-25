@@ -30,7 +30,10 @@ pub fn app(catalog: Catalog) -> Router {
         .route("/api/v1/products", get(products))
         .route("/api/v1/comparison", get(api::comparison))
         .route("/api/v1/candidates", post(api::add_candidate))
-        .route("/api/v1/references", post(api::references))
+        .route(
+            "/api/v1/references",
+            get(api::reference_status).post(api::references),
+        )
         .route("/api/v1/solar/inspect", post(api::inspect))
         .route("/api/v1/solar/preview", post(api::preview))
         .route(

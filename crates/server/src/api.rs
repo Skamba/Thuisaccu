@@ -59,7 +59,7 @@ pub async fn add_candidate(
 }
 
 /// Elke set heeft een eigen sleutel: een eerder geladen set wordt niet opnieuw ingevoegd.
-const REFERENCE_SETS: [(&str, &str); 7] = [
+const REFERENCE_SETS: [(&str, &str); 8] = [
     (
         "research-2026-10-24-v1",
         include_str!("../resources/references.json"),
@@ -88,7 +88,26 @@ const REFERENCE_SETS: [(&str, &str); 7] = [
         "research-2026-10-25-nl-v6",
         include_str!("../resources/references-nl-6.json"),
     ),
+    (
+        "research-2026-10-25-nl-v7",
+        include_str!("../resources/references-nl-7.json"),
+    ),
 ];
+
+/// Hoeveel ingebouwde sets er zijn en hoeveel daarvan nog niet geladen zijn; laadt zelf niets.
+pub async fn reference_status(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
+    let loaded = catalog
+        .reference_import_keys()
+        .await
+        .map_err(database_error)?;
+    let pending = REFERENCE_SETS
+        .iter()
+        .filter(|(key, _)| !loaded.iter().any(|k| k == key))
+        .count();
+    Ok(Json(
+        json!({"sets": REFERENCE_SETS.len(), "pending": pending}),
+    ))
+}
 
 pub async fn references(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let mut imported = false;

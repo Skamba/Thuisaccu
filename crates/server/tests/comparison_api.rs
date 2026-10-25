@@ -27,6 +27,21 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
             .configurations
             .is_empty()
     );
+    let status = |app: axum::Router| async move {
+        let response = app
+            .oneshot(
+                Request::get("/api/v1/references")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response_json(response).await
+    };
+    // De status laadt zelf niets; ze zegt alleen hoeveel sets er nog niet in staan.
+    assert_eq!(status(app.clone()).await, json!({"sets": 8, "pending": 8}));
+    assert_eq!(status(app.clone()).await["pending"], 8);
     for expected in [true, false] {
         let response = app
             .clone()
@@ -40,6 +55,7 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response_json(response).await["imported"], expected);
     }
+    assert_eq!(status(app.clone()).await["pending"], 0);
     let response = app
         .oneshot(
             Request::get("/api/v1/comparison")
@@ -57,8 +73,8 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
     assert_eq!(data["configurations"].as_array().unwrap().len(), 102);
     let offers = data["offers"].as_array().unwrap();
     // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding. De zesde
-    // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen.
-    assert_eq!(offers.len(), 67);
+    // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen, de zevende twee (AlphaESS).
+    assert_eq!(offers.len(), 69);
     assert!(offers.iter().all(
         |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
     ));

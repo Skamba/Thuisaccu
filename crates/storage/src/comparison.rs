@@ -358,7 +358,17 @@ impl Catalog {
         Ok(id)
     }
 
-    /// Expliciet door de gebruiker geladen referenties; per sleutel idempotent.
+    /// Sleutels van de referentiesets die al in deze database zijn geladen.
+    pub async fn reference_import_keys(&self) -> Result<Vec<String>> {
+        let connection = self.connection();
+        let mut statement = connection.prepare("SELECT key FROM reference_imports ORDER BY key")?;
+        let keys = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<String>, _>>()?;
+        Ok(keys)
+    }
+
+    /// Ingebouwde referenties laden; per sleutel idempotent.
     pub async fn import_references(
         &self,
         key: &str,

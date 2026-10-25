@@ -11,7 +11,8 @@ De volgende routes bestaan:
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
-| `POST /api/v1/references` | `200`, JSON | Expliciete invoer van vijf sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was |
+| `GET /api/v1/references` | `200`, JSON met `sets` en `pending` | Aantal ingebouwde sets bronmomentopnamen en hoeveel daarvan nog niet in deze database staan; laadt zelf niets |
+| `POST /api/v1/references` | `200`, JSON | Invoer van acht sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was. De interface roept dit één keer per bezoek aan als `GET` ontbrekende sets meldt |
 | `POST /api/v1/solar/inspect` | `200`, JSON | Kolommen, eerste acht rijen, werkbladen, aantal rijen, eventuele metadata |
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |

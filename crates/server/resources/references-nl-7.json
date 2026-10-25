@@ -1,0 +1,56 @@
+[
+ {
+  "manufacturer": "AlphaESS",
+  "product": "VitaPower 3600 AC",
+  "model_code": "VitaPower 3600 AC",
+  "product_kind": "battery_system",
+  "configuration": "Hoofdunit + 1× VitaMate 4000 · 8 kWh · stekker 800 W",
+  "market": "Nederland; webwinkel",
+  "source_url": "https://www.alphaess.nl/en/products/alphaess-vitapower-3600-ac?variant=57405999317367",
+  "source_title": "AlphaESS VitaPower 3600 AC | Plug-in thuisbatterij",
+  "source_kind": "offer",
+  "locator": "Productpagina, ‘Kies je uitvoering’, variant ‘8kWh’",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-25. ‘8kWh Prijs €1.798,00 Normaal €2.598,00 Bespaar €800,00’; einddatum niet vermeld. Volgens de veelgestelde vragen begint het systeem met 4 kWh en groeit het met uitbreidingsaccu's tot 16 kWh; 8 kWh is dus de hoofdunit met één uitbreiding. ‘P1-meter gratis inbegrepen’ en ‘Gratis verzending in Nederland’. De pagina toont zowel ‘Op voorraad’ als ‘Tijdelijke pre-order’. De 4 kWh-variant kost €999,00; die uitvoering staat niet in de catalogus. De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Prijs per variant ook in de productgegevens van de winkel (/products/alphaess-vitapower-3600-ac.js). Geen installatie; volgens de pagina zijn de vaste aansluiting door een elektricien en de installatie voor eigen rekening, de vermogensverhoging in de app is gratis.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "AlphaESS Nederland (alphaess.nl)",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 179800,
+   "tax_basis": "included",
+   "includes_installation": false
+  }
+ },
+ {
+  "manufacturer": "AlphaESS",
+  "product": "VitaPower 3600 AC",
+  "model_code": "VitaPower 3600 AC",
+  "product_kind": "battery_system",
+  "configuration": "Hoofdunit + 1× VitaMate 4000 · 8 kWh · eigen groep 3,68 kW",
+  "market": "Nederland; webwinkel",
+  "source_url": "https://www.alphaess.nl/en/products/alphaess-vitapower-3600-ac?variant=57405999317367",
+  "source_title": "AlphaESS VitaPower 3600 AC | Plug-in thuisbatterij",
+  "source_kind": "offer",
+  "locator": "Productpagina, ‘Kies je uitvoering’, variant ‘8kWh’",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-25. ‘8kWh Prijs €1.798,00 Normaal €2.598,00 Bespaar €800,00’; einddatum niet vermeld. Volgens de veelgestelde vragen begint het systeem met 4 kWh en groeit het met uitbreidingsaccu's tot 16 kWh; 8 kWh is dus de hoofdunit met één uitbreiding. ‘P1-meter gratis inbegrepen’ en ‘Gratis verzending in Nederland’. De pagina toont zowel ‘Op voorraad’ als ‘Tijdelijke pre-order’. De 4 kWh-variant kost €999,00; die uitvoering staat niet in de catalogus. De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Prijs per variant ook in de productgegevens van de winkel (/products/alphaess-vitapower-3600-ac.js). Geen installatie; volgens de pagina zijn de vaste aansluiting door een elektricien en de installatie voor eigen rekening, de vermogensverhoging in de app is gratis.",
+  "numbers": [],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": {
+   "seller": "AlphaESS Nederland (alphaess.nl)",
+   "currency": "EUR",
+   "minor_unit_exponent": 2,
+   "amount_minor": 179800,
+   "tax_basis": "included",
+   "includes_installation": false
+  }
+ }
+]
