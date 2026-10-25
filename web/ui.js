@@ -300,10 +300,14 @@ window.UI = (() => {
         rows.forEach((r,
           i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
       }
+      // Een markering met een getal `x` staat op de getallenas, ook tussen twee punten.
       for (const mark of marks) {
-        const index = rows.findIndex(r => r.label === mark.at); if (index < 0) continue;
-        draw("line", { x1: px(index), x2: px(index), y1: top, y2: height - bottom, class: "chart-mark" }, mark.label);
-        text(px(index), top + 12, mark.symbol, "middle");
+        const index = rows.findIndex(r => r.label === mark.at);
+        const at = numeric && finite(mark.x) ? left + (mark.x - first) / (last - first || 1) * plotW
+          : index < 0 ? null : px(index);
+        if (at == null) continue;
+        draw("line", { x1: at, x2: at, y1: top, y2: height - bottom, class: "chart-mark" }, mark.label);
+        text(at, top + 12, mark.symbol, "middle");
       }
     } else {
       rows.forEach((r, ri) => {

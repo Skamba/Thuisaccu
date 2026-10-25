@@ -211,6 +211,24 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
     return Math.max(...xs.map((x, i) => Math.abs(x - xs[0] - (sizes[i] - sizes[0]) * scale)));
   });
   assert.ok(spread < 0.5, `afwijking ${spread}`);
+
+  // De doelen zetten de schuiven; met het toetsenbord schuiven maakt er een eigen bereik van.
+  const low = page.getByLabel("Kleinste accu (bruikbaar)"), high = page.getByLabel("Grootste accu (bruikbaar)");
+  const preset = [await low.inputValue(), await high.inputValue()];
+  assert.ok(Number(preset[0]) < Number(preset[1]), `bereik ${preset}`);
+  await high.focus();
+  await page.keyboard.press("End");
+  assert.equal(await high.inputValue(), "20");
+  assert.match(await page.textContent(".wizard-body .lead"), /Je eigen bereik is een bruikbare capaciteit van \S+ tot 20 kWh/);
+  assert.equal(await page.locator("input[name=kh-sizing]:checked").count(), 0);
+  await low.focus();
+  await page.keyboard.press("End");
+  assert.equal(await high.inputValue(), "20");
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await low.inputValue(), "19.5");
+  await page.click("text=Veel opbrengst per kWh accu");
+  assert.deepEqual([await low.inputValue(), await high.inputValue()], preset);
+  assert.equal(await page.locator("input[name=kh-sizing][value=value]").isChecked(), true);
   assert.deepEqual(problems, []);
   await close();
 });

@@ -75,7 +75,7 @@
     heatPump: "", ev: "", evCharging: "evening",
     install: "any", phases: "unknown", place: "any", backup: "no",
     contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
-    objective: "net_present_value", budget: "", horizon: "15", sizing: "value"
+    objective: "net_present_value", budget: "", horizon: "15", sizing: "value", rangeLow: null, rangeHigh: null
   };
   let answers = { ...BLANK, ...store.get(STORE, {}) }, yields = null, flow = null;
   // Concepten van vóór de terugleververgoedingsvraag: een ingevulde vergoeding blijft leidend.
@@ -402,10 +402,23 @@
     const points = curve.points, max = points[points.length - 1].battery_to_load_kwh;
     const at = share => points.find(p => p.battery_to_load_kwh >= share * max)?.usable_capacity_kwh;
     const rangeFor = key => max > 0 ? { low: at(SIZING[key].low), high: at(SIZING[key].high) } : null;
-    if (!SIZING[answers.sizing]) answers.sizing = "value";
+    // Aandeel van de opbrengst bij de grootste accu, lineair tussen twee punten van de curve; alleen voor de weergave.
+    const largest = points[points.length - 1].usable_capacity_kwh;
+    const shareAt = capacity => {
+      const i = points.findIndex(p => p.usable_capacity_kwh >= capacity);
+      if (i <= 0) return (i < 0 ? max : points[0].battery_to_load_kwh) / max;
+      const [a, b] = [points[i - 1], points[i]];
+      return (a.battery_to_load_kwh + (b.battery_to_load_kwh - a.battery_to_load_kwh) *
+        (capacity - a.usable_capacity_kwh) / (b.usable_capacity_kwh - a.usable_capacity_kwh)) / max;
+    };
+    const clamp = v => Math.min(largest, Math.max(0, v));
+    const own = answers.sizing === "custom" && Number.isFinite(answers.rangeLow) && Number.isFinite(answers.rangeHigh)
+      ? { low: clamp(Math.min(answers.rangeLow, answers.rangeHigh)), high: clamp(Math.max(answers.rangeLow, answers.rangeHigh)) } : null;
+    if (!SIZING[answers.sizing] && !own) answers.sizing = "value";
     // De rekenkern vergelijkt maximaal vijftig accu's tegelijk.
     const MAX_CANDIDATES = 50;
-    let range = rangeFor(answers.sizing), included = [], renderPick = () => {};
+    let range = max > 0 && own ? own : rangeFor(answers.sizing), included = [], renderPick = () => {};
+    const size1 = v => n(v, v % 1 ? 1 : 0), kwhText = v => `${size1(v)} kWh`;
     body.replaceChildren(h("h2", {}, "Je advies"));
 
     const check = profileCheck(points);
@@ -417,18 +430,44 @@
         h("p", { class: "lead" }, `${answers.data === "totals" ? "Volgens het geschatte profiel gebruik je zonder accu" : "Zonder accu gebruik je"} ` +
           `ongeveer ${n(points[0].self_consumption_pct, 0)}% van je zonnestroom zelf. ` +
           "Met een accu loopt dat op, maar elke extra kWh wordt minder vaak gevuld. " +
-          `Voor ‘${SIZING[answers.sizing].label.toLowerCase()}’ past een bruikbare capaciteit van ongeveer ` +
-          `${n(range.low, 0)} tot ${n(range.high, 0)} kWh.`),
+          (SIZING[answers.sizing] ? `Voor ‘${SIZING[answers.sizing].label.toLowerCase()}’ past een bruikbare capaciteit van ongeveer `
+            : "Je eigen bereik is een bruikbare capaciteit van ") +
+          `${size1(range.low)} tot ${kwhText(range.high)}: ongeveer ${n(shareAt(range.low) * 100, 0)} tot ` +
+          `${n(shareAt(range.high) * 100, 0)}% van wat een accu van ${kwhText(largest)} zou opleveren.`),
         chart("line", {
           title: "Zonnestroom die je via de accu zelf gebruikt, per accugrootte",
           rows: points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, x: p.usable_capacity_kwh,
             values: [p.battery_to_load_kwh] })),
           series: [{ label: "Uit de accu zelf gebruikt (kWh per jaar)" }], unit: "kWh/jaar",
           marks: [["low", "begin"], ["high", "einde"]].map(([key, word]) => ({
-            at: `${n(range[key], 0)} kWh`, symbol: "│",
-              label: `${word} van het zinvolle bereik: ${n(range[key], 0)} kWh`
+            at: kwhText(range[key]), x: range[key], symbol: "│",
+            label: `${word} van ${SIZING[answers.sizing] ? "het zinvolle" : "je eigen"} bereik: ${kwhText(range[key])}`
           }))
         }));
+    };
+    // Twee schuifregelaars voor het bereik; de doelen hierboven zetten ze, schuiven maakt er een eigen bereik van.
+    let goal = null;
+    const sliders = {};
+    const sliderText = v => `${kwhText(v)}, ongeveer ${n(shareAt(v) * 100, 0)}% van de opbrengst bij ${kwhText(largest)}`;
+    const syncSliders = () => {
+      for (const [key, s] of Object.entries(sliders)) {
+        s.input.value = String(range[key]); s.input.setAttribute("aria-valuetext", sliderText(range[key]));
+        s.output.textContent = sliderText(range[key]);
+      }
+      for (const radio of goal?.querySelectorAll("input") || []) radio.checked = radio.value === answers.sizing;
+    };
+    const slide = (key, value) => {
+      range = { ...range, [key]: value };
+      if (range.low > range.high) range = key === "low" ? { ...range, high: value } : { ...range, low: value };
+      Object.assign(answers, { sizing: "custom", rangeLow: range.low, rangeHigh: range.high }); save();
+      syncSliders(); renderSize(); renderPick();
+    };
+    const slider = (key, labelText) => {
+      const input = h("input", { type: "range", id: UI.uid("bereik"), class: "range", min: "0", max: String(largest),
+        step: "0.5", oninput: event => slide(key, Number(event.target.value)) });
+      const output = h("output", { for: input.id });
+      sliders[key] = { input, output };
+      return h("div", { class: "field" }, h("label", { for: input.id }, labelText), input, output);
     };
     if (!range) {
       size.append(h("p", {}, answers.panels === "no"
@@ -437,13 +476,16 @@
         : "Je hebt vrijwel geen zonnestroom over om op te slaan. Een accu levert in deze berekening weinig op."));
     } else {
       const options = Object.entries(SIZING).map(([key, s]) => [key, s.label, s.detail]);
-      size.append(
-        UI.choice("Wat wil je met de accu bereiken?", "kh-sizing", options, answers.sizing, value => {
-          answers.sizing = value; save(); range = rangeFor(value); renderSize();
-          renderPick();
-        }),
+      goal = UI.choice("Wat wil je met de accu bereiken?", "kh-sizing", options, answers.sizing, value => {
+        answers.sizing = value; save(); range = rangeFor(value); syncSliders(); renderSize();
+        renderPick();
+      });
+      size.append(goal,
+        h("fieldset", { class: "range-pair" }, h("legend", {}, "Bereik zelf instellen"),
+          slider("low", "Kleinste accu (bruikbaar)"), slider("high", "Grootste accu (bruikbaar)"),
+          h("p", { class: "help" }, "Een doel hierboven zet beide schuiven; verschuif ze om met je eigen bereik verder te rekenen.")),
         sizeBody, h("p", { class: "help" }, curve.assumptions));
-      renderSize();
+      syncSliders(); renderSize();
     }
 
     const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
