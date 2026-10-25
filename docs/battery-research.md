@@ -96,6 +96,26 @@ Werkwijze:
 - Gevonden, maar niet opgenomen: het percentage van heise voor de Venus E 3.0 (pagina niet volledig gelezen), forum- en app-waarden (Bluetti, Hoymiles, Venus E v2), fabrikantclaims zonder meetgrens (Zendure Mix 90%, Marstek Venus E 4.0 ‘> 90%’, AlphaESS ‘Systemwirkungsgrad bis zu 98%’) en de benchmarktabel van Energienerds (overnemen vereist toestemming).
 - Niets gevonden voor Sunpura, TSUN, Voltdeer, EcoFlow, Jackery, SAMDUO, Lunergy, HYXI, Jet, Conow Lyra, MOVA, NextEnergy, ZinVolt, AccuMate, AEG AS-BBH1 en SolarCube Pro, Indevolt BK1600 en PowerFlex 2000 (niet-Eco), Growatt, Polarium en de SigenStor; die rekenen op de aannames (77% en 10 W, zie [keuzehulp](keuzehulp.md#van-bronclaim-naar-rekengegevens)).
 
+Een zesde set, `crates/server/resources/references-nl-6.json` (sleutel `research-2026-10-25-nl-v6`, onderzocht op 25 oktober 2026), voegt ook geen uitvoeringen toe. Ze hangt 35 webwinkelprijzen aan uitvoeringen die nog geen gepubliceerde prijs hadden. Het zoeken is verdeeld over zoekagents. Elke prijs is daarna zelf nagelezen op de productpagina, in de browser of in de productgegevens van de winkel zelf (Shopify `/products/<handle>.js`, WooCommerce-varianten); een zoekresultaat of prijsvergelijker telt niet als bron.
+
+| Winkel | Uitvoeringen | Opmerking |
+| --- | --- | --- |
+| [MediaMarkt](https://www.mediamarkt.nl/) (marktplaats, verkoop door Powerness Europe GmbH NL) | Anker SOLIX Solarbank 3 E2700 Pro met Smart Meter, Growatt AURA 5000 (beide aansluitwijzen), Growatt NEXA 2000 | Actieprijzen met doorgestreepte prijs |
+| MediaMarkt | EcoFlow STREAM AC Pro | Bijna uitverkocht, alleen afhalen; EcoFlow NL vraagt € 609 |
+| [Solar Power Supply](https://www.solarpowersupply.nl/) | Jackery SolarVault 3 Pro, Pro Max en Pro Max AC; Lunergy Hub 2400 AC + BP5200 + P1-meter; EcoFlow STREAM 5000 | STREAM 5000 is pre-order (medio november 2026) |
+| Fabrikantwinkels: [EcoFlow NL](https://nl.ecoflow.com/), [Marstek NL](https://www.marstek.nl/), [Zendure NL](https://www.zendure.nl/), [SAMDUO NL](https://nl.samduo.com/), [Sigenergy EU-store](https://eu-store.sigenergy.com/), [ZinVolt](https://zinvolt.com/), [NextEnergy](https://www.nextenergy.nl/) | STREAM AC 5000; Venus D, Venus E 4.0, Venus E Max; zeven SolarFlow-uitvoeringen; Nex E6000 en E6000H; SigenMate 2700 Ultra; ZinVolt Base en Power; Terugverdien Batterij | Variant zonder meter, extra accu of panelen; Marstek Venus E 4.0 en E Max leveren begin december 2026 |
+| [Thuisbatterij.nl](https://thuisbatterij.nl/) | Indevolt PowerFlex 2000, SolidFlex 3000 AC | |
+| [Slimmelaadpunt.nl](https://www.slimmelaadpunt.nl/) | EcoFlow STREAM AC | Bundel met Tibber Pulse |
+| [NKON](https://www.nkon.nl/) | Voltdeer SR5000, SR5000 AC Pro (beide aansluitwijzen) | Pre-order, verzending 30 november 2026 |
+| [MWenergie](https://www.mwenergie.nl/) (Benelux-distributeur) | MOVA LumeGret A4000 (beide aansluitwijzen) | Consumentenadviesprijs; verkoop alleen via een partner |
+
+Werkwijze:
+
+- Elke prijs is inclusief btw en zonder installatie. Noemt de pagina de btw niet, dan zeggen de voorwaarden dat en verwijzen ze naar de ACM-regel dat consumentenprijzen inclusief btw zijn. Een prijs voor twee aansluitwijzen van hetzelfde product hangt aan beide uitvoeringen; de aansluiting op een eigen groep zit er niet bij.
+- Doorgestreepte prijzen, bundels (meters), voorraad en levertijd staan in de voorwaarden; de keuzehulp rekent met de aanbiedingsprijs.
+- Niet opgenomen: uitverkochte of uit productie genomen uitvoeringen (AEG SolarCube 4,8 kWh, Zendure SolarFlow 800 Pro, Marstek Venus A, SAMDUO Nex P2800 Pro, Jackery HomePower 2000 Ultra), een Belgische winkel (Enphase 5P), alleen een prijs exclusief btw (Zonneplan Nexus, SigenStor), alleen een prijsbereik (Polarium Homevolt) en twijfel over de variant (Hoymiles HiBattery 4020 AC, Marstek Venus E 5,12 kWh).
+- Geen Nederlandse winkelprijs gevonden voor AccuMate, AEG AS-BBH1, AlphaESS VitaPower 3600 AC, Anker SOLIX Solarbank 2 E1600 AC, Bluetti Balco, BYD HVS, Conow Lyra, Hoymiles MS-A2, HYXI Halo, Indevolt BK1600 en SolidFlex 2000, Jet GreenArk Pro, Lunergy X2400 AC, Marstek Plug & Charge, Venus C en Venus E Pro, Sunpura, TSUN PowerTrunk, Voltdeer SR2000 en de Tesla Powerwall 3P; daar vult de gebruiker een offertebedrag in.
+
 Na drie maanden (vanaf 24 januari 2027) tonen de catalogus en de keuzehulp een melding dat prijzen en tarieven verouderd kunnen zijn. Bestaande databases krijgen de tweede set met ‘Laad onderzochte uitvoeringen’ in de catalogus; eerder geladen sets worden niet opnieuw ingevoegd.
 
 ## Vast te leggen gegevens

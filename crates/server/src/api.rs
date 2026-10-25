@@ -59,7 +59,7 @@ pub async fn add_candidate(
 }
 
 /// Elke set heeft een eigen sleutel: een eerder geladen set wordt niet opnieuw ingevoegd.
-const REFERENCE_SETS: [(&str, &str); 6] = [
+const REFERENCE_SETS: [(&str, &str); 7] = [
     (
         "research-2026-10-24-v1",
         include_str!("../resources/references.json"),
@@ -83,6 +83,10 @@ const REFERENCE_SETS: [(&str, &str); 6] = [
     (
         "research-2026-10-25-nl-v5",
         include_str!("../resources/references-nl-5.json"),
+    ),
+    (
+        "research-2026-10-25-nl-v6",
+        include_str!("../resources/references-nl-6.json"),
     ),
 ];
 

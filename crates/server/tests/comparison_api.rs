@@ -56,8 +56,9 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
     // hangen als extra bron aan een bestaande uitvoering.
     assert_eq!(data["configurations"].as_array().unwrap().len(), 102);
     let offers = data["offers"].as_array().unwrap();
-    // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding.
-    assert_eq!(offers.len(), 32);
+    // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding. De zesde
+    // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen.
+    assert_eq!(offers.len(), 67);
     assert!(offers.iter().all(
         |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
     ));
@@ -90,6 +91,18 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         .unwrap()["id"]
         .clone();
     assert!(!offers.iter().any(|o| o["configuration_id"] == tesla));
+    let zinvolt = data["configurations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| {
+            c["manufacturer_name"] == "ZinVolt" && c["name"] == "1 unit · 4 kWh · stekker 2 kW"
+        })
+        .unwrap()["id"]
+        .clone();
+    assert!(offers.iter().any(|o| o["configuration_id"] == zinvolt
+        && o["upfront_amount_minor"] == 189900
+        && o["tax_basis"] == "included"));
     let usable: Vec<_> = data["numbers"]
         .as_array()
         .unwrap()
