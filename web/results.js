@@ -3,7 +3,7 @@
 // Resultaat van één bewaarde analyse. Gebruikt uitsluitend de vastgelegde invoer en uitkomst,
 // zodat oudere runs altijd met hun oorspronkelijke aannames worden getoond.
 window.Results = (() => {
-  const { h, badge, button, table, stats, chart, tabs, money, kwh, pct, years, number: n, finite, palette } = UI;
+  const { h, badge, button, field, table, stats, chart, tabs, money, kwh, pct, years, number: n, finite, palette } = UI;
   const eur0 = value => money(value, { decimals: 0 });
 
   const TECHNICAL = [
@@ -286,14 +286,96 @@ window.Results = (() => {
       c.years.forEach(y => rows.push([c.name, y.calendar_year, n(y.net_cashflow_eur), n(y.cumulative_eur)]));
     }
     rows.push([], ...result.warnings.map(w => ["Waarschuwing", w]));
-    UI.downloadCsv(`thuisaccu-berekening-${run.id}.csv`, rows);
+    UI.downloadCsv(`thuisaccu-berekening-${run.id ?? "gedeeld"}.csv`, rows);
   }
 
-  async function render(run, view, actions, onDuplicate) {
+  // Delen via de adresbalk: de uitkomst en aannames, ingepakt (deflate) en base64url-gecodeerd achter #/gedeeld/.
+  // Het deel na # gaat niet naar een server. Adres, coördinaten, BAG-id en bestandsnaam gaan niet mee.
+  const SHARE_VERSION = 1, SHARE_MAX_CHARS = 1_500_000, SHARE_MAX_BYTES = 8_000_000;
+  const toBase64Url = bytes => {
+    let text = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  };
+  const fromBase64Url = data => Uint8Array.from(atob(data.replaceAll("-", "+").replaceAll("_", "/")), c => c.charCodeAt(0));
+  // Om de link kort te houden gaan alleen de opties mee die de uitkomst bepalen: de aanbevolen accu, de beste
+  // vijf op het gekozen doel en de beste op netto contante waarde en in de terugleveringsvariant.
+  function shareable(run) {
+    const input = run.input, request = input.request, result = run.result, source = input.profile?.options || {};
+    const score = SCORE[request.parameters.objective] || SCORE.net_present_value;
+    const byScore = [...result.candidates].sort((a, b) => score(b) - score(a));
+    const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key,
+      ...byScore.slice(0, TOP).map(c => c.key)]);
+    const candidates = result.candidates.filter(c => keep.has(c.key));
+    // Alleen wat de weergave nodig heeft; importinstellingen kunnen ook de naam van een meterbestand bevatten.
+    const kind = { is_demo: source.is_demo, generator: source.generator, data_kind: source.data_kind };
+    // Een geschat of fictief profiel heeft een beschrijvende naam; een eigen bestandsnaam kan persoonlijk zijn.
+    const filename = kind.generator || Data.isDemo(input.profile) ? input.profile.filename : "bestandsnaam niet gedeeld";
+    return { v: SHARE_VERSION, title: run.title, created_at_unix_s: run.created_at_unix_s,
+      shared_of: result.candidates.length, result: { ...result, candidates },
+      input: { ...input, profile: input.profile ? { filename, options: kind } : null,
+        request: { ...request, candidates: request.candidates.filter(c => keep.has(c.key)),
+          site: { address: "Adres niet gedeeld", latitude: null, longitude: null, bag_id: null } } } };
+  }
+  async function shareData(run) {
+    const stream = new Blob([JSON.stringify(shareable(run))]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    return toBase64Url(new Uint8Array(await new Response(stream).arrayBuffer()));
+  }
+  // Leest een gedeelde link terug; begrensd, zodat een kwaadaardige link de browser niet vol laat lopen.
+  async function fromShare(data) {
+    if (data.length > SHARE_MAX_CHARS) throw new Error("Deze link is te lang.");
+    let bytes;
+    try { bytes = fromBase64Url(data); } catch { throw new Error("Deze link is beschadigd of onvolledig."); }
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+    const chunks = [];
+    let total = 0, run;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > SHARE_MAX_BYTES) { await reader.cancel(); throw new Error("Deze link is te groot."); }
+        chunks.push(value);
+      }
+      run = JSON.parse(await new Blob(chunks).text());
+    } catch (error) {
+      throw new Error(/te groot/.test(error.message) ? error.message : "Deze link is beschadigd of onvolledig.");
+    }
+    const valid = run?.v === SHARE_VERSION && typeof run.title === "string" && Array.isArray(run.result?.candidates) &&
+      Array.isArray(run.result?.warnings) && run.input?.request?.parameters?.tariff && Array.isArray(run.input.request.candidates);
+    if (!valid) throw new Error("Deze link bevat geen berekening die deze versie kan tonen.");
+    return run;
+  }
+  async function share(run) {
+    const url = `${location.href.split("#")[0]}#/gedeeld/${await shareData(run)}`;
+    const box = h("input", { type: "text", readonly: true, value: url, onfocus: event => event.target.select() });
+    const status = h("p", { class: "help", "aria-live": "polite" });
+    const copy = button("Kopieer link", async () => {
+      try { await navigator.clipboard.writeText(url); status.textContent = "Link gekopieerd."; }
+      catch { box.focus(); status.textContent = "Kopiëren lukt hier niet automatisch; de link is geselecteerd, kopieer hem met Ctrl+C."; }
+    });
+    UI.dialog("Deel deze berekening",
+      h("p", {}, "Iedereen met deze link ziet de uitkomst, de aannames, de accu’s met hun kosten en de energiecijfers per jaar. " +
+        "Je adres, de bestandsnaam en je meetgegevens per uur gaan niet mee. Alles staat in de link zelf; er wordt niets geüpload."),
+      run.result.candidates.length > TOP + 1 ? h("p", { class: "help" }, "Om de link kort te houden gaan de aanbevolen accu en de " +
+        `beste opties mee, niet alle ${run.result.candidates.length} doorgerekende accu’s.`) : null,
+      Local.enabled ? null : h("p", { class: "help" },
+        "De link wijst naar deze lokale app. Iemand anders opent hem in een eigen Thuisaccu: vervang dan het begin tot #/gedeeld/ door dat adres."),
+      field("Link naar deze berekening", box), h("p", { class: "help" }, `${n(url.length, 0)} tekens.`), h("div", { class: "actions" }, copy), status);
+  }
+
+  async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
     const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
     const categories = (await Data.costs()).categories;
-    actions.append(button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
-      button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "ghost"));
+    UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
+      shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),
+      button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "ghost")]);
+    if (shared) view.append(h("p", { class: "callout", role: "note" },
+      "Gedeelde berekening: geopend uit een link en niet bewaard in je eigen berekeningen. Deze app heeft de uitkomst niet " +
+      "opnieuw berekend, dus controleer de aannames en vertrouw alleen links van iemand die je kent." +
+      (run.shared_of > result.candidates.length ? ` De link bevat ${result.candidates.length} van de ${run.shared_of} ` +
+        "doorgerekende accu’s: de aanbevolen accu en de beste opties." : "")));
     view.append(h("p", { class: "help" },
       `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · model ${result.model_version} · ${UI.dateTime(run.created_at_unix_s)}`));
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
@@ -310,5 +392,5 @@ window.Results = (() => {
     ]));
   }
 
-  return { render, isFictitious };
+  return { render, isFictitious, fromShare };
 })();

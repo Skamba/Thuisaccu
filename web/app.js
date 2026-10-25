@@ -59,6 +59,18 @@
     }
   });
 
+  UI.page("gedeeld/:data", {
+    title: "Gedeelde berekening", subtitle: "Geopend uit een link; niet bewaard in deze app.", parent: "berekeningen",
+    async render(view, actions, { data }) {
+      let run;
+      try { run = await Results.fromShare(data); }
+      catch (error) { view.append(UI.empty("Deze link werkt niet", error.message,
+        link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
+      $("page-title").textContent = run.title;
+      await Results.render(run, view, actions, null, { shared: true });
+    }
+  });
+
   UI.page("instellingen", {
     nav: "Instellingen", icon: "gear", title: "Instellingen",
       subtitle: "Voorkeuren en standaardaannames voor deze browser.",
@@ -152,11 +164,13 @@
       h("div", { class: "actions" }, replace, clear));
   }
 
-  // Router: #/pad of #/pad/:id. Onbekende adressen gaan naar de keuzehulp.
+  // Router: #/pad, #/pad/:id (getal) of #/pad/:data (base64url). Onbekende adressen gaan naar de keuzehulp.
   function match(path) {
     for (const [key, page] of UI.pages) {
-      const pattern = new RegExp(`^${key.replace(":id", "(\\d+)")}$`), found = path.match(pattern);
-      if (found) return { key, page, params: found[1] ? { id: found[1] } : {} };
+      const name = key.match(/:(\w+)/)?.[1];
+      const pattern = new RegExp(`^${key.replace(":id", "(\\d+)").replace(":data", "([A-Za-z0-9_-]+)")}$`),
+        found = path.match(pattern);
+      if (found) return { key, page, params: found[1] ? { [name]: found[1] } : {} };
     }
     return null;
   }

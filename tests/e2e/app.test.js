@@ -183,6 +183,29 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
+
+  // Delen: de link bevat de uitkomst zonder adres en opent ook in een browser zonder deze gegevens.
+  await page.click("button:has-text('Deel als link')");
+  const shared = await page.getByLabel("Link naar deze berekening").inputValue();
+  assert.match(shared, /#\/gedeeld\/[A-Za-z0-9_-]+$/);
+  // Alleen de beslissende opties gaan mee, zodat de link in een bericht past (zo'n 25.000 tekens bij 50 accu's).
+  assert.ok(shared.length < 60000, `${shared.length} tekens`);
+  const title = await page.textContent("#page-title");
+  const other = await open();
+  await other.page.goto(shared);
+  await other.page.waitForSelector(".verdict", { timeout: 30000 });
+  assert.equal(await other.page.textContent("#page-title"), title);
+  const view = await other.page.textContent("#view");
+  assert.match(view, /Gedeelde berekening/);
+  assert.match(view, /Adres niet gedeeld/);
+  assert.match(view, /De link bevat \d+ van de \d+ doorgerekende accu’s/);
+  assert.equal(await other.page.locator("button:has-text('Pas aan')").count(), 0);
+  assert.doesNotMatch(await other.page.textContent("#page-actions"), /null/);
+  // Een afgebroken link geeft een melding in plaats van een fout.
+  await other.page.goto(shared.slice(0, -40));
+  await other.page.waitForSelector("text=Deze link werkt niet");
+  assert.deepEqual(other.problems, []);
+  await other.close();
   assert.deepEqual(problems, []);
   await close();
 });
