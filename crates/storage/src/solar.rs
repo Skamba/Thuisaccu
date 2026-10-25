@@ -12,6 +12,11 @@ pub struct SolarInterval {
     /// Deel van het verbruik dat binnen het interval gelijkmatig loopt; alleen bij geschatte profielen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steady_consumption_wh: Option<f64>,
+    /// Netafname en teruglevering volgens de meter, zonder accu; alleen samen bekend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_import_wh: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_export_wh: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +76,13 @@ impl Catalog {
         for (index, item) in intervals.iter().enumerate() {
             if !item.production_wh.is_finite()
                 || item.consumption_wh.is_some_and(|v| !v.is_finite())
-                || item.steady_consumption_wh.is_some_and(|v| !v.is_finite())
+                || [
+                    item.steady_consumption_wh,
+                    item.measured_import_wh,
+                    item.measured_export_wh,
+                ]
+                .iter()
+                .any(|v| v.is_some_and(|v| !v.is_finite()))
             {
                 return Err(StorageError::NonFiniteNumber);
             }
@@ -81,6 +92,15 @@ impl Catalog {
             {
                 return Err(StorageError::InvalidInput(
                     "Steady consumption must be between zero and the gross consumption".into(),
+                ));
+            }
+            let measured = [item.measured_import_wh, item.measured_export_wh];
+            if measured.iter().any(|v| v.is_some_and(|v| v < 0.0))
+                || item.measured_import_wh.is_some() != item.measured_export_wh.is_some()
+                || (item.measured_import_wh.is_some() && item.consumption_wh.is_none())
+            {
+                return Err(StorageError::InvalidInput(
+                    "Measured grid import and export must both be non-negative and need gross consumption".into(),
                 ));
             }
             if index > 0 && intervals[index - 1].end_unix_s > item.start_unix_s {
@@ -94,14 +114,30 @@ impl Catalog {
         let inserted: Option<i64> = tx.query_row("INSERT INTO solar_imports (filename, sha256, imported_at_unix_s, options_json, summary_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(sha256, options_json) DO NOTHING RETURNING id",
             params![filename, sha256, now, options, summary], |row| row.get(0)).optional()?;
         let Some(id) = inserted else {
-            return Ok(tx.query_row(
+            let id: i64 = tx.query_row(
                 "SELECT id FROM solar_imports WHERE sha256 = ? AND options_json = ?",
                 params![sha256, options],
                 |row| row.get(0),
-            )?);
+            )?;
+            // Hetzelfde bestand met dezelfde instellingen, geïmporteerd vóór migratie 5: vul
+            // alleen de ontbrekende meterwaarden aan; bestaande waarden blijven staan.
+            if intervals.iter().any(|i| i.measured_import_wh.is_some()) {
+                let mut update = tx.prepare("UPDATE solar_intervals SET measured_import_wh = ?, measured_export_wh = ? WHERE import_id = ? AND start_unix_s = ? AND end_unix_s = ? AND measured_import_wh IS NULL")?;
+                for item in intervals {
+                    update.execute(params![
+                        item.measured_import_wh,
+                        item.measured_export_wh,
+                        id,
+                        item.start_unix_s,
+                        item.end_unix_s
+                    ])?;
+                }
+            }
+            tx.commit()?;
+            return Ok(id);
         };
         {
-            let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh) VALUES (?, ?, ?, ?, ?, ?)")?;
+            let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh, measured_import_wh, measured_export_wh) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")?;
             for item in intervals {
                 insert.execute(params![
                     id,
@@ -109,7 +145,9 @@ impl Catalog {
                     item.end_unix_s,
                     item.production_wh,
                     item.consumption_wh,
-                    item.steady_consumption_wh
+                    item.steady_consumption_wh,
+                    item.measured_import_wh,
+                    item.measured_export_wh
                 ])?;
             }
         }

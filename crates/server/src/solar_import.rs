@@ -569,14 +569,17 @@ pub fn normalize(
         };
         // Energiebalans zonder bestaande accu: wat het huis gebruikte is wat erin kwam
         // (opwek + netafname) minus wat eruit ging (teruglevering).
-        let consumption_wh = match (net_meter, consumption, export) {
-            (true, Some(import), Some(export)) => Some(balance.derive(
-                production * factor,
-                import * factor,
-                export * factor,
-                duration,
-            )),
-            _ => consumption.map(|v| v * factor),
+        let (consumption_wh, measured) = match (net_meter, consumption, export) {
+            (true, Some(import), Some(export)) => (
+                Some(balance.derive(
+                    production * factor,
+                    import * factor,
+                    export * factor,
+                    duration,
+                )),
+                Some((import * factor, export * factor)),
+            ),
+            _ => (consumption.map(|v| v * factor), None),
         };
         intervals.push(SolarInterval {
             start_unix_s: start.timestamp(),
@@ -584,6 +587,8 @@ pub fn normalize(
             production_wh: production * factor,
             consumption_wh,
             steady_consumption_wh: None,
+            measured_import_wh: measured.map(|m| m.0),
+            measured_export_wh: measured.map(|m| m.1),
         });
     }
     balance.check(intervals.len(), "Opwek en meterdata")?;
@@ -781,6 +786,8 @@ pub fn combine_with_meter(
             production_wh: produced,
             consumption_wh: Some(balance.derive(produced, imported, exported, bucket)),
             steady_consumption_wh: None,
+            measured_import_wh: Some(imported),
+            measured_export_wh: Some(exported),
         });
     }
     balance.check(intervals.len(), "Omvormer en meter")?;

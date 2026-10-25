@@ -17,7 +17,7 @@ De volgende routes bestaan:
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |
 | `GET /api/v1/solar/imports` | `200`, JSON | Bewaarde overzichten in een `imports`-array |
-| `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens, met de verdeling `households` |
+| `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points`, `periods`, `measured_periods` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens, met de verdeling `households` |
 | `POST /api/v1/solar/typical` | `201`, JSON met `id`, `filename`, `summary` | Geschat uurjaar uit jaartotalen opslaan als gemodelleerde import |
 | `GET /api/v1/solar/typical` | `200`, JSON | Bronnen van de ingebakken profielvormen en PV-opbrengst per kWp per ligging |
 | `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen, gedateerde bronlinks en `estimates` (bronnen en bedragen voor kostenindicaties) |
@@ -59,7 +59,7 @@ Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfd
 
 `POST /api/v1/solar/typical` accepteert `{ "annual_consumption_kwh": 3500, "solar": { "orientation": "south", "annual_production_kwh": 4000, "peak_power_kwp": null } }`. Verbruik is bruto (100–100.000 kWh). `solar` is `null` zonder panelen; geef anders precies één van jaaropwek (1–100.000 kWh) of piekvermogen (0,1–100 kWp). Ligging is `south`, `south_east`, `south_west`, `east`, `west` of `east_west`. Optioneel geven `heat_pump_kwh` (0–30.000) en `ev: { "annual_kwh": 1500, "charging": "evening" }` (0–20.000 kWh; `evening`, `night` of `daytime`) aan welk deel van het jaarverbruik naar een warmtepomp en het thuisladen van een auto gaat; samen moeten ze minstens 100 kWh van het jaarverbruik overlaten. Het resultaat is een volledig uurjaar met `data_kind: modelled` en `generator: typical-nl-v1`; dezelfde invoer geeft hetzelfde import-ID. Een analyse op zo’n profiel begint met de waarschuwing GESCHAT PROFIEL. Zie [keuzehulp](keuzehulp.md) voor bronnen en grenzen.
 
-`GET /api/v1/solar/imports/{id}/capacity` vereist dezelfde aaneengesloten jaarreeks met bruto verbruik als een analyse en geeft per capaciteit `usable_capacity_kwh`, `battery_to_load_kwh`, `self_consumption_pct`, `self_sufficiency_pct` en `equivalent_cycles`.
+`GET /api/v1/solar/imports/{id}/capacity` vereist dezelfde aaneengesloten jaarreeks met bruto verbruik als een analyse en geeft per capaciteit `usable_capacity_kwh`, `battery_to_load_kwh`, `self_consumption_pct`, `self_sufficiency_pct` en `equivalent_cycles`. `measured_periods` telt de perioden met gemeten netafname en teruglevering, van `periods` in totaal; daar volgt de gelijktijdigheid de meter.
 
 ## Scenario-invoer en resultaten
 

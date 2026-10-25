@@ -42,6 +42,8 @@ async fn legacy_demo_year(catalog: &Catalog) -> i64 {
                 250.0
             }),
             steady_consumption_wh: None,
+            measured_import_wh: None,
+            measured_export_wh: None,
         })
         .collect();
     catalog
@@ -69,7 +71,7 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let result = body(response).await;
-    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v2");
+    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v3");
     assert!(
         result["result"]["warnings"][0]
             .as_str()
@@ -218,6 +220,8 @@ async fn incomplete_coarse_or_production_only_imports_cannot_produce_saved_roi()
         production_wh: 500.0,
         consumption_wh: consumption,
         steady_consumption_wh: None,
+        measured_import_wh: None,
+        measured_export_wh: None,
     };
     let cases = [
         (
@@ -265,4 +269,59 @@ fn pdok_geometry_is_read_as_longitude_latitude_and_malformed_results_are_ignored
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].latitude, Some(52.1));
     assert_eq!(sites[0].longitude, Some(4.3));
+}
+
+#[tokio::test]
+async fn capacity_curve_uses_measured_simultaneity_instead_of_the_estimated_spread() {
+    // Synthetisch jaar met ieder uur 0,5 kWh opwek en 0,5 kWh verbruik. Volgens de geschatte
+    // verdeling is er binnen het uur overschot en tekort; volgens de meter (0 afname,
+    // 0 teruglevering) viel alles samen en heeft een accu niets te verschuiven.
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let year = |measured: Option<f64>| -> Vec<SolarInterval> {
+        (0..8760)
+            .map(|hour| SolarInterval {
+                start_unix_s: 1_735_689_600 + hour * 3600,
+                end_unix_s: 1_735_689_600 + (hour + 1) * 3600,
+                production_wh: 500.0,
+                consumption_wh: Some(500.0),
+                steady_consumption_wh: None,
+                measured_import_wh: measured,
+                measured_export_wh: measured,
+            })
+            .collect()
+    };
+    let mut delivered = vec![];
+    for (n, measured) in [None, Some(0.0)].into_iter().enumerate() {
+        let id = catalog
+            .save_solar(
+                "Synthetic",
+                &format!("{n:064x}"),
+                "{}",
+                "{}",
+                &year(measured),
+                1,
+            )
+            .await
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/solar/imports/{id}/capacity"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let curve = body(response).await;
+        assert_eq!(curve["periods"], 8760);
+        assert_eq!(
+            curve["measured_periods"],
+            if measured.is_some() { 8760 } else { 0 }
+        );
+        delivered.push(curve["points"][4]["battery_to_load_kwh"].as_f64().unwrap());
+    }
+    assert!(delivered[0] > 100.0, "{delivered:?}");
+    assert!(delivered[1].abs() < 1e-6, "{delivered:?}");
 }

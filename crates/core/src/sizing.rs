@@ -11,6 +11,13 @@ pub struct EnergyInterval {
     /// laadpaal in een geschat profiel. Alleen de rest volgt `LoadVariation::Households`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steady_consumption_kwh: Option<f64>,
+    /// Netafname en teruglevering volgens de slimme meter in dezelfde periode, zonder accu. Met
+    /// beide bekend is gemeten hoeveel opwek en verbruik binnen de periode samenvielen; dan
+    /// vervangen ze de geschatte verdeling (zie `measured`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_import_kwh: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_export_kwh: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +128,40 @@ fn split(
     s
 }
 
+/// Overschot en tekort volgens de meter in plaats van de geschatte verdeling. Zonder accu is
+/// `min(netafname, teruglevering)` de energie die binnen de periode eerst werd teruggeleverd en
+/// later weer afgenomen (of omgekeerd): zoveel minder dan gelijkmatig viel direct samen. Bij
+/// gewijzigde opwek of verbruik schaalt dat met de kleinste factor. Het deel dat binnen het
+/// laad- en ontlaadvermogen past, volgt dezelfde verhouding als in de geschatte verdeling.
+fn measured(
+    estimate: Split,
+    production: f64,
+    load: f64,
+    overlap: f64,
+    charge_limit: f64,
+    discharge_limit: f64,
+) -> Split {
+    let overlap = overlap.clamp(0.0, production.min(load));
+    let surplus = (production - load).max(0.0) + overlap;
+    let deficit = (load - production).max(0.0) + overlap;
+    let within = |amount: f64, part: f64, whole: f64, limit: f64| {
+        let share = if whole > 0.0 { part / whole } else { 1.0 };
+        (amount * share).min(amount).min(limit)
+    };
+    Split {
+        direct: production.min(load) - overlap,
+        surplus,
+        deficit,
+        chargeable: within(surplus, estimate.chargeable, estimate.surplus, charge_limit),
+        dischargeable: within(
+            deficit,
+            estimate.dischargeable,
+            estimate.deficit,
+            discharge_limit,
+        ),
+    }
+}
+
 /// Geen netladen, netverkoop vanuit de accu of voorspelde handelsopbrengsten.
 /// De laad-/ontlaadverliezen verdelen de AC-RTE symmetrisch over beide paden.
 pub fn simulate_year(
@@ -167,6 +208,17 @@ pub fn simulate_year(
             charge_limit,
             discharge_limit,
         );
+        let s = match (i.measured_import_kwh, i.measured_export_kwh) {
+            (Some(imported), Some(exported)) => measured(
+                s,
+                production,
+                load,
+                imported.min(exported) * pv_factor.min(load_factor),
+                charge_limit,
+                discharge_limit,
+            ),
+            _ => s,
+        };
         let direct = s.direct;
         let mut surplus = s.surplus;
         let mut deficit = s.deficit;

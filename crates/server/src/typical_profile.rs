@@ -256,6 +256,8 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
                 production_wh: pv[i] * 1000.0,
                 consumption_wh: Some(kwh * 1000.0),
                 steady_consumption_wh: (steady > 0.0).then_some(steady * 1000.0),
+                measured_import_wh: None,
+                measured_export_wh: None,
             }
         })
         .collect();

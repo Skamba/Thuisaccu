@@ -23,6 +23,7 @@ fn profile() -> Vec<EnergyInterval> {
             production_kwh: if i % 2 == 0 { 2.0 } else { 0.0 },
             consumption_kwh: if i % 2 == 1 { 2.0 } else { 0.0 },
             steady_consumption_kwh: None,
+            ..Default::default()
         })
         .collect()
 }
@@ -91,12 +92,14 @@ fn energy_balance_conserves_energy_with_conversion_losses_and_capacity_limits() 
             production_kwh: 6.0,
             consumption_kwh: 0.0,
             steady_consumption_kwh: None,
+            ..Default::default()
         },
         EnergyInterval {
             duration_hours: 1.0,
             production_kwh: 0.0,
             consumption_kwh: 10.0,
             steady_consumption_kwh: None,
+            ..Default::default()
         },
     ];
     let mut b = battery(5.0);
@@ -124,6 +127,7 @@ fn standby_and_capacity_fade_do_not_create_solar_energy_or_free_end_storage() {
         production_kwh: 0.0,
         consumption_kwh: 1.0,
         steady_consumption_kwh: None,
+        ..Default::default()
     }];
     let mut b = battery(5.0);
     b.standby_w = 100.0;
@@ -311,6 +315,7 @@ fn hour(production_kwh: f64, consumption_kwh: f64) -> Vec<EnergyInterval> {
         production_kwh,
         consumption_kwh,
         steady_consumption_kwh: None,
+        ..Default::default()
     }]
 }
 
@@ -355,6 +360,7 @@ fn steady_consumption_such_as_ev_charging_is_not_spread() {
         production_kwh: 0.0,
         consumption_kwh: 3.7 + 1.1154,
         steady_consumption_kwh: Some(3.7),
+        ..Default::default()
     }];
     let r = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 10.0, LoadVariation::Households);
     close(r.battery_to_load_kwh, 2.4);
@@ -408,6 +414,7 @@ fn measured_spread_conserves_energy_and_leaves_other_periods_uniform() {
             production_kwh: if (32..64).contains(&i) { 0.2 } else { 0.0 },
             consumption_kwh: 0.05 + (i % 7) as f64 * 0.04,
             steady_consumption_kwh: None,
+            ..Default::default()
         })
         .collect();
     let r = sizing::simulate_year(&day, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Households);
@@ -455,12 +462,14 @@ fn capacity_curve_is_bounded_by_the_daily_surplus_and_evening_deficit() {
                     production_kwh: 3.0,
                     consumption_kwh: 0.0,
                     steady_consumption_kwh: None,
+                    ..Default::default()
                 },
                 EnergyInterval {
                     duration_hours: 1.0,
                     production_kwh: 0.0,
                     consumption_kwh: 2.0,
                     steady_consumption_kwh: None,
+                    ..Default::default()
                 },
             ]
         })
@@ -575,4 +584,38 @@ fn entered_vat_refunds_grants_and_horizons_past_2028_get_policy_warnings() {
             .iter()
             .any(|w| w.contains("Subsidie ingevoerd bij met-teruggave"))
     );
+}
+
+#[test]
+fn measured_grid_values_replace_the_estimated_overlap_within_the_hour() {
+    // Uur met 2 kWh opwek en 2 kWh verbruik; de meter zag 0,5 kWh teruglevering en 0,5 kWh
+    // netafname. Direct samen vielen dus 2 − 0,5 = 1,5 kWh, welke verdeling ook is gekozen.
+    let mut p = hour(2.0, 2.0);
+    p[0].measured_import_kwh = Some(0.5);
+    p[0].measured_export_kwh = Some(0.5);
+    for variation in [LoadVariation::Uniform, LoadVariation::Households] {
+        let none = sizing::simulate_year(&p, None, 0, 1.0, 1.0, 0.0, variation);
+        close(none.direct_solar_kwh, 1.5);
+        close(none.grid_export_kwh, 0.5);
+        close(none.grid_import_kwh, 0.5);
+    }
+    // Gelijkmatig binnen het uur is de schatting zonder overschot; de laadgrens van 1 kW
+    // knelt niet, dus een verliesvrije accu verschuift de 0,5 kWh binnen het uur.
+    let mut b = battery(10.0);
+    b.charge_power_kw = 1.0;
+    let with = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 5.0, LoadVariation::Uniform);
+    close(with.battery_charge_kwh, 0.5);
+    close(with.battery_to_load_kwh, 0.5);
+    close(with.grid_import_kwh, 0.0);
+    close(with.grid_export_kwh, 0.0);
+    // Halve opwek: overlap schaalt met de kleinste factor, 0,5 × 0,5 = 0,25 kWh.
+    // Direct = min(1, 2) − 0,25 = 0,75; teruglevering 0,25; netafname 2 − 0,75 = 1,25 kWh.
+    let half = sizing::simulate_year(&p, None, 0, 0.5, 1.0, 0.0, LoadVariation::Uniform);
+    close(half.direct_solar_kwh, 0.75);
+    close(half.grid_export_kwh, 0.25);
+    close(half.grid_import_kwh, 1.25);
+    // Alleen netafname zonder teruglevering is geen bruikbare meting.
+    let mut invalid = profile();
+    invalid[0].measured_import_kwh = Some(0.5);
+    assert!(analysis::analyze(&invalid, &parameters(), &[candidate("a", 5.0, 100_000)]).is_err());
 }

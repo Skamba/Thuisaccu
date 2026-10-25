@@ -120,7 +120,7 @@ async fn file_database_survives_reopening_and_migrations_are_not_reapplied() {
         &reopened,
         "SELECT count(*) FROM _sqlx_migrations WHERE success = 1",
     );
-    assert_eq!(applied, 4);
+    assert_eq!(applied, 5);
     let journal: String = scalar(&reopened, "PRAGMA journal_mode");
     assert_eq!(journal, "wal");
     reopened.close().await;
@@ -452,7 +452,7 @@ async fn a_copy_of_a_wal_database_file_opens_in_memory_and_stays_writable() {
     let manufacturers: i64 = scalar(&again, "SELECT count(*) FROM manufacturers");
     assert_eq!(manufacturers, 2);
     let applied: i64 = scalar(&again, "SELECT count(*) FROM _sqlx_migrations");
-    assert_eq!(applied, 4);
+    assert_eq!(applied, 5);
     assert!(Catalog::from_bytes(b"not a database").await.is_err());
 }
 
@@ -512,6 +512,8 @@ async fn steady_consumption_is_stored_and_never_exceeds_gross_consumption() {
         production_wh: 0.0,
         consumption_wh: Some(1000.0),
         steady_consumption_wh: steady,
+        measured_import_wh: None,
+        measured_export_wh: None,
     };
     let id = catalog
         .save_solar(
@@ -544,6 +546,85 @@ async fn steady_consumption_is_stored_and_never_exceeds_gross_consumption() {
         execute(
             &catalog,
             "UPDATE solar_intervals SET steady_consumption_wh = 2000 WHERE import_id = ?",
+            [id],
+        )
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn measured_grid_values_are_stored_in_pairs_and_filled_in_for_older_imports() {
+    use thuisaccu_storage::solar::SolarInterval;
+    let catalog = Catalog::in_memory().await.unwrap();
+    let interval = |measured: Option<(f64, f64)>| SolarInterval {
+        start_unix_s: 0,
+        end_unix_s: 3600,
+        production_wh: 2000.0,
+        consumption_wh: Some(2000.0),
+        steady_consumption_wh: None,
+        measured_import_wh: measured.map(|m| m.0),
+        measured_export_wh: measured.map(|m| m.1),
+    };
+    // Zoals een import van vóór migratie 5: zelfde bestand en instellingen, zonder meterwaarden.
+    let id = catalog
+        .save_solar("fixture", &"a".repeat(64), "{}", "{}", &[interval(None)], 0)
+        .await
+        .unwrap();
+    assert_eq!(
+        catalog.solar_intervals(id).await.unwrap()[0].measured_import_wh,
+        None
+    );
+    let again = catalog
+        .save_solar(
+            "fixture",
+            &"a".repeat(64),
+            "{}",
+            "{}",
+            &[interval(Some((500.0, 500.0)))],
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(again, id);
+    let stored = catalog.solar_intervals(id).await.unwrap();
+    assert_eq!(stored[0].measured_import_wh, Some(500.0));
+    assert_eq!(stored[0].measured_export_wh, Some(500.0));
+    // Bestaande meterwaarden worden niet overschreven.
+    catalog
+        .save_solar(
+            "fixture",
+            &"a".repeat(64),
+            "{}",
+            "{}",
+            &[interval(Some((900.0, 900.0)))],
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        catalog.solar_intervals(id).await.unwrap()[0].measured_import_wh,
+        Some(500.0)
+    );
+    // Alleen samen, niet-negatief en met bruto verbruik.
+    let mut single = interval(Some((500.0, 500.0)));
+    single.measured_export_wh = None;
+    let negative = interval(Some((-1.0, 500.0)));
+    let mut no_gross = interval(Some((500.0, 500.0)));
+    no_gross.consumption_wh = None;
+    for (n, bad) in [single, negative, no_gross].into_iter().enumerate() {
+        let sha = format!("{n}").repeat(64);
+        assert!(
+            catalog
+                .save_solar("fixture", &sha, "{}", "{}", &[bad], 0)
+                .await
+                .is_err()
+        );
+    }
+    // Ook het schema bewaakt het paar.
+    assert!(
+        execute(
+            &catalog,
+            "UPDATE solar_intervals SET measured_export_wh = NULL WHERE import_id = ?",
             [id],
         )
         .is_err()

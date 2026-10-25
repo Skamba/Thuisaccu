@@ -78,6 +78,12 @@
               values: [p.battery_to_load_kwh] })),
             series: [{ label: "Uit de accu zelf gebruikt" }] }),
           h("p", { class: "help" }, curve.assumptions));
+        // Imports van vóór modelversie 3 bewaarden de meterwaarden per periode nog niet.
+        if (curve && curve.measured_periods === 0 && (item.options.consumption_source === "net_meter" || item.options.meter))
+          view.append(h("p", { class: "callout", role: "note" }, "Importeer dit bestand opnieuw met dezelfde instellingen. " +
+            "Dit profiel wordt dan aangevuld met de gemeten netafname en teruglevering per periode, zodat deze grafiek en nieuwe " +
+            "berekeningen de werkelijke gelijktijdigheid van opwek en verbruik gebruiken in plaats van een geschatte verdeling. " +
+            "Eerdere berekeningen blijven ongewijzigd."));
       }
     }
   });

@@ -28,6 +28,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "steady consumption",
         include_str!("../migrations/0004_steady_consumption.sql"),
     ),
+    (
+        5,
+        "measured grid",
+        include_str!("../migrations/0005_measured_grid.sql"),
+    ),
 ];
 
 fn checksum(sql: &str) -> Vec<u8> {

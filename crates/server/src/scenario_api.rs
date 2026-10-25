@@ -160,6 +160,8 @@ async fn load_profile(catalog: &Catalog, import_id: i64) -> Result<Vec<EnergyInt
             production_kwh: item.production_wh / 1000.0,
             consumption_kwh: load / 1000.0,
             steady_consumption_kwh: item.steady_consumption_wh.map(|v| v / 1000.0),
+            measured_import_kwh: item.measured_import_wh.map(|v| v / 1000.0),
+            measured_export_kwh: item.measured_export_wh.map(|v| v / 1000.0),
         });
     }
     Ok(profile)
@@ -181,6 +183,18 @@ pub async fn capacity_curve(
         0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0,
     ]
     .to_vec();
+    let periods = profile.len();
+    let measured = profile
+        .iter()
+        .filter(|i| i.measured_import_kwh.is_some())
+        .count();
+    let within = if measured == periods {
+        "Gelijktijdigheid van opwek en verbruik binnen iedere meetperiode volgens de gemeten netafname en teruglevering."
+    } else if measured > 0 {
+        "Gelijktijdigheid binnen de meetperiode volgens de meter waar netafname en teruglevering gemeten zijn, elders verbruik verdeeld zoals bij gemeten huishoudens (HTW Berlin)."
+    } else {
+        "Verbruik binnen iedere meetperiode verdeeld zoals bij gemeten huishoudens (HTW Berlin)."
+    };
     let points = crate::blocking(move || {
         sizing::capacity_curve(&profile, &capacities, LoadVariation::Households)
     })
@@ -188,7 +202,9 @@ pub async fn capacity_curve(
     .ok_or_else(|| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
     Ok(Json(json!({
         "points": points,
-        "assumptions": "Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. Verbruik binnen iedere meetperiode verdeeld zoals bij gemeten huishoudens (HTW Berlin). Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening.",
+        "periods": periods,
+        "measured_periods": measured,
+        "assumptions": format!("Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. {within} Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening."),
     })))
 }
 

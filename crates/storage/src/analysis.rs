@@ -27,7 +27,7 @@ pub struct NewAnalysis<'a> {
 impl Catalog {
     pub async fn solar_intervals(&self, id: i64) -> Result<Vec<SolarInterval>> {
         let connection = self.connection();
-        let mut statement = connection.prepare("SELECT start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh FROM solar_intervals WHERE import_id = ? ORDER BY start_unix_s")?;
+        let mut statement = connection.prepare("SELECT start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh, measured_import_wh, measured_export_wh FROM solar_intervals WHERE import_id = ? ORDER BY start_unix_s")?;
         let rows = statement.query_map([id], |r| {
             Ok(SolarInterval {
                 start_unix_s: r.get("start_unix_s")?,
@@ -35,6 +35,8 @@ impl Catalog {
                 production_wh: r.get("production_wh")?,
                 consumption_wh: r.get("consumption_wh")?,
                 steady_consumption_wh: r.get("steady_consumption_wh")?,
+                measured_import_wh: r.get("measured_import_wh")?,
+                measured_export_wh: r.get("measured_export_wh")?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

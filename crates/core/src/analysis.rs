@@ -171,6 +171,16 @@ pub fn validate(
                 .is_none_or(|v| bounded(v, 0.0, i.consumption_kwh)),
             "Het gelijkmatige deel van het verbruik moet tussen nul en het totale verbruik liggen.",
         )?;
+        ensure(
+            match (i.measured_import_kwh, i.measured_export_kwh) {
+                (Some(imported), Some(exported)) => {
+                    bounded(imported, 0.0, 1e6) && bounded(exported, 0.0, 1e6)
+                }
+                (None, None) => true,
+                _ => false,
+            },
+            "Gemeten netafname en teruglevering moeten samen en niet-negatief zijn.",
+        )?;
         hours += i.duration_hours;
     }
     ensure(
@@ -594,6 +604,17 @@ pub fn analyze(
         LoadVariation::Households => "Binnen iedere meetperiode van 5 tot 60 minuten volgt het verbruik de gemiddelde verdeling van 74 per seconde gemeten Duitse huishoudens (HTW Berlin, 2010). Korte pieken boven het ontlaadvermogen en wisselingen tussen overschot en tekort binnen het uur tellen zo mee. Opwek is binnen de periode gelijkmatig. De regelvertraging van de accu is niet meegerekend: HTW Berlin mat bij 22 thuisaccusystemen gemiddeld 1 s totdat de accu reageert en 4,5 s totdat het nieuwe vermogen bereikt is (Stromspeicher-Inspektion 2025); in een controle per seconde kostte een vertraging van 2 tot 5 s ongeveer 2 tot 3% van de besparing.".into(),
         LoadVariation::Uniform => "Het verbruik is binnen iedere meetperiode gelijkmatig verondersteld. Bij uur- of kwartierwaarden ontbreken korte pieken, waardoor vermogensgrenzen van de accu minder vaak knellen dan in werkelijkheid.".into(),
     });
+    let measured = profile
+        .iter()
+        .filter(|i| i.measured_import_kwh.is_some())
+        .count();
+    if measured > 0 {
+        warnings.push(format!(
+            "In {} van de {} meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt hoeveel opwek en verbruik binnen de periode samenvielen de meter; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt.",
+            measured,
+            profile.len()
+        ));
+    }
     if parameters.start_year <= 2026 {
         warnings.push("Voor 2026 gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf 2027 wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.".into());
     }
@@ -635,7 +656,7 @@ pub fn analyze(
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
-        model_version: "nl-self-consumption-v2".into(),
+        model_version: "nl-self-consumption-v3".into(),
         recommended_key: best_key,
         recommendation,
         baseline_first_year: baseline,

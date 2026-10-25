@@ -312,6 +312,33 @@ fn p1_import_and_export_derive_gross_consumption_from_the_energy_balance() {
     assert!(analyze("time,p,i\n2026-06-01T10:00:00Z,1,1\n", &missing_export).is_err());
 }
 
+#[test]
+fn p1_import_and_export_are_kept_per_interval_next_to_gross_consumption() {
+    let options = ImportOptions {
+        consumption_column: Some(2),
+        consumption_source: "net_meter".into(),
+        export_column: Some(3),
+        ..Default::default()
+    };
+    let text = "time,production,import,export
+2026-06-01T10:00:00Z,2,0.25,1.5
+";
+    let table = read_table("test.csv", text.as_bytes(), &options).unwrap();
+    let (intervals, _) = normalize(&table, &options).unwrap();
+    assert_eq!(intervals[0].consumption_wh, Some(750.0));
+    assert_eq!(intervals[0].measured_import_wh, Some(250.0));
+    assert_eq!(intervals[0].measured_export_wh, Some(1500.0));
+    // Een bruto verbruikskolom zegt niets over netafname binnen het interval.
+    let gross = ImportOptions {
+        consumption_column: Some(2),
+        ..Default::default()
+    };
+    let table = read_table("test.csv", text.as_bytes(), &gross).unwrap();
+    let (intervals, _) = normalize(&table, &gross).unwrap();
+    assert_eq!(intervals[0].measured_import_wh, None);
+    assert_eq!(intervals[0].measured_export_wh, None);
+}
+
 /// Honderd uren met 0,5 kWh afname; één uur met de opgegeven opwek, afname en teruglevering.
 fn hundred_hours_with(production: f64, import: f64, export: f64) -> String {
     let mut text = String::from("time,production,import,export\n");
@@ -441,4 +468,30 @@ fn incompatible_resolutions_and_impossible_balances_are_rejected() {
             .unwrap_err()
             .contains("geen gemeenschappelijke")
     );
+}
+
+#[test]
+fn combined_meter_files_keep_measured_import_and_export_per_period() {
+    let inverter_options = ImportOptions {
+        period: "15min".into(),
+        ..Default::default()
+    };
+    let inverter = "time,production\n2026-06-01T10:00:00Z,0.25\n2026-06-01T10:15:00Z,0.25\n2026-06-01T10:30:00Z,0.25\n2026-06-01T10:45:00Z,0.25\n";
+    let table = read_table("omvormer.csv", inverter.as_bytes(), &inverter_options).unwrap();
+    let (production, summary) = normalize(&table, &inverter_options).unwrap();
+    let meter_options = MeterOptions {
+        period: "hour".into(),
+        timezone: "UTC".into(),
+        ..Default::default()
+    }
+    .as_import_options();
+    let meter = "time,import,export\n2026-06-01T10:00:00Z,0.5,0.75\n";
+    let table = read_table("meter.csv", meter.as_bytes(), &meter_options).unwrap();
+    let (grid, _) = normalize(&table, &meter_options).unwrap();
+    let (intervals, _) = combine_with_meter(&production, &summary, &grid, "UTC").unwrap();
+    // 1 kWh opwek, 0,5 kWh afname, 0,75 kWh teruglevering → 0,75 kWh bruto verbruik.
+    assert_eq!(intervals.len(), 1);
+    assert!((intervals[0].consumption_wh.unwrap() - 750.0).abs() < 1e-9);
+    assert_eq!(intervals[0].measured_import_wh, Some(500.0));
+    assert_eq!(intervals[0].measured_export_wh, Some(750.0));
 }
