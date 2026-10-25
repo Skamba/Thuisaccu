@@ -4,6 +4,8 @@ description = "Thuisaccu als WebAssembly-module: dezelfde API en opslag, volledi
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib"]

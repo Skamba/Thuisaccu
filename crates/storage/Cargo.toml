@@ -4,6 +4,8 @@ description = "SQLite-onderzoekscatalogus voor thuisaccu's"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 thuisaccu-core = { path = "../core" }

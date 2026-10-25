@@ -100,3 +100,9 @@ Met Node.js: voer `node --check` uit op alle scripts in `web/` en draai de brows
 `Cargo.lock` legt dependencyversies vast. Stable Rust wordt niet op een specifieke compilerpatch vastgezet. De GitHub Actions-workflow draait zodra de repo naar GitHub wordt gepusht.
 
 Zie [architectuur](docs/architecture.md), [API](docs/api.md), [ontwikkelafspraken](CONTRIBUTING.md) en [vervolgstappen](docs/roadmap.md).
+
+## Licentie
+
+De code valt naar keuze onder de [MIT-licentie](LICENSE-MIT) of de [Apache-licentie 2.0](LICENSE-APACHE), zoals gebruikelijk in het Rust-ecosysteem. Bijdragen worden onder dezelfde voorwaarden opgenomen, tenzij de bijdrager uitdrukkelijk iets anders aangeeft.
+
+De onderzoekssets in `crates/server/resources/` geven claims van fabrikanten, winkels en testers weer met bron en vindplaats. Merknamen en de oorspronkelijke publicaties blijven van hun eigenaars; controleer prijzen en specificaties altijd bij de bron.
