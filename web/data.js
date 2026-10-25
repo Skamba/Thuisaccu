@@ -62,8 +62,10 @@ window.Data = (() => {
   }
   const isDemo = item => item?.options?.is_demo === true;
 
-  // Aannames voor gegevens die een bron niet noemt; altijd zichtbaar bij de accu.
-  const FALLBACK = { usableShare: 90, efficiency: 85, standby: 5, degradation: 2, life: 15 };
+  // Aannames voor gegevens die een bron niet noemt; altijd zichtbaar bij de accu. Rendement en
+  // sluimerverbruik zijn bewust voorzichtig: gemeten stekkeraccu's halen 77–87% heen en terug en
+  // gebruiken 3–14 W in rust (docs/keuzehulp.md).
+  const FALLBACK = { usableShare: 90, efficiency: 77, standby: 10, degradation: 2, life: 15 };
 
   // Meetgrenzen op volgorde van voorkeur. Vermogen en rendement rekenen aan de AC-kant: een
   // DC-waarde (accu DC, DC → DC) mist de omvormer en telt daar niet mee.
@@ -143,6 +145,8 @@ window.Data = (() => {
 
     const coupling = texts.find(t => t.metric_key === "coupling")?.value || "";
     const kind = /stekker/i.test(coupling) ? "plug" : coupling ? "fixed" : null;
+    // Een stekkeraccu op een eigen groep heet in de onderzochte sets altijd ‘… eigen groep …’.
+    const circuit = kind === "fixed" && /eigen groep/i.test(config.name);
     // Alleen aanbiedingen die niet betwist, vervangen of verlopen zijn.
     const now = Date.now() / 1000;
     const offers = cmp.offers.filter(o => live(o) && (o.valid_until_unix_s == null || o.valid_until_unix_s >= now));
@@ -160,7 +164,7 @@ window.Data = (() => {
     const warranty = cmp.warranties.filter(w => w.configuration_id === config.id && w.product_months != null).map(w => w.product_months);
     return {
       config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`,
-      capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind,
+      capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, circuit,
       phases, backup: feature("backup"), outdoor: feature("outdoor"),
       inverterIncluded: feature("inverter_included")?.status === "supported", offer, otherOffer,
       warrantyYears: warranty.length ? Math.max(...warranty) / 12 : null,
@@ -172,10 +176,13 @@ window.Data = (() => {
     };
   }
 
-  // Kostenindicatie voor alle 26 posten. `item`: { kind, manufacturer, phases, inverterIncluded };
+  // Kostenindicatie voor alle 26 posten. `item`: { kind, circuit, manufacturer, phases, inverterIncluded };
   // `situation`: { place, backup, phases } uit de keuzehulp. Elke regel noemt een bron of aanname.
+  // Een stekkeraccu op een eigen groep (`circuit`) krijgt de stekkerposten plus een extra groep,
+  // geen installatiepakket.
   function estimateCosts(catalogData, item, situation = {}) {
-    const { amounts, meters, facts } = catalogData.estimates, fixed = item.kind !== "plug";
+    const { amounts, meters, facts } = catalogData.estimates;
+    const circuit = item.circuit === true && item.kind !== "plug", fixed = item.kind !== "plug" && !circuit;
     const byMaker = list => list.find(x => x.manufacturer === item.manufacturer);
     const lines = new Map(catalogData.categories.map(c => [c.key,
       { category: c.key, status: "not_applicable", amount_minor: 0, timing: c.timing, year: null, source: "Aanname", notes: "" }]));
@@ -247,6 +254,19 @@ window.Data = (() => {
       const delivery = byMaker(facts.delivery_free);
       if (delivery) fact("delivery", delivery, "included");
         else assume("delivery", "Verzendkosten niet vermeld; aangenomen dat ze in de prijs zitten.");
+      if (circuit) {
+        const group = amounts.dedicated_circuit;
+        priced("installation", group);
+        fact("cabling_protection", { url: group.url, detail: "De aansluiting met beveiliging zit in de richtprijs van de extra groep." },
+          "included");
+        assume("meter_cabinet",
+          "Aanname: er is plek in de groepenkast. Een volle of verouderde kast uitbreiden of vervangen (vanaf € 919) is niet meegeteld.");
+        assume("survey_permits",
+          "De elektricien beoordeelt de aansluiting bij het aanleggen van de groep; een aparte keuring is niet meegeteld.");
+        set("contingency", "priced", "Aanname",
+          `${amounts.contingency_pct.label}, hier over de extra groep. ${amounts.contingency_pct.detail}`,
+          group.amount_eur * amounts.contingency_pct.amount_pct / 100);
+      }
     }
     const software = byMaker(facts.software_free);
     if (software) fact("subscription", software);

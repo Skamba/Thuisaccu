@@ -43,9 +43,11 @@ De browser leidt per catalogusuitvoering rekengegevens af en toont elke aanname 
 | Bruikbare capaciteit | `usable_energy_wh`, anders `nominal_energy_wh × depth_of_discharge_pct` | Aanname 90% van `nominal_energy_wh`; zonder energieclaim niet doorrekenbaar |
 | Ontladen | `continuous_discharge_power_w` met een AC-meetgrens of zonder vermelde meetgrens | Niet doorrekenbaar; kVA wordt niet als kW gebruikt en een DC-vermogen niet als AC-vermogen |
 | Laden | `continuous_charge_power_w`, idem | Aanname: gelijk aan ontladen |
-| Rendement | `round_trip_efficiency_pct` met meetgrens systeem AC, AC → AC, PV → opslag → AC of niet vermeld; bij een bereik de ondergrens. Alles behalve AC → AC wordt als AC→AC-aanname benoemd | Aanname 85%; een DC-rendement (accu DC, DC → DC) mist de omvormerverliezen en telt niet, maar wordt wel genoemd |
-| Standby | `standby_power_w` | Aanname 5 W |
+| Rendement | `round_trip_efficiency_pct` met meetgrens systeem AC, AC → AC, PV → opslag → AC of niet vermeld; bij een bereik de ondergrens. Alles behalve AC → AC wordt als AC→AC-aanname benoemd | Aanname 77%; een DC-rendement (accu DC, DC → DC) mist de omvormerverliezen en telt niet, maar wordt wel genoemd |
+| Standby | `standby_power_w` | Aanname 10 W |
 | Slijtage en levensduur | — | Aanname 2% per jaar en 15 jaar, geen garantie |
+
+De aannames voor rendement en standby zijn bewust voorzichtig gekozen (25 oktober 2026). Onafhankelijk gemeten stekkeraccu's in de vijfde referentieset halen 77–87% heen en terug en gebruiken in rust 3–14 W (netzijde plus wat de accu zelf verliest). [Test-Aankoop](https://www.test-aankoop.be/woning-energie/hernieuwbare-energie/nieuws/beste-plug-and-play-thuisbatterijen) (26 augustus 2026, acht stekkeraccu's) mat bij 23 °C gemiddeld 82,4% met als laagste 77,1%, bij 5 °C gemiddeld 78,1%, en in rust van minder dan 1 W tot 36 W. De [benchmark van Energienerds](https://energienerds.nl/index.php/2026/10/11/keuzehulp-thuisbatterij-rendement-rte) (11 oktober 2026) meldt 78–88% AC → AC bij 800 W voor negentien accu's, zonder standby. Een ontbrekende waarde krijgt daarom ongeveer de laagst gemeten waarde: 77% en 10 W. Dat geldt ook voor vaste installaties, die vaak beter presteren; een bronclaim gaat altijd voor.
 
 Selectieregel bij meerdere claims: eerst de meest geschikte meetgrens (systeem AC, AC → AC, niet vermeld, PV → opslag → AC, daarna voor capaciteit en standby ook accu DC en DC → DC), daarbinnen de voorzichtigste waarde: de laagste capaciteit, het laagste vermogen en rendement, het hoogste sluimerverbruik. Betwiste en vervangen claims tellen niet. Liggen de bruikbare claims uiteen, dan noemt de toelichting alle waarden en het ID van de gebruikte claim. Elke berekening legt in de aannames van de optie de bron en het claim-ID van iedere gebruikte rekenwaarde vast. Onopgeloste verschillen kun je in Zelf doorrekenen als aparte opties doorrekenen.
 
@@ -60,6 +62,8 @@ Het resultaat toont bij meer dan vijf accu’s kaarten en grafieken voor geen ac
 ## Kosten en indicaties
 
 Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Data.estimateCosts` (`web/data.js`) uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont in het resultaat (‘Invoer en aannames’) ‘Bron’ met link of ‘Aanname’ met reden. Aanpassen gaat via ‘Pas aan en reken opnieuw’, dat de run in Zelf doorrekenen opent; een ingevuld bedrag vervangt daar de indicatie. Zelf doorrekenen heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
+
+Een stekkerbatterij op een eigen groep (koppeling ‘vaste installatie’ en ‘eigen groep’ in de naam van de uitvoering, bijvoorbeeld ‘eigen groep 2,4 kW’) krijgt de posten van een stekkerbatterij plus een extra groep in de meterkast: installatie € 280 als richtprijs voor ‘Aanbrengen extra groep met aansluiting’ inclusief materiaal, montage en btw ([Homedeal](https://homedeal.nl/elektricien/elektriciteit-aanleggen-kosten/), prijstabel van 18 juni 2026), kabels en beveiliging daarin inbegrepen, en 10% reserve over die € 280. Aangenomen is dat er plek is in de groepenkast; een volle of verouderde kast is niet meegeteld. Een installatiepakket voor een vaste thuisaccu (€ 1.349) telt dan niet. In de lijst van doorgerekende accu’s heet dat soort ‘Stekker, eigen groep’.
 
 | Post | Stekkerbatterij | Vaste installatie | Bron of aanname |
 | --- | --- | --- | --- |

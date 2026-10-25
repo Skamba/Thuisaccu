@@ -70,6 +70,32 @@ Een vierde set, `crates/server/resources/references-nl-4.json` (sleutel `researc
 - Straatprijzen zijn niet als aanbieding opgenomen: de catalogus noemt de winkel niet. Ze staan wel in de voorwaarden van de entry. Zonder prijs vult de gebruiker een offertebedrag in.
 - Overgeslagen: de Bluetti AC200MAX (draagbaar, voedt niet terug in de groep), ‘AlphaESS 9,6 kWh + 10 kW omvormer’ (geen model of productblad) en de Powerwall 3P (alleen waarden van derden; de datasheet staat er al in). Aangekondigde en uit productie genomen modellen staan erin met die status in de naam van de uitvoering.
 
+Een vijfde set, `crates/server/resources/references-nl-5.json` (sleutel `research-2026-10-25-nl-v5`, onderzocht op 25 oktober 2026), voegt geen uitvoeringen toe. Ze hangt gemeten rendement en sluimerverbruik aan uitvoeringen die tot dan op de aannames rekenden, plus het laadvermogen van de Indevolt per aansluitwijze:
+
+| Uitvoering | Bron | Vastgelegd |
+| --- | --- | --- |
+| Indevolt PowerFlex 2000 Eco, stekker en eigen groep | [Energienerds-review](https://energienerds.nl/index.php/2025/12/23/indevolt-powerflex-2000-eco-review) (23 december 2025, bijgewerkt 23 september 2026) | 80,5% AC → AC bij 800 W; standby ≈ 9,3 W (1 W uit het net plus 8,3 W uit de accu, opgeteld) |
+| Indevolt PowerFlex 2000 Eco, stekker / eigen groep | [Thuisbatterij.nl](https://thuisbatterij.nl/winkel/indevolt-powerflex-2000/), productbeschrijving | Laden 800 W op een bestaande groep; laden en ontladen 2000 W op een eigen groep, naast de 2400 W uit de specificatielijst |
+| Indevolt SolidFlex 3000 AC | [Energienerds-review](https://energienerds.nl/index.php/2026/09/08/indevolt-solidflex-3000-ac-review) (8 september 2026) | 80,5% bij 800 W, 82,8% bij 1800 W, 81,3% bij 2400 W; standby 8,51 W |
+| Marstek Venus E Gen 3.0 | [Technikblog](https://technikblog.ch/2026/03/marstek-venus-e-3-0-roundtrip-effizienz-gemessen-so-effizient-ist-der-speicher-wirklich/) (19 maart 2026); [Test-Aankoop](https://www.test-aankoop.be/woning-energie/hernieuwbare-energie/nieuws/beste-plug-and-play-thuisbatterijen) (26 augustus 2026) | ≈ 84% zonder standby (80% inclusief); standby 7,5–8 W per unit, volgens Test-Aankoop 0,54 W |
+| Zendure SolarFlow 2400 AC+ | Test-Aankoop | Standby 4,6 W |
+| Marstek Venus E Mini, stekker en eigen groep | [Energienerds.de](https://energienerds.de/review-marstek-venus-e-mini/) (7 september 2026); [smartzone.de](https://www.smartzone.de/marstek-venus-e-mini-balkonspeicher-test/) (29 september 2026) | 81,7% AC → AC bij 800 W; 77–81% per ontlaadvermogen, 79% gemiddeld; standby 7 W uit het net, of ≈ 14 W inclusief zelfontlading |
+| Anker SOLIX Solarbank 3 E2700 Pro | [Notebookcheck](https://www.notebookcheck.com/Maechtiges-Balkonkraftwerk-System-mit-KI-Anker-Solix-Solarbank-3-Pro-im-Praxis-Test.1030280.0.html) (11 juni 2025, bijgewerkt 5 oktober 2026) | ≈ 80% |
+| Anker SOLIX Solarbank 4 E5000 Pro, stekker en eigen groep | [PC-WELT](https://www.pcwelt.de/article/3205257/anker-solix-solarbank-4-e5000-pro-test.html) (5 augustus 2026) | 80–85% AC → AC (verlies 15–20%) |
+| Anker SOLIX Solarbank Max AC, stekker en eigen groep | [smartzone.de](https://www.smartzone.de/anker-solix-solarbank-max-ac-im-test/) (22 september 2026) | 78–83%, 80% gemiddeld; eigen verbruik 7 W |
+| Zendure SolarFlow 2400 Pro, stekker | [smartzone.de](https://www.smartzone.de/zendure-solarflow-2400-pro-im-test-das-laeuft-und-laeuft-und-laeuft/) (21 maart 2026) | ≈ 86,7% (2255 van 2600 Wh); standby 0,1–0,3 W en ≈ 3 W, tegenstrijdig |
+| Zendure SolarFlow 1600 AC+ | [techtest.org](https://techtest.org/zendure-solarflow-1600-ac-test-ac-speicher-ab-unter-500-e-mit-bis-zu-1152-kwh/) (17 juli 2026) | 85,5%, methode niet vermeld |
+| Sigenergy SigenMate 2700 Ultra | [Notebookcheck](https://www.notebookcheck.net/Balcony-solar-storage-system-with-two-backup-power-outlets-SigenMate-2700-Ultra-review.1416493.0.html) (5 oktober 2026) | ≈ 80% |
+| Enphase IQ Battery 5P with FlexPhase | Datasheet DSH-00477-7.0 (6 mei 2026, [kopie bij PluginSolar](https://www.pluginsolar.co.uk/wp-content/uploads/2026/09/Enphase-IQ-Battery-5p-with-Flexphase.pdf)) | 90% AC → AC (fabrikant), 96% DC aan het begin van de levensduur |
+
+Werkwijze:
+
+- Testberichten zijn `independent_test`-bronnen met de meetopstelling in de voorwaarden; elke meting is één exemplaar met een eigen opstelling. Meetgrens AC → AC alleen waar de bron meet van stopcontact tot stopcontact (Energienerds definieert RTE zo op zijn benchmarkpagina); anders ‘niet vermeld’. Volgens de selectieregel van de keuzehulp gaat AC → AC voor ‘niet vermeld’.
+- Een rendement inclusief standby is niet als round-trip vastgelegd, omdat het model het sluimerverbruik apart rekent. Sluimerverbruik is vastgelegd als de som van netafname en wat de accu zelf verliest wanneer de bron beide noemt; dat verlies moet later weer worden bijgeladen.
+- Een meting bij 800 W hangt ook aan de uitvoering met eigen groep wanneer er voor die stand geen meting is; de voorwaarden zeggen dat.
+- Gevonden, maar niet opgenomen: het percentage van heise voor de Venus E 3.0 (pagina niet volledig gelezen), forum- en app-waarden (Bluetti, Hoymiles, Venus E v2), fabrikantclaims zonder meetgrens (Zendure Mix 90%, Marstek Venus E 4.0 ‘> 90%’, AlphaESS ‘Systemwirkungsgrad bis zu 98%’) en de benchmarktabel van Energienerds (overnemen vereist toestemming).
+- Niets gevonden voor Sunpura, TSUN, Voltdeer, EcoFlow, Jackery, SAMDUO, Lunergy, HYXI, Jet, Conow Lyra, MOVA, NextEnergy, ZinVolt, AccuMate, AEG AS-BBH1 en SolarCube Pro, Indevolt BK1600 en PowerFlex 2000 (niet-Eco), Growatt, Polarium en de SigenStor; die rekenen op de aannames (77% en 10 W, zie [keuzehulp](keuzehulp.md#van-bronclaim-naar-rekengegevens)).
+
 Na drie maanden (vanaf 24 januari 2027) tonen de catalogus en de keuzehulp een melding dat prijzen en tarieven verouderd kunnen zijn. Bestaande databases krijgen de tweede set met ‘Laad onderzochte uitvoeringen’ in de catalogus; eerder geladen sets worden niet opnieuw ingevoegd.
 
 ## Vast te leggen gegevens

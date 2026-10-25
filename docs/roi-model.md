@@ -102,6 +102,7 @@ Onderzochte Nederlandse prijsvoorbeelden laten zien waarom een accuprijs geen to
 | --- | --- |
 | [Sessy](https://www.sessy.nl/vragen/wat-kost-een-sessy-thuisbatterij/) | 5 kWh €3.550, 10 kWh €5.500 incl. btw, exclusief installatie. Referentie voor hardware; geen offerte voor dit adres |
 | [Batterij-Outlet installatiepakketten](https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/) | Basis vanaf €1.349, uitgebreid vanaf €2.049 incl. btw; maatwerk/groepenkast apart. Voorbeeld van deze aanbieder, geen algemene marktprijs of standaardprijs voor elk merk |
+| [Homedeal: kosten elektriciteit aanleggen](https://homedeal.nl/elektricien/elektriciteit-aanleggen-kosten/), geraadpleegd 25 oktober 2026 | ‘Aanbrengen extra groep met aansluiting’ €280 incl. materiaal, montage en btw. Richtprijs voor een stekkerbatterij op een eigen groep; geen offerte, een volle groepenkast komt erbij |
 | [Liander eenmalige tarieven 2026, revisie 1.1](https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf) | Van één naar drie fasen vanaf €368,77 incl. btw, onder voorwaarden. Controleer het eigen aansluitgeval en jaar |
 | [Liander tarieven](https://www.liander.nl/tarieven) | Controleer ook het verschil in jaarlijkse vaste netbeheerkosten bij een zwaardere aansluiting |
 | [Centraal Beheer opstalverzekering](https://www.centraalbeheer.nl/verzekeringen/opstalverzekering) | Voorbeeld van dekking voor een thuisbatterij. Eigen polis en eventuele extra premie controleren |

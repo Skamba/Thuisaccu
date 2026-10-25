@@ -340,7 +340,7 @@
   function costLines(p, costCatalog) {
     const installation = p.offer.includes_installation === true ? ", inclusief installatie"
       : p.offer.includes_installation === false ? ", exclusief installatie" : "";
-    return Data.estimateCosts(costCatalog, { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases,
+    return Data.estimateCosts(costCatalog, { kind: p.kind, circuit: p.circuit, manufacturer: p.config.manufacturer_name, phases: p.phases,
       inverterIncluded: p.inverterIncluded, offer: p.offer }, answers).map(line => line.category !== "battery" ? line : {
       ...line, status: "priced", amount_minor: p.offer.upfront_amount_minor,
       source: `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${Data.RESEARCHED_ON})`,
@@ -471,7 +471,7 @@
       const eligible = products.filter(p => !p.reason)
         .sort((a, b) => distance(a) - distance(b) || a.capacity - b.capacity);
       included = eligible.slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
-      const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast" };
+      const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast", circuit: "Stekker, eigen groep" };
       pickBody.replaceChildren(...[
         h("p", {}, included.length
           ? `We rekenen ${eligible.length > included.length ? `de ${included.length} van de ${eligible.length}` : `alle ${included.length}`} ` +
@@ -484,7 +484,7 @@
           "Heb je een offerte, of wil je een accu zonder gepubliceerde prijs meenemen? Gebruik ", link("Zelf doorrekenen", "#/zelf"), "."),
         included.length ? group("included", `Bekijk de ${included.length} accu’s die we doorrekenen`,
           table(["Accu", "Soort", "Bruikbaar", "Ontladen (AC)", "Prijs incl. btw", "Zinvol bereik"], included.map(p => [
-            p.name, soort[p.kind] || "Onbekend", `${n(p.capacity, 1)} kWh`, `${n(p.dischargeKw, 1)} kW`,
+            p.name, soort[p.circuit ? "circuit" : p.kind] || "Onbekend", `${n(p.capacity, 1)} kWh`, `${n(p.dischargeKw, 1)} kW`,
             h("span", {}, external(money(p.offer.upfront_amount_minor / 100, { decimals: 0 }), p.offer.source_url),
               p.offer.includes_installation === false ? " excl. installatie" : ""),
             position(p)]), { caption: "Accu’s in de berekening", className: "product-table" })) : null,

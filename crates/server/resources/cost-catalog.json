@@ -14,6 +14,11 @@
       "note": "Voorbeeld van een aanbieder: basisinstallatie vanaf €1349 incl. btw, uitgebreid vanaf €2049; maatwerk en meterkast zijn apart. Dit is geen algemene marktprijs of offerte voor een specifiek merk."
     },
     {
+      "title": "Homedeal: kosten elektriciteit aanleggen",
+      "url": "https://homedeal.nl/elektricien/elektriciteit-aanleggen-kosten/",
+      "note": "Richtprijs voor een extra groep met aansluiting: €280 incl. materiaal, montage en btw. Gebruikt voor een stekkeraccu op een eigen groep; geen offerte."
+    },
+    {
       "title": "Liander: eenmalige tarieven 2026, revisie 1.1",
       "url": "https://www.liander.nl/-/media/files/tarieven/consument/2026/eenmalige-tarieven-stroom-2026-v11.pdf",
       "note": "Voorbeeld: 1-fase naar 3-fase vanaf €368,77 incl. btw, met voorwaarden. Geen tarief voor iedere aansluiting of toekomstig jaar."
@@ -224,6 +229,12 @@
         "label": "Meterkast geschikt maken voor 3-fase bij een batterij (vanaf-prijs)",
         "detail": "Groepenkast vervangen kost vanaf € 919 (6 groepen); alleen nodig bij een verouderde kast en hier niet meegeteld.",
         "url": "https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/"
+      },
+      "dedicated_circuit": {
+        "amount_eur": 280,
+        "label": "Extra groep met aansluiting in de meterkast (richtprijs)",
+        "detail": "Homedeal-prijstabel (18 juni 2026, geraadpleegd 25 oktober 2026): ‘Aanbrengen extra groep met aansluiting’, inclusief materiaal, montage en btw. Een indicatie, geen offerte: een volle of verouderde groepenkast komt erbij.",
+        "url": "https://homedeal.nl/elektricien/elektriciteit-aanleggen-kosten/"
       },
       "grid_one_to_three_phase": {
         "amount_eur": 368.77,

@@ -255,7 +255,8 @@ window.Scenario = (() => {
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   function fillEstimates(option, costCatalog, described) {
     const lines = Data.estimateCosts(costCatalog,
-      { kind: option.kind, manufacturer: described?.config.manufacturer_name ?? "", phases: described?.phases ?? null,
+      { kind: option.kind, circuit: described?.circuit === true, manufacturer: described?.config.manufacturer_name ?? "",
+        phases: described?.phases ?? null,
         inverterIncluded: described ? described.inverterIncluded : option.kind === "plug" },
       {});
     if (described?.offer) Object.assign(lines.find(l => l.category === "battery"),

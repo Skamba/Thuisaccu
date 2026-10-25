@@ -120,6 +120,43 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
             .iter()
             .any(|n| n["configuration_id"] == enphase && n["metric_key"] == "apparent_power_va")
     );
+    // De vijfde set hangt alleen bronclaims aan bestaande uitvoeringen (het aantal hierboven
+    // blijft gelijk): gemeten rendement en sluimerverbruik, en het laadvermogen op een
+    // bestaande groep naast de 2400 W uit de specificatielijst.
+    let numbers = data["numbers"].as_array().unwrap();
+    let fifth: Vec<_> = numbers
+        .iter()
+        .filter(|n| {
+            n["entry_conditions"]
+                .as_str()
+                .unwrap()
+                .starts_with("Onderzocht 2026-10-25.")
+                && ["round_trip_efficiency_pct", "standby_power_w"]
+                    .contains(&n["metric_key"].as_str().unwrap())
+        })
+        .collect();
+    assert!(fifth.iter().all(|n| n["review_status"] == "unreviewed"));
+    assert!(fifth.iter().any(|n| n["configuration_id"] == enphase
+        && n["boundary"] == "ac_ac"
+        && n["value"] == 90.0));
+    let indevolt = data["configurations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "1 powermodule + 2 × PFA4000 · 10 kWh · stekker 800 W")
+        .unwrap()["id"]
+        .clone();
+    let charge: Vec<_> = numbers
+        .iter()
+        .filter(|n| {
+            n["configuration_id"] == indevolt && n["metric_key"] == "continuous_charge_power_w"
+        })
+        .map(|n| n["value"].as_f64().unwrap())
+        .collect();
+    assert!(charge.contains(&800.0) && charge.contains(&2400.0));
+    assert!(numbers.iter().any(|n| n["configuration_id"] == indevolt
+        && n["metric_key"] == "round_trip_efficiency_pct"
+        && n["value"] == 80.5));
 }
 
 fn candidate() -> Value {

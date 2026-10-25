@@ -1,0 +1,782 @@
+[
+ {
+  "manufacturer": "Indevolt",
+  "product": "PowerFlex 2000 Eco",
+  "model_code": "PG-2000B1/PG-2400B1",
+  "product_kind": "battery_system",
+  "configuration": "1 powermodule + 2 × PFA4000 · 10 kWh · stekker 800 W",
+  "market": "Nederland; onafhankelijke test (Energienerds)",
+  "source_url": "https://energienerds.nl/index.php/2025/12/23/indevolt-powerflex-2000-eco-review",
+  "source_title": "Indevolt PowerFlex 2000 ECO Review: Test, Specs & Ervaringen",
+  "source_kind": "independent_test",
+  "locator": "Secties over de round-trip-efficiëntie en het stand-byverbruik, vergelijkingstabel stand-by en installatietips",
+  "document_revision": "laatste actualisatie 2026-09-23",
+  "published_on": "2025-12-23",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting van Energienerds aan één opstelling. De stand-byberekening gaat uit van 4 kWh; volgens FWD (11 juli 2026) is dat een powermodule met één uitbreiding van 2 kWh, niet de uitvoering van 10 kWh. Instellingen: ‘Diepe Standby’ aan, bypass uit. Volgens de review laadt de PowerFlex 2000 tot 2400 W met twee extra batterijen en tot 1000 W zonder; meer dan 800 W alleen op een eigen groep. De benchmarkpagina van Energienerds (11 oktober 2026, https://energienerds.nl/index.php/2026/10/11/keuzehulp-thuisbatterij-rendement-rte) definieert RTE als ontladen AC-energie gedeeld door geladen AC-energie, gemeten aan de AC-ingang en -uitgang, over een volledige cyclus en zonder stand-byverbruik buiten de cyclus; daarom vastgelegd als AC → AC.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 80.5,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "Gemeten RTE 80,5% (laden en ontladen op 800 W)",
+    "conditions": "Laden en ontladen op 800 W."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 9.3,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "Stand-by via het net 1 W; via de eigen batterijen 8,3 W (5% in 24 uur bij 4 kWh)",
+    "conditions": "Som van beide, voor dit project opgeteld: wat de accu zelf verliest moet later weer worden bijgeladen. Gemeten bij 4 kWh; bij 10 kWh kan het verlies via de accu anders zijn."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Indevolt",
+  "product": "PowerFlex 2000 Eco",
+  "model_code": "PG-2000B1/PG-2400B1",
+  "product_kind": "battery_system",
+  "configuration": "1 powermodule + 2 × PFA4000 · 10 kWh · eigen groep 2,4 kW",
+  "market": "Nederland; onafhankelijke test (Energienerds)",
+  "source_url": "https://energienerds.nl/index.php/2025/12/23/indevolt-powerflex-2000-eco-review",
+  "source_title": "Indevolt PowerFlex 2000 ECO Review: Test, Specs & Ervaringen",
+  "source_kind": "independent_test",
+  "locator": "Secties over de round-trip-efficiëntie en het stand-byverbruik, vergelijkingstabel stand-by en installatietips",
+  "document_revision": "laatste actualisatie 2026-09-23",
+  "published_on": "2025-12-23",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting van Energienerds aan één opstelling. De stand-byberekening gaat uit van 4 kWh; volgens FWD (11 juli 2026) is dat een powermodule met één uitbreiding van 2 kWh, niet de uitvoering van 10 kWh. Instellingen: ‘Diepe Standby’ aan, bypass uit. Volgens de review laadt de PowerFlex 2000 tot 2400 W met twee extra batterijen en tot 1000 W zonder; meer dan 800 W alleen op een eigen groep. De benchmarkpagina van Energienerds (11 oktober 2026, https://energienerds.nl/index.php/2026/10/11/keuzehulp-thuisbatterij-rendement-rte) definieert RTE als ontladen AC-energie gedeeld door geladen AC-energie, gemeten aan de AC-ingang en -uitgang, over een volledige cyclus en zonder stand-byverbruik buiten de cyclus; daarom vastgelegd als AC → AC. Niet gemeten bij 2,4 kW; voor deze uitvoering is de meting bij 800 W de best beschikbare.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 80.5,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "Gemeten RTE 80,5% (laden en ontladen op 800 W)",
+    "conditions": "Laden en ontladen op 800 W."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 9.3,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "Stand-by via het net 1 W; via de eigen batterijen 8,3 W (5% in 24 uur bij 4 kWh)",
+    "conditions": "Som van beide, voor dit project opgeteld: wat de accu zelf verliest moet later weer worden bijgeladen. Gemeten bij 4 kWh; bij 10 kWh kan het verlies via de accu anders zijn."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Indevolt",
+  "product": "PowerFlex 2000 Eco",
+  "model_code": "PG-2000B1/PG-2400B1",
+  "product_kind": "battery_system",
+  "configuration": "1 powermodule + 2 × PFA4000 · 10 kWh · stekker 800 W",
+  "market": "Nederland; productpagina importeur",
+  "source_url": "https://thuisbatterij.nl/winkel/indevolt-powerflex-2000/",
+  "source_title": "Thuisbatterij.nl: Indevolt PowerFlex 2000",
+  "source_kind": "product_page",
+  "locator": "Productbeschrijving (‘op een eigen groep laad en ontlaad je met 2000 Watt, op een bestaande groep met 800 Watt’)",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-25. Dezelfde pagina noemt in de specificatielijst ‘Opladen: 2.400 watt’ en ‘Ontladen eigen groep: 2.400 watt’; die claims staan in de derde set en blijven naast deze staan. Volgens de handleiding is 2400 W pas mogelijk na inspectie van de installatie door een gekwalificeerde elektricien en een aanvraag in de INDEVOLT-app.",
+  "numbers": [
+   {
+    "metric": "continuous_charge_power_w",
+    "qualifier": "exact",
+    "value": 800,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "op een bestaande groep met 800 Watt",
+    "conditions": "Laden en ontladen op een bestaande groep."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Indevolt",
+  "product": "PowerFlex 2000 Eco",
+  "model_code": "PG-2000B1/PG-2400B1",
+  "product_kind": "battery_system",
+  "configuration": "1 powermodule + 2 × PFA4000 · 10 kWh · eigen groep 2,4 kW",
+  "market": "Nederland; productpagina importeur",
+  "source_url": "https://thuisbatterij.nl/winkel/indevolt-powerflex-2000/",
+  "source_title": "Thuisbatterij.nl: Indevolt PowerFlex 2000",
+  "source_kind": "product_page",
+  "locator": "Productbeschrijving (‘op een eigen groep laad en ontlaad je met 2000 Watt, op een bestaande groep met 800 Watt’)",
+  "document_revision": null,
+  "published_on": null,
+  "conditions": "Onderzocht 2026-10-25. Dezelfde pagina noemt in de specificatielijst ‘Opladen: 2.400 watt’ en ‘Ontladen eigen groep: 2.400 watt’; die claims staan in de derde set en blijven naast deze staan. Volgens de handleiding is 2400 W pas mogelijk na inspectie van de installatie door een gekwalificeerde elektricien en een aanvraag in de INDEVOLT-app.",
+  "numbers": [
+   {
+    "metric": "continuous_charge_power_w",
+    "qualifier": "exact",
+    "value": 2000,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "op een eigen groep laad en ontlaad je met 2000 Watt",
+    "conditions": ""
+   },
+   {
+    "metric": "continuous_discharge_power_w",
+    "qualifier": "exact",
+    "value": 2000,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "op een eigen groep laad en ontlaad je met 2000 Watt",
+    "conditions": ""
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Indevolt",
+  "product": "SolidFlex 3000 AC",
+  "model_code": "SolidFlex 3000 AC",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 1,8 kWh · stekker 3 kW",
+  "market": "Nederland; onafhankelijke test (Energienerds)",
+  "source_url": "https://energienerds.nl/index.php/2026/09/08/indevolt-solidflex-3000-ac-review",
+  "source_title": "Indevolt SolidFlex 3000 AC Review: Semi-Solid Stekkerbatterij",
+  "source_kind": "independent_test",
+  "locator": "Secties 11.2 (testresultaten 800 W), 11.4 (2.400 W en 1.800 W) en 13 (stand-byverbruik)",
+  "document_revision": null,
+  "published_on": "2026-09-08",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting van Energienerds aan één powermodule (1792 Wh) met een PFA4000-uitbreiding; welke variant (PG-800A1, PG-2500A1 of PG-3000A1) staat er niet bij. Bij lage vermogens voor nul-op-de-meter noemt het artikel 72–76% zonder vermogen of methode; niet overgenomen. De benchmarkpagina van Energienerds (11 oktober 2026, https://energienerds.nl/index.php/2026/10/11/keuzehulp-thuisbatterij-rendement-rte) definieert RTE als ontladen AC-energie gedeeld door geladen AC-energie, gemeten aan de AC-ingang en -uitgang, over een volledige cyclus en zonder stand-byverbruik buiten de cyclus; daarom vastgelegd als AC → AC.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 80.5,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "Gemiddeld 80,5% (80,5 / 80,4 / 80,6%)",
+    "conditions": "Drie volledige cycli, laden van 10 naar 100% en ontladen van 100 naar 10%, beide op 800 W."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 82.8,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "1.800 W: 82,8%",
+    "conditions": "Per cyclus en methode niet vermeld; volgens het artikel is een langere meetperiode nodig."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 81.3,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "2.400 W: 81,3%",
+    "conditions": "Per cyclus en methode niet vermeld; volgens het artikel is een langere meetperiode nodig."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "exact",
+    "value": 8.51,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "Via het net 6,58 W; via de batterij 1,93 W; samen 8,51 W",
+    "conditions": "Netzijde met een slimme stekker op de AC-kabel, off-gridpoort uit; accuzijde uit de tijd per procentpunt laadtoestand."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Marstek",
+  "product": "Venus E Gen 3.0",
+  "model_code": "Venus E 3.0",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 5,12 kWh · stekker",
+  "market": "Zwitserland; onafhankelijke test (Technikblog)",
+  "source_url": "https://technikblog.ch/2026/03/marstek-venus-e-3-0-roundtrip-effizienz-gemessen-so-effizient-ist-der-speicher-wirklich/",
+  "source_title": "Technikblog: Marstek Venus E 3.0, Roundtrip-Effizienz gemessen",
+  "source_kind": "independent_test",
+  "locator": "Meetopstelling, energiebalans en stand-byverbruik",
+  "document_revision": null,
+  "published_on": "2026-03-19",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan twee units op een eigen onderverdeling met aparte zekeringen; een aparte smart-me-meter registreert alleen afname (laden) en levering (ontladen) van beide accu's. Ongeveer 75 uur (16 maart 2026 07:00 tot 19 maart 2026 09:56), drie volledige cycli, start en eind leeg. Inclusief stand-by 80% (18,34 kWh uit, 22,92 kWh in); daarvan ongeveer 1,2 kWh stand-by en 3,4 kWh omzetverlies. Het rendement inclusief stand-by is niet als round-trip vastgelegd, omdat het model het sluimerverbruik apart rekent.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 84,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "ca. 84 % reine Wandlungseffizienz (80 % inklusive Standby)",
+    "conditions": "Zonder stand-by; twee units samen."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 8,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "7,5 bis 8 W pro Gerät im Leerlauf",
+    "conditions": "Per unit; samen ongeveer 15,5 W."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Marstek",
+  "product": "Venus E Gen 3.0",
+  "model_code": "Venus E 3.0",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 5,12 kWh · stekker",
+  "market": "België; onafhankelijke test (Test-Aankoop)",
+  "source_url": "https://www.test-aankoop.be/woning-energie/hernieuwbare-energie/nieuws/beste-plug-and-play-thuisbatterijen",
+  "source_title": "Test-Aankoop: beste plug-and-play thuisbatterijen",
+  "source_kind": "independent_test",
+  "locator": "Nieuwsbericht over de test van acht stekkerbatterijen, passages per merk",
+  "document_revision": null,
+  "published_on": "2026-08-26",
+  "conditions": "Onderzocht 2026-10-25. Labtest van acht producten van zeven merken bij 23 °C en 5 °C. Per model noemt het bericht geen rendementspercentage. Over alle acht: bij 23 °C gemiddeld 82,4% (laagste 77,1%), bij 5 °C gemiddeld 78,1% (72,7–81,4%); stand-by van minder dan 1 W tot 36 W.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "greater_than",
+    "value": 80,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "zeer goed rendement boven de 80 %",
+    "conditions": "Gevoeliger voor kou dan de Zendure."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "exact",
+    "value": 0.54,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "In stand-by verbruikt ze slechts 0,54 watt",
+    "conditions": ""
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Zendure",
+  "product": "SolarFlow 2400 AC+",
+  "model_code": "SolarFlow 2400 AC+",
+  "product_kind": "battery_system",
+  "configuration": "Basisunit · 2,4 kWh · stekker",
+  "market": "België; onafhankelijke test (Test-Aankoop)",
+  "source_url": "https://www.test-aankoop.be/woning-energie/hernieuwbare-energie/nieuws/beste-plug-and-play-thuisbatterijen",
+  "source_title": "Test-Aankoop: beste plug-and-play thuisbatterijen",
+  "source_kind": "independent_test",
+  "locator": "Nieuwsbericht over de test van acht stekkerbatterijen, passages per merk",
+  "document_revision": null,
+  "published_on": "2026-08-26",
+  "conditions": "Onderzocht 2026-10-25. Labtest van acht producten van zeven merken bij 23 °C en 5 °C. Per model noemt het bericht geen rendementspercentage. Over alle acht: bij 23 °C gemiddeld 82,4% (laagste 77,1%), bij 5 °C gemiddeld 78,1% (72,7–81,4%); stand-by van minder dan 1 W tot 36 W.",
+  "numbers": [
+   {
+    "metric": "standby_power_w",
+    "qualifier": "exact",
+    "value": 4.6,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "Het verbruik in stand-by is 4,6 watt",
+    "conditions": "Volgens het bericht het beste rendement van de acht bij 23 °C en bij 5 °C, zonder percentage."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Marstek",
+  "product": "Venus E Mini",
+  "model_code": "Venus E Mini",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (Energienerds.de)",
+  "source_url": "https://energienerds.de/review-marstek-venus-e-mini/",
+  "source_title": "Energienerds.de: Review Marstek Venus E Mini",
+  "source_kind": "independent_test",
+  "locator": "Secties 11 (‘Praxistest: Round-Trip-Effizienz’), 13 (‘Praxistest: Standby-Verbrauch’) en vergelijkingstabel in sectie 14",
+  "document_revision": null,
+  "published_on": "2026-09-07",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar. Laden en ontladen op 800 W met een HomeWizard Smart Plug, vier cycli direct na elkaar (81,1 / 81,8 / 82,2 / 81,5%). Stand-by doorlopend gemeten met een HomeWizard-kWh-meter; de off-gridaansluiting blijft altijd actief.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 81.7,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "Mittelwert 81,7 % (ca. 82 %)",
+    "conditions": "Laden en ontladen op 800 W, vier cycli."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 7,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "dauerhaft etwa 7 Watt aus dem Stromnetz",
+    "conditions": "Ongeveer 6 W bij 10% restcapaciteit, ongeveer 8 W bij een vollere accu; via de accu 0 W volgens de vergelijkingstabel."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Marstek",
+  "product": "Venus E Mini",
+  "model_code": "Venus E Mini",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (smartzone.de)",
+  "source_url": "https://www.smartzone.de/marstek-venus-e-mini-balkonspeicher-test/",
+  "source_title": "smartzone.de: Marstek Venus E Mini im Test",
+  "source_kind": "independent_test",
+  "locator": "Tabel met rendement per ontlaadvermogen, alinea's over stand-by en zelfontlading",
+  "document_revision": null,
+  "published_on": "2026-09-29",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar: volledig geladen, ontladen op 200, 400, 800 en 1500 W, na elke ronde opnieuw geladen op 1000 W (78 / 80 / 81 / 77%); gemiddeld 1684 Wh bruikbaar uit 2136 Wh geladen. Meetmiddel en meetgrens worden niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 81,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "800 W: 1.694 Wh entladen, 2.100 Wh geladen, 81 %",
+    "conditions": "Ontladen op 800 W, laden op 1000 W."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 79,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "79% Gesamteffizienz",
+    "conditions": "Gemiddelde over de vier ontlaadvermogens."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 14,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "Gesamt-Standby-Verbrauch bei rund 14W",
+    "conditions": "Gemiddeld 8 W directe netafname plus zelfontlading van 7 tot 8% in 24 uur met netverbinding, door de auteur omgerekend naar ongeveer 6 W."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Marstek",
+  "product": "Venus E Mini",
+  "model_code": "Venus E Mini",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2 kWh · eigen groep 1,5 kW",
+  "market": "Duitsland; onafhankelijke test (smartzone.de)",
+  "source_url": "https://www.smartzone.de/marstek-venus-e-mini-balkonspeicher-test/",
+  "source_title": "smartzone.de: Marstek Venus E Mini im Test",
+  "source_kind": "independent_test",
+  "locator": "Tabel met rendement per ontlaadvermogen, alinea's over stand-by en zelfontlading",
+  "document_revision": null,
+  "published_on": "2026-09-29",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar: volledig geladen, ontladen op 200, 400, 800 en 1500 W, na elke ronde opnieuw geladen op 1000 W (78 / 80 / 81 / 77%); gemiddeld 1684 Wh bruikbaar uit 2136 Wh geladen. Meetmiddel en meetgrens worden niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 77,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "1.500 W: 1.600 Wh entladen, 2.068 Wh geladen, 77 %",
+    "conditions": "Ontladen op 1500 W, laden op 1000 W."
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 79,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "79% Gesamteffizienz",
+    "conditions": "Gemiddelde over de vier ontlaadvermogens."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 14,
+    "upper_value": null,
+    "boundary": "system_ac",
+    "reported_value": "Gesamt-Standby-Verbrauch bei rund 14W",
+    "conditions": "Gemiddeld 8 W directe netafname plus zelfontlading van 7 tot 8% in 24 uur met netverbinding, door de auteur omgerekend naar ongeveer 6 W."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank 3 E2700 Pro",
+  "model_code": "SOLIX Solarbank 3 E2700 Pro",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2,69 kWh · stekker 1,2 kW",
+  "market": "Duitsland; onafhankelijke test (Notebookcheck)",
+  "source_url": "https://www.notebookcheck.com/Maechtiges-Balkonkraftwerk-System-mit-KI-Anker-Solix-Solarbank-3-Pro-im-Praxis-Test.1030280.0.html",
+  "source_title": "Notebookcheck: Anker Solix Solarbank 3 Pro im Praxis-Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea's over ontladen, laden via AC en rendement",
+  "document_revision": "bijgewerkt 2026-10-05",
+  "published_on": "2025-06-11",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar: laden via AC tot 1200 W, 2651 Wh tot de ingestelde grens; ontladen op 400 W, 2127 Wh tot 10%. Meetmiddel en meetgrens worden niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 80,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "rund 80 Prozent der zugeführten Energie",
+    "conditions": "Bij de geteste vermogens."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank 4 E5000 Pro",
+  "model_code": "AE103",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 5 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (PC-WELT)",
+  "source_url": "https://www.pcwelt.de/article/3205257/anker-solix-solarbank-4-e5000-pro-test.html",
+  "source_title": "PC-WELT: Anker Solix Solarbank 4 E5000 Pro im Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea over ‘Rundlaufverluste’",
+  "document_revision": null,
+  "published_on": "2026-08-05",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting: energie uit de netaansluiting vergeleken met de energie uit het off-gridstopcontact, bij gelijke laadtoestand aan begin en eind. Inclusief omzetting en eigen verbruik tijdens laden en ontladen; rustperioden ertussen niet meegeteld. Het vermogen wordt niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "range",
+    "value": 80,
+    "upper_value": 85,
+    "boundary": "ac_ac",
+    "reported_value": "Rundlaufverluste zwischen 15 und 20 Prozent",
+    "conditions": "Verlies 15–20% bij volledige AC-cycli, vastgelegd als 80–85% heen en terug; de keuzehulp rekent met de ondergrens."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank 4 E5000 Pro",
+  "model_code": "AE103",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 5 kWh · eigen groep 2,5 kW",
+  "market": "Duitsland; onafhankelijke test (PC-WELT)",
+  "source_url": "https://www.pcwelt.de/article/3205257/anker-solix-solarbank-4-e5000-pro-test.html",
+  "source_title": "PC-WELT: Anker Solix Solarbank 4 E5000 Pro im Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea over ‘Rundlaufverluste’",
+  "document_revision": null,
+  "published_on": "2026-08-05",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting: energie uit de netaansluiting vergeleken met de energie uit het off-gridstopcontact, bij gelijke laadtoestand aan begin en eind. Inclusief omzetting en eigen verbruik tijdens laden en ontladen; rustperioden ertussen niet meegeteld. Het vermogen wordt niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "range",
+    "value": 80,
+    "upper_value": 85,
+    "boundary": "ac_ac",
+    "reported_value": "Rundlaufverluste zwischen 15 und 20 Prozent",
+    "conditions": "Verlies 15–20% bij volledige AC-cycli, vastgelegd als 80–85% heen en terug; de keuzehulp rekent met de ondergrens."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (smartzone.de)",
+  "source_url": "https://www.smartzone.de/anker-solix-solarbank-max-ac-im-test/",
+  "source_title": "smartzone.de: Anker Solix Solarbank Max AC im Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea's over rendement, netafname en eigen verbruik",
+  "document_revision": null,
+  "published_on": "2026-09-22",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting over twee weken (46,6 kWh geladen, 44,7 kWh ontladen), waarden via Modbus TCP in Home Assistant met de geijkte huismeter als controle. Volle lading: 7730 Wh uit het net; bruikbaar 6130 Wh. 78% alleen bij laden en ontladen op vol vermogen; welke stand (800 W of eigen groep) wordt niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 80,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "80% Gesamteffizienz",
+    "conditions": ""
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "range",
+    "value": 78,
+    "upper_value": 83,
+    "boundary": "unspecified",
+    "reported_value": "Round-Trip-Wirkungsgrad von 78-83%",
+    "conditions": "78% bij laden en ontladen op vol vermogen."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "exact",
+    "value": 7,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "Eigenverbrauch 7 W",
+    "conditions": "Meetmethode niet beschreven."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Anker",
+  "product": "SOLIX Solarbank Max AC",
+  "model_code": "A17E2",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 7 kWh · eigen groep 3,5 kW",
+  "market": "Duitsland; onafhankelijke test (smartzone.de)",
+  "source_url": "https://www.smartzone.de/anker-solix-solarbank-max-ac-im-test/",
+  "source_title": "smartzone.de: Anker Solix Solarbank Max AC im Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea's over rendement, netafname en eigen verbruik",
+  "document_revision": null,
+  "published_on": "2026-09-22",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting over twee weken (46,6 kWh geladen, 44,7 kWh ontladen), waarden via Modbus TCP in Home Assistant met de geijkte huismeter als controle. Volle lading: 7730 Wh uit het net; bruikbaar 6130 Wh. 78% alleen bij laden en ontladen op vol vermogen; welke stand (800 W of eigen groep) wordt niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 80,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "80% Gesamteffizienz",
+    "conditions": ""
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "range",
+    "value": 78,
+    "upper_value": 83,
+    "boundary": "unspecified",
+    "reported_value": "Round-Trip-Wirkungsgrad von 78-83%",
+    "conditions": "78% bij laden en ontladen op vol vermogen."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "exact",
+    "value": 7,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "Eigenverbrauch 7 W",
+    "conditions": "Meetmethode niet beschreven."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Zendure",
+  "product": "SolarFlow 2400 Pro",
+  "model_code": "ZDSF2400P",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2,4 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (smartzone.de)",
+  "source_url": "https://www.smartzone.de/zendure-solarflow-2400-pro-im-test-das-laeuft-und-laeuft-und-laeuft/",
+  "source_title": "smartzone.de: Zendure Solarflow 2400 Pro im Test",
+  "source_kind": "independent_test",
+  "locator": "Alinea's over netafname, bruikbare energie, verliezen en stand-by",
+  "document_revision": null,
+  "published_on": "2026-03-21",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar: volle lading 2600 Wh uit het huisnet, gemiddeld 2255 Wh uit de accu tot 5% restcapaciteit; ontladen op 200, 400, 800 en 2400 W en dynamisch. Meetmiddel en meetgrens worden niet genoemd. De twee stand-bywaarden spreken elkaar tegen; het artikel verklaart dat niet.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 86.7,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "2.600Wh aus dem Stromnetz, 2.255Wh aus dem Akku; Verluste etwas mehr als 13%",
+    "conditions": "Nagerekend: 2255 / 2600 = 86,7%."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "at_most",
+    "value": 0.3,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "0,1W-0,3W",
+    "conditions": "Meetmethode niet beschreven."
+   },
+   {
+    "metric": "standby_power_w",
+    "qualifier": "approximate",
+    "value": 3,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "rund 3W Stand-by-Verbrauch",
+    "conditions": "Zonder openbaar net 24 uur in stand-by: de accu zakt ongeveer 3% (ongeveer 72 Wh)."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Zendure",
+  "product": "SolarFlow 1600 AC+",
+  "model_code": "SolarFlow 1600 AC+",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 1,92 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (techtest.org)",
+  "source_url": "https://techtest.org/zendure-solarflow-1600-ac-test-ac-speicher-ab-unter-500-e-mit-bis-zu-1152-kwh/",
+  "source_title": "techtest.org: Zendure SolarFlow 1600 AC+ im Test",
+  "source_kind": "independent_test",
+  "locator": "Sectie over efficiëntie en vergelijkingstabel",
+  "document_revision": null,
+  "published_on": "2026-07-17",
+  "conditions": "Onderzocht 2026-10-25. Alleen een gemiddelde; meetmiddel, meetgrens en vermogens worden niet genoemd.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 85.5,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "Im Schnitt lag die Effizienz bei 85,5 %",
+    "conditions": ""
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Sigenergy",
+  "product": "SigenMate 2700 Ultra",
+  "model_code": "SigenMate 2700 Ultra",
+  "product_kind": "battery_system",
+  "configuration": "1 unit · 2,69 kWh · stekker 800 W",
+  "market": "Duitsland; onafhankelijke test (Notebookcheck)",
+  "source_url": "https://www.notebookcheck.net/Balcony-solar-storage-system-with-two-backup-power-outlets-SigenMate-2700-Ultra-review.1416493.0.html",
+  "source_title": "Notebookcheck: SigenMate 2700 Ultra review",
+  "source_kind": "independent_test",
+  "locator": "Alinea's over laden via AC, ontladen en rendement",
+  "document_revision": "bijgewerkt 2026-10-19",
+  "published_on": "2026-10-05",
+  "conditions": "Onderzocht 2026-10-25. Eigen meting aan één exemplaar: van 0 naar 100% laden tot 1,4 kW, ongeveer 3,1 kWh door de meter; ontladen op 400 W, ruim 2500 Wh. Volgens het artikel komt ongeveer 86% in de accu en is 93% bij ontladen bruikbaar. De meetopstelling wordt niet beschreven.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "approximate",
+    "value": 80,
+    "upper_value": null,
+    "boundary": "unspecified",
+    "reported_value": "a good 80 percent of the energy put in",
+    "conditions": "Bij een lading voor een dynamisch tarief en later ontladen."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ },
+ {
+  "manufacturer": "Enphase",
+  "product": "IQ Battery 5P with FlexPhase",
+  "model_code": "IQBATTERY-5P-3P-INT",
+  "product_kind": "battery_system",
+  "configuration": "FlexPhase · 1 fase · maximaal 3,84 kVA",
+  "market": "EMEA; kopie bij PluginSolar (VK)",
+  "source_url": "https://www.pluginsolar.co.uk/wp-content/uploads/2026/09/Enphase-IQ-Battery-5p-with-Flexphase.pdf",
+  "source_title": "Enphase IQ Battery 5P with FlexPhase datasheet (EMEA)",
+  "source_kind": "datasheet",
+  "locator": "Pagina 2, tabel ‘Output’, regel ‘AC round-trip efficiency’; pagina 3, tabel ‘Battery module’, regel ‘DC round-trip efficiency’ met voetnoot 12",
+  "document_revision": "DSH-00477-7.0-EN-2026-05-06",
+  "published_on": "2026-05-06",
+  "conditions": "Onderzocht 2026-10-25. Fabrikantclaim, geen onafhankelijke meting. Bestelcode IQBATTERY-5P-3P-INT. Bij het AC-rendement noemt deze revisie geen meetvermogen of temperatuur. Geen sluimerverbruik vermeld.",
+  "numbers": [
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 90,
+    "upper_value": null,
+    "boundary": "ac_ac",
+    "reported_value": "AC round-trip efficiency 90%",
+    "conditions": ""
+   },
+   {
+    "metric": "round_trip_efficiency_pct",
+    "qualifier": "exact",
+    "value": 96,
+    "upper_value": null,
+    "boundary": "battery_dc",
+    "reported_value": "DC round-trip efficiency 96 % (at the beginning of life)",
+    "conditions": "Accumodule, aan het begin van de levensduur."
+   }
+  ],
+  "features": [],
+  "texts": [],
+  "product_warranty_months": null,
+  "price": null
+ }
+]
