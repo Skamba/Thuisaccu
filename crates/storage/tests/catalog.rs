@@ -1,6 +1,16 @@
-use sqlx::Row;
 use thuisaccu_core::products::*;
 use thuisaccu_storage::{Catalog, StorageError};
+
+fn scalar<T: rusqlite::types::FromSql>(catalog: &Catalog, sql: &str) -> T {
+    catalog
+        .connection()
+        .query_row(sql, [], |row| row.get(0))
+        .unwrap()
+}
+
+fn execute(catalog: &Catalog, sql: &str, params: impl rusqlite::Params) -> rusqlite::Result<usize> {
+    catalog.connection().execute(sql, params)
+}
 
 // Alle producten en waarden in deze tests zijn fictieve fixtures.
 async fn setup(catalog: &Catalog) -> (i64, i64, i64) {
@@ -106,16 +116,12 @@ async fn file_database_survives_reopening_and_migrations_are_not_reapplied() {
             data: observation
         }]
     );
-    let applied: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success = 1")
-            .fetch_one(reopened.pool())
-            .await
-            .unwrap();
+    let applied: i64 = scalar(
+        &reopened,
+        "SELECT count(*) FROM _sqlx_migrations WHERE success = 1",
+    );
     assert_eq!(applied, 3);
-    let journal: String = sqlx::query_scalar("PRAGMA journal_mode")
-        .fetch_one(reopened.pool())
-        .await
-        .unwrap();
+    let journal: String = scalar(&reopened, "PRAGMA journal_mode");
     assert_eq!(journal, "wal");
     reopened.close().await;
 }
@@ -145,17 +151,22 @@ async fn conflicting_sources_and_measurement_boundaries_remain_distinct() {
         .await
         .unwrap();
     assert_eq!(records.len(), 3);
-    let rows = sqlx::query("SELECT document_revision, source_url, review_status, market, unit FROM numeric_research ORDER BY id")
-        .fetch_all(catalog.pool()).await.unwrap();
-    assert_eq!(rows[0].get::<String, _>("document_revision"), "1");
-    assert_eq!(rows[1].get::<String, _>("document_revision"), "2");
-    assert_eq!(rows[0].get::<String, _>("review_status"), "unreviewed");
-    assert_eq!(rows[1].get::<String, _>("market"), "Example market");
-    assert_eq!(rows[0].get::<String, _>("unit"), "%");
-    assert_eq!(
-        rows[0].get::<String, _>("source_url"),
-        "https://example.invalid/battery.pdf"
-    );
+    let rows: Vec<[String; 5]> = catalog
+        .connection()
+        .prepare("SELECT document_revision, source_url, review_status, market, unit FROM numeric_research ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok([row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?])
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(rows[0][0], "1");
+    assert_eq!(rows[1][0], "2");
+    assert_eq!(rows[0][2], "unreviewed");
+    assert_eq!(rows[1][3], "Example market");
+    assert_eq!(rows[0][4], "%");
+    assert_eq!(rows[0][1], "https://example.invalid/battery.pdf");
 }
 
 #[tokio::test]
@@ -186,29 +197,15 @@ async fn numeric_constraints_apply_to_inserts_updates_and_raw_sql() {
     }
     observation = number(entry_id);
     let id = catalog.add_numeric_observation(&observation).await.unwrap();
-    assert!(sqlx::query("UPDATE numeric_observations SET metric_key = 'round_trip_efficiency_pct', value = 101 WHERE id = ?")
-        .bind(id).execute(catalog.pool()).await.is_err());
-    assert!(
-        sqlx::query("UPDATE numeric_observations SET metric_key = 'unknown_unit' WHERE id = ?")
-            .bind(id)
-            .execute(catalog.pool())
-            .await
-            .is_err()
-    );
-    assert!(
-        sqlx::query("UPDATE numeric_observations SET value = 'not a number' WHERE id = ?")
-            .bind(id)
-            .execute(catalog.pool())
-            .await
-            .is_err()
-    );
-    assert!(
-        sqlx::query("UPDATE numeric_observations SET test_soc_pct = 101 WHERE id = ?")
-            .bind(id)
-            .execute(catalog.pool())
-            .await
-            .is_err()
-    );
+    for sql in [
+        "UPDATE numeric_observations SET metric_key = 'round_trip_efficiency_pct', value = 101 WHERE id = ?",
+        "UPDATE numeric_observations SET metric_key = 'unknown_unit' WHERE id = ?",
+        "UPDATE numeric_observations SET value = 'not a number' WHERE id = ?",
+        "UPDATE numeric_observations SET test_soc_pct = 101 WHERE id = ?",
+    ] {
+        let error = StorageError::from(execute(&catalog, sql, [id]).unwrap_err());
+        assert!(error.is_constraint_violation(), "{sql}: {error}");
+    }
     // Een temperatuurinterval en een strikte bovengrens blijven representeerbaar.
     observation.metric = NumericMetric::ChargeTemperature;
     observation.qualifier = NumberQualifier::Range;
@@ -228,9 +225,13 @@ async fn numeric_constraints_apply_to_inserts_updates_and_raw_sql() {
 async fn catalog_covers_every_typed_metric_without_arbitrary_keys() {
     let catalog = Catalog::in_memory().await.unwrap();
     let (_, _, entry_id) = setup(&catalog).await;
-    let keys: Vec<String> = sqlx::query_scalar("SELECT key FROM numeric_metrics ORDER BY key")
-        .fetch_all(catalog.pool())
-        .await
+    let keys: Vec<String> = catalog
+        .connection()
+        .prepare("SELECT key FROM numeric_metrics ORDER BY key")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
         .unwrap();
     let mut rust_keys: Vec<_> = NumericMetric::ALL.iter().map(|key| key.as_str()).collect();
     rust_keys.sort_unstable();
@@ -257,8 +258,7 @@ async fn catalog_covers_every_typed_metric_without_arbitrary_keys() {
             .await
             .unwrap();
     }
-    assert!(sqlx::query("INSERT INTO feature_observations (entry_id, metric_key, status) VALUES (?, 'backup', 'conditional')")
-        .bind(entry_id).execute(catalog.pool()).await.is_err());
+    assert!(execute(&catalog, "INSERT INTO feature_observations (entry_id, metric_key, status) VALUES (?, 'backup', 'conditional')", [entry_id]).is_err());
 }
 
 #[tokio::test]
@@ -346,21 +346,27 @@ async fn warranty_compatibility_certification_and_offer_retain_unknowns_and_exac
         additional_costs_notes: "Gateway price not known".into(),
     };
     let offer_id = catalog.add_offer(&offer).await.unwrap();
-    let row = sqlx::query("SELECT * FROM offers WHERE id = ?")
-        .bind(offer_id)
-        .fetch_one(catalog.pool())
-        .await
+    let (amount, inverter, gateway): (i64, Option<bool>, Option<bool>) = catalog
+        .connection()
+        .query_row(
+            "SELECT upfront_amount_minor, includes_inverter, includes_gateway FROM offers WHERE id = ?",
+            [offer_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
         .unwrap();
-    assert_eq!(row.get::<i64, _>("upfront_amount_minor"), 999_999);
-    assert_eq!(row.get::<Option<bool>, _>("includes_inverter"), None);
-    assert_eq!(row.get::<Option<bool>, _>("includes_gateway"), Some(false));
-    let row = sqlx::query("SELECT * FROM warranty_terms WHERE entry_id = ?")
-        .bind(entry_id)
-        .fetch_one(catalog.pool())
-        .await
+    assert_eq!(amount, 999_999);
+    assert_eq!(inverter, None);
+    assert_eq!(gateway, Some(false));
+    let (cycles, throughput): (Option<i64>, i64) = catalog
+        .connection()
+        .query_row(
+            "SELECT cycle_limit, throughput_wh FROM warranty_terms WHERE entry_id = ?",
+            [entry_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
         .unwrap();
-    assert_eq!(row.get::<Option<i64>, _>("cycle_limit"), None);
-    assert_eq!(row.get::<i64, _>("throughput_wh"), 15_000_000);
+    assert_eq!(cycles, None);
+    assert_eq!(throughput, 15_000_000);
     offer.recurring_period = None;
     assert!(catalog.add_offer(&offer).await.is_err());
     offer.recurring_period = Some(BillingPeriod::Month);
@@ -382,18 +388,8 @@ async fn provenance_cannot_be_orphaned_and_review_requires_an_auditable_reviewer
     assert!(catalog.add_entry(&context).await.is_err());
     context.reviewed_at_unix_s = Some(context.observed_at_unix_s);
     catalog.add_entry(&context).await.unwrap();
-    assert!(
-        sqlx::query("DELETE FROM sources")
-            .execute(catalog.pool())
-            .await
-            .is_err()
-    );
-    assert!(
-        sqlx::query("DELETE FROM configurations")
-            .execute(catalog.pool())
-            .await
-            .is_err()
-    );
+    assert!(execute(&catalog, "DELETE FROM sources", []).is_err());
+    assert!(execute(&catalog, "DELETE FROM configurations", []).is_err());
     let mut invalid_source = source("3");
     invalid_source.published_on = Some("2026-02-30".into());
     assert!(catalog.add_source(&invalid_source).await.is_err());
@@ -403,34 +399,95 @@ async fn provenance_cannot_be_orphaned_and_review_requires_an_auditable_reviewer
 }
 
 #[tokio::test]
-async fn every_file_connection_enforces_foreign_keys_and_transactions_can_rollback() {
+async fn file_and_copied_databases_enforce_foreign_keys_and_transactions_can_rollback() {
     let directory = tempfile::tempdir().unwrap();
     let catalog = Catalog::open(directory.path().join("research.sqlite3"))
         .await
         .unwrap();
-    let mut connections = Vec::new();
-    for _ in 0..5 {
-        let mut connection = catalog.pool().acquire().await.unwrap();
-        let enabled: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
-            .fetch_one(&mut *connection)
-            .await
-            .unwrap();
+    let copy = Catalog::from_bytes(&catalog.to_bytes().unwrap())
+        .await
+        .unwrap();
+    for database in [&catalog, &copy] {
+        let enabled: i64 = scalar(database, "PRAGMA foreign_keys");
         assert_eq!(enabled, 1);
-        connections.push(connection);
     }
-    drop(connections);
-    let mut transaction = catalog.pool().begin().await.unwrap();
-    sqlx::query("INSERT INTO manufacturers (name) VALUES ('Rolled back')")
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-    transaction.rollback().await.unwrap();
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM manufacturers")
-        .fetch_one(catalog.pool())
-        .await
-        .unwrap();
+    {
+        let mut connection = catalog.connection();
+        let transaction = connection.transaction().unwrap();
+        transaction
+            .execute(
+                "INSERT INTO manufacturers (name) VALUES ('Rolled back')",
+                [],
+            )
+            .unwrap();
+        transaction.rollback().unwrap();
+    }
+    let count: i64 = scalar(&catalog, "SELECT count(*) FROM manufacturers");
     assert_eq!(count, 0);
     catalog.close().await;
+}
+
+#[tokio::test]
+async fn a_copy_of_a_wal_database_file_opens_in_memory_and_stays_writable() {
+    // Zo leest de browserversie een back-up of het databasebestand van de lokale server.
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("research.sqlite3");
+    let catalog = Catalog::open(&path).await.unwrap();
+    setup(&catalog).await;
+    catalog.close().await;
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(bytes[18..20], [2, 2], "het bestand staat in WAL-modus");
+
+    let copy = Catalog::from_bytes(&bytes).await.unwrap();
+    assert_eq!(copy.list_products().await.unwrap().len(), 1);
+    copy.add_manufacturer(&Manufacturer {
+        name: "Added in the browser".into(),
+        website: None,
+    })
+    .await
+    .unwrap();
+    let again = Catalog::from_bytes(&copy.to_bytes().unwrap())
+        .await
+        .unwrap();
+    let manufacturers: i64 = scalar(&again, "SELECT count(*) FROM manufacturers");
+    assert_eq!(manufacturers, 2);
+    let applied: i64 = scalar(&again, "SELECT count(*) FROM _sqlx_migrations");
+    assert_eq!(applied, 3);
+    assert!(Catalog::from_bytes(b"not a database").await.is_err());
+}
+
+#[tokio::test]
+async fn migration_checksums_match_sqlx_and_changed_or_unknown_migrations_are_refused() {
+    use sha2::{Digest, Sha384};
+
+    let catalog = Catalog::in_memory().await.unwrap();
+    // Eerdere versies (SQLx) legden SHA-384 van het migratiebestand vast; bestaande databases
+    // moeten zonder herhaling of foutmelding blijven openen.
+    let stored: Vec<u8> = scalar(
+        &catalog,
+        "SELECT checksum FROM _sqlx_migrations WHERE version = 1",
+    );
+    let expected = Sha384::digest(include_bytes!("../migrations/0001_research_catalog.sql"));
+    assert_eq!(stored, expected.to_vec());
+
+    execute(
+        &catalog,
+        "UPDATE _sqlx_migrations SET checksum = x'00' WHERE version = 2",
+        [],
+    )
+    .unwrap();
+    let changed = Catalog::from_bytes(&catalog.to_bytes().unwrap()).await;
+    assert!(matches!(changed, Err(StorageError::Migration(_))));
+
+    let catalog = Catalog::in_memory().await.unwrap();
+    execute(
+        &catalog,
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (99, 'future', TRUE, x'00', 0)",
+        [],
+    )
+    .unwrap();
+    let newer = Catalog::from_bytes(&catalog.to_bytes().unwrap()).await;
+    assert!(matches!(newer, Err(StorageError::Migration(_))));
 }
 
 #[tokio::test]

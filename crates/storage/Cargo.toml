@@ -7,14 +7,19 @@ publish.workspace = true
 
 [dependencies]
 thuisaccu-core = { path = "../core" }
-sqlx.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["fs"] }
+
+# In de browser levert rusqlite zelf een WebAssembly-build van SQLite; daarbuiten wordt SQLite meegecompileerd.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rusqlite = { workspace = true, features = ["bundled"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

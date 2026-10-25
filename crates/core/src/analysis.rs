@@ -235,8 +235,8 @@ pub fn validate(
         "Sluit de terugleverkostenstaffel af met een onbegrensde laatste regel.",
     )?;
     ensure(
-        (1..=12).contains(&candidates.len()),
-        "Vergelijk 1 tot 12 accu-opties.",
+        (1..=50).contains(&candidates.len()),
+        "Vergelijk 1 tot 50 accu-opties.",
     )?;
     let mut keys = std::collections::HashSet::new();
     for c in candidates {

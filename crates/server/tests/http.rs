@@ -39,7 +39,9 @@ async fn home_and_stylesheet_are_served_without_external_services() {
     );
     let body = to_bytes(response.into_body(), 32 * 1024).await.unwrap();
     let html = std::str::from_utf8(&body).unwrap();
-    assert!(html.contains("/styles.css"));
+    // Relatieve paden: dezelfde shell werkt op de server en in een submap van een statische site.
+    assert!(html.contains(r#"href="styles.css""#));
+    assert!(html.contains(r#"data-backend="server""#));
     assert!(html.contains(r#"id="nav""#));
     assert!(html.contains(r#"id="view""#));
     assert!(
@@ -152,7 +154,11 @@ async fn products_are_read_from_sqlite_without_seeding_real_products() {
 async fn database_failures_are_reported_without_leaking_internal_errors() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());
-    catalog.close().await;
+    // Een kapotte database: de tabel bestaat niet meer.
+    catalog
+        .connection()
+        .execute_batch("ALTER TABLE products RENAME TO products_gone")
+        .unwrap();
     let response = app
         .oneshot(
             Request::get("/api/v1/products")
@@ -178,6 +184,7 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
     let home = to_bytes(home.into_body(), 32 * 1024).await.unwrap();
     let home = std::str::from_utf8(&home).unwrap();
     for (path, marker) in [
+        ("/local.js", "window.Local"),
         ("/ui.js", "window.UI"),
         ("/data.js", "estimateCosts"),
         ("/results.js", "Wat betekent dit voor jou?"),
@@ -188,7 +195,7 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
         ("/app.js", "Mijn berekeningen"),
     ] {
         assert!(
-            home.contains(&format!(r#"src="{path}""#)),
+            home.contains(&format!(r#"src="{}""#, &path[1..])),
             "{path} niet geladen"
         );
         let response = app
@@ -201,10 +208,13 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
             response.headers()[header::CONTENT_TYPE],
             "text/javascript; charset=utf-8"
         );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
         let body = to_bytes(response.into_body(), 256 * 1024).await.unwrap();
         let script = std::str::from_utf8(&body).unwrap();
         assert!(script.contains(marker), "{path} mist {marker}");
         // Gegevens gaan via tekstknopen in de DOM, nooit via innerHTML.
         assert!(!script.contains("innerHTML"), "{path} gebruikt innerHTML");
     }
+    // De worker van de browserversie levert de server niet, maar hij volgt dezelfde regel.
+    assert!(!include_str!("../../../web/worker.js").contains("innerHTML"));
 }

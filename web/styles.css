@@ -138,20 +138,11 @@ td strong, th strong { display: block; }
 .wizard-footer { position: sticky; bottom: 0; display: flex; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
 
 /* Keuzehulp en resultaat */
-.products, .option-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: var(--gap); }
-.product, .option { margin: 0; display: flex; flex-direction: column; gap: .35rem; }
-.product .badge, .option .badge { align-self: flex-start; }
-.product-head { display: flex; gap: .6rem; align-items: flex-start; font-weight: 700; }
-.product-head input { width: 1.15rem; height: 1.15rem; margin-top: .2rem; flex: none; accent-color: var(--accent); }
-.product.unfit { border-style: dashed; opacity: .85; }
-.option { border-top-width: 4px; }
-.costs { border-top: 1px solid var(--line); padding-top: .4rem; }
-.cost-group h4 { margin: .9rem 0 .2rem; }
-.cost { padding: .45rem 0; border-bottom: 1px solid var(--line); }
-.cost-head { display: grid; grid-template-columns: 1fr 7.5rem; gap: .5rem; align-items: center; font-size: .9rem; }
-.cost-head input { padding: .3rem .5rem; text-align: right; }
-.cost-status { text-align: right; color: var(--muted); font-size: .85rem; }
-.cost-basis { margin: .25rem 0 0; font-size: .8rem; color: var(--muted); }
+.option-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: var(--gap); }
+.option { margin: 0; display: flex; flex-direction: column; gap: .35rem; border-top-width: 4px; }
+.option .badge { align-self: flex-start; }
+.product-group { margin-top: var(--gap); }
+.product-group > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--gap); }
 .verdict { background: var(--accent-soft); border-color: transparent; }
 .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; font-weight: 700; color: var(--muted); margin: 0; }
 .plain { border-left: 4px solid var(--accent); }
@@ -174,6 +165,8 @@ td strong, th strong { display: block; }
 .chart-tick { fill: currentColor; }
 .legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; list-style: none; padding: 0; margin: .3rem 0; font-size: .85rem; }
 .swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; margin-right: .35rem; vertical-align: -.05rem; }
+.swatch-base { border-radius: 50%; border: 2px solid currentColor; background: var(--surface); box-sizing: border-box; }
+.swatch-tick { width: .25rem; background: currentColor; border-radius: 0; margin-inline: .28rem .63rem; }
 
 /* Smal scherm: menu boven, navigatie uitklapbaar */
 @media (max-width: 52rem) {

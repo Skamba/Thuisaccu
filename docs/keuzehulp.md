@@ -8,7 +8,7 @@ De keuzehulp (`#/keuzehulp`, ook het startscherm) is de begeleide route voor con
 2. **Je woning.** Stekker of vaste installatie, 1- of 3-fase, binnen of buiten en of noodstroom nodig is. Wie een stekkerbatterij overweegt, ziet direct het veiligheidsadvies (zie [Aansluitregels](#aansluitregels)).
 3. **Je contract.** Contractsoort en all-in stroomprijs (met een knop voor de gedateerde indicatie). Daarna een expliciete keuze voor teruglevering vanaf 2027: eigen vergoeding en terugleverkosten uit het contract, of de indicatie. Een leeg veld telt nooit als nul. Tot slot de vraag of ook de terugleveringsvariant ‘geen vergoeding vanaf 2030’ moet worden doorgerekend (standaard ja). Bij een dynamisch contract meldt de keuzehulp dat handelswaarde nog niet wordt berekend.
 4. **Wat je belangrijk vindt.** Doel (NPV, terugverdientijd of eigen gebruik), optioneel budget en horizon van 10, 15 of 20 jaar.
-5. **Advies.** Capaciteitscurve, passende accu’s met redenen, de kostenopbouw per accu, drie bevestigingen en de berekening, plus ‘Voordat je koopt’ met de aanmeldplicht en het stekkeradvies.
+5. **Advies.** Capaciteitscurve, welke accu’s worden doorgerekend en waarom de rest niet, drie bevestigingen en de berekening, plus ‘Voordat je koopt’ met de aanmeldplicht en het stekkeradvies.
 
 Antwoorden worden als concept in `localStorage` (`thuisaccu-keuzehulp`) bewaard; zonder browseropslag werkt de keuzehulp gewoon. Er gaat niets naar externe diensten.
 
@@ -30,7 +30,7 @@ Grenzen: een standaardprofiel is een gemiddelde over veel huishoudens en dus gla
 
 ## Capaciteitscurve
 
-`GET /api/v1/solar/imports/{id}/capacity` simuleert een verliesvrije accu zonder vermogensgrens, standby of slijtage voor 0 tot 20 kWh, twee keer achter elkaar zodat de beginlading niet meetelt. De uitkomst is een bovengrens voor zonnestroom die via de accu zelf wordt gebruikt. De keuzehulp noemt het bereik waarbinnen 75% tot 90% van de waarde bij 20 kWh wordt gehaald ‘zinvol’ (doel ‘beste verhouding tussen prijs en opbrengst’, standaard) of 90% tot 97% (doel ‘zo veel mogelijk eigen zonnestroom’). De gebruiker kiest dat doel boven de grafiek; de grenzen zijn als lijnen in de grafiek getekend en de labels ‘binnen/kleiner/groter dan het zinvolle bereik’ bij de accu’s schuiven direct mee. Beide drempels zijn ontwerpkeuzes, geen bronwaarden. Dit is een hulpmiddel bij de keuze, geen productberekening en geen advies over een exacte grootte.
+`GET /api/v1/solar/imports/{id}/capacity` simuleert een verliesvrije accu zonder vermogensgrens, standby of slijtage voor 0 tot 20 kWh, twee keer achter elkaar zodat de beginlading niet meetelt. De uitkomst is een bovengrens voor zonnestroom die via de accu zelf wordt gebruikt. De keuzehulp noemt het bereik waarbinnen 75% tot 90% van de waarde bij 20 kWh wordt gehaald ‘zinvol’ (doel ‘beste verhouding tussen prijs en opbrengst’, standaard) of 90% tot 97% (doel ‘zo veel mogelijk eigen zonnestroom’). De gebruiker kiest dat doel boven de grafiek; de grenzen zijn als lijnen in de grafiek getekend en de kolom ‘Zinvol bereik’ (binnen, kleiner of groter) in de lijst van doorgerekende accu’s schuift direct mee. Beide drempels zijn ontwerpkeuzes, geen bronwaarden. Dit is een hulpmiddel bij de keuze, geen productberekening en geen advies over een exacte grootte.
 
 ## Van bronclaim naar rekengegevens
 
@@ -45,15 +45,19 @@ De browser leidt per catalogusuitvoering rekengegevens af en toont elke aanname 
 | Standby | `standby_power_w` | Aanname 5 W |
 | Slijtage en levensduur | — | Aanname 2% per jaar en 15 jaar, geen garantie |
 
-Uitvoeringen met een niet doorrekenbaar gegeven of een harde mismatch (bijvoorbeeld 3-fase bij een 1-fase-aansluiting, stekker versus vaste installatie, geen noodstroom terwijl dat gevraagd is) zijn zichtbaar maar niet aan te vinken. Het soort aansluiting komt uit de tekstclaim `coupling`; de Nederlandse momentopnamen gebruiken daarvoor ‘AC-gekoppeld (stekker)’, ‘AC-gekoppeld (vaste installatie)’ en ‘Hybride omvormer’.
+Uitvoeringen met een niet doorrekenbaar gegeven of een harde mismatch (bijvoorbeeld 3-fase bij een 1-fase-aansluiting, stekker versus vaste installatie, geen noodstroom terwijl dat gevraagd is) doen niet mee. Het soort aansluiting komt uit de tekstclaim `coupling`; de Nederlandse momentopnamen gebruiken daarvoor ‘AC-gekoppeld (stekker)’, ‘AC-gekoppeld (vaste installatie)’ en ‘Hybride omvormer’.
+
+De gebruiker kiest geen accu’s. De keuzehulp rekent automatisch elke uitvoering door die past, waarvan capaciteit en vermogen bekend zijn, die een gepubliceerde prijs inclusief btw heeft en waarvan geen kostenpost onbekend blijft (zoals een aparte omvormer). Iedere accu wordt vergeleken met geen accu; de uitkomst ordent de opties op het gekozen doel. De rekenkern vergelijkt hoogstens vijftig accu’s tegelijk; passen er meer, dan gaan de accu’s voor waarvan de bruikbare capaciteit het dichtst bij het zinvolle bereik ligt. Twee ingeklapte tabellen tonen de doorgerekende accu’s (soort, bruikbare capaciteit, ontlaadvermogen, prijs met bronlink en de plaats ten opzichte van het zinvolle bereik) en de overige accu’s met de reden waarom ze niet meedoen. Wie een offerte heeft of een accu zonder gepubliceerde prijs wil meenemen, gebruikt Zelf doorrekenen. Een stekkerbatterij met eigen zonne-ingangen (koppeltekst ‘Hybride: … (stekker) …’) krijgt de toelichting dat panelen aansluiten mag maar niet hoeft, in plaats van het advies voor een hybride omvormer.
+
+Het resultaat toont bij meer dan vijf accu’s kaarten en grafieken voor geen accu en de beste vijf op het gekozen doel; een tabel in het overzicht en de gevoeligheidstabel tonen alle opties, en de jaartabel en de energiecijfers zijn per optie te kiezen.
 
 ## Kosten en indicaties
 
-Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Data.estimateCosts` (`web/data.js`) uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont ‘Bron’ met link of ‘Aanname’ met reden, en is in de keuzehulp aan te passen; een ingevuld bedrag vervangt de indicatie en wordt als eigen invoer vastgelegd. Zelf doorrekenen heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
+Per accu krijgen alle 26 kostenposten een indicatie, gebouwd door `Data.estimateCosts` (`web/data.js`) uit `estimates` in `crates/server/resources/cost-catalog.json` (geraadpleegd 24 oktober 2026, bedragen inclusief btw). Elke post toont in het resultaat (‘Invoer en aannames’) ‘Bron’ met link of ‘Aanname’ met reden. Aanpassen gaat via ‘Pas aan en reken opnieuw’, dat de run in Zelf doorrekenen opent; een ingevuld bedrag vervangt daar de indicatie. Zelf doorrekenen heeft per optie de knop ‘Vul open posten met indicaties’, die alleen nog onbekende posten vult.
 
 | Post | Stekkerbatterij | Vaste installatie | Bron of aanname |
 | --- | --- | --- | --- |
-| Accu | Gepubliceerde prijs of eigen invoer | idem | Prijsbron in de catalogus |
+| Accu | Gepubliceerde prijs inclusief btw | idem | Prijsbron in de catalogus |
 | Omvormer | Inbegrepen | Inbegrepen als de bronclaim `inverter_included` dat zegt; anders zelf in te vullen | Fabrikantclaim |
 | Meter / EMS | HomeWizard P1 Meter € 24,95; Marstek CT002 € 99,95; Zendure Smart Meter P1 € 99,99; anders aanname vergelijkbare P1-meter | Inbegrepen (‘meting via P1 of CT-klem’) | [HomeWizard](https://www.homewizard.com/nl/plug-in-battery/), [Wattuneed](https://www.wattuneed.com/nl/batterij-accessoires/27111-slimme-meter-marstek-ct002-compatibel-met-venus-e-batterijen-0768563822537.html), [Zendure](https://be.zendure.com/en/products/slimme-meter-p1), [Batterij-Outlet](https://www.batterij-outlet.nl/nl/installatie/pakketprijzen/) |
 | Installatie | Niet van toepassing | € 1.349 binnen, € 2.049 buiten (schuur, garage, gevel) | Batterij-Outlet vanaf-prijzen |

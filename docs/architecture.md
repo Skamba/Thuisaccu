@@ -7,16 +7,30 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 ## Onderdelen
 
 - `thuisaccu-core`: onafhankelijke domeintypen voor productonderzoek. `sizing` simuleert energiestromen, `finance` berekent rekeningen en kasstromen, `analysis` valideert en vergelijkt kandidaten, doelen en gevoeligheidsvarianten.
-- `thuisaccu-storage`: SQLx, ingebouwde SQLite-migraties, typed opslagmethoden, vergelijkingsleesmodel, atomische dossier-/opwekimports en bewaarde analyse-invoer/resultaten. Foreign keys en validatie staan ook in het schema.
-- `thuisaccu-server`: Axum op Tokio, router met catalogus-state. CSV/Excel/JSON-import, Nederlandse PDOK-adreszoekfunctie en scenario-API zijn adapters. Bestandsparsing en simulatie draaien via `spawn_blocking`. Configuratie en proceslevenscyclus staan in de binary.
+- `thuisaccu-storage`: rusqlite met één verbinding achter een mutex (native met meegebouwde SQLite, in WebAssembly via `sqlite-wasm-rs`), ingebouwde SQLite-migraties, typed opslagmethoden, vergelijkingsleesmodel, atomische dossier-/opwekimports en bewaarde analyse-invoer/resultaten. Foreign keys en validatie staan ook in het schema.
+- `thuisaccu-server`: Axum-router met catalogus-state; native op Tokio met HTTP. CSV/Excel/JSON-import, Nederlandse PDOK-adreszoekfunctie en scenario-API zijn adapters. Bestandsparsing en simulatie draaien native via `spawn_blocking`. Configuratie en proceslevenscyclus staan in de binary.
+- `thuisaccu-browser`: dezelfde router als WebAssembly-module, zonder netwerkpoort. Exporteert `open(bytes?)`, `request(method, path, contentType, body)` en `snapshot()`.
 - `web/`: ingebouwde HTML, CSS en gewone JavaScript. De browser gebruikt de JSON API en geeft invoer weer met DOM-tekstmethoden. Er zijn geen frameworks of build-stappen.
 
+### Twee manieren van draaien
+
+| | Lokale server | Browserversie |
+| --- | --- | --- |
+| Start | `cargo run -p thuisaccu-server` | statische site uit `tools/build-site.sh`, bijv. GitHub Pages |
+| API | HTTP op 127.0.0.1 | `local.js` → module-webworker `worker.js` → `thuisaccu_browser.wasm` |
+| Database | `data/research.sqlite3` (WAL) | SQLite in het geheugen van de worker; na elke geslaagde wijziging volledig bewaard in IndexedDB (`thuisaccu` / `bestanden` / `research.sqlite3`) |
+| Back-up | bestand kopiëren na stoppen | Instellingen → Download back-up / terugzetten |
+| PDOK | via de server (`reqwest`) | rechtstreeks vanuit de worker (`fetch`, geen credentials of referrer, timeout, geen redirects, antwoordlimiet) |
+
+`index.html` geeft met `data-backend` aan welke van de twee; `tools/build-site.sh` zet die op `browser`. De worker antwoordt op een wijziging pas nadat de nieuwe database in IndexedDB staat, en bewaart kopieën na elkaar. Een back-up is een gewoon SQLite-bestand: de lokale server kan hem openen, en de browserversie kan het databasebestand van de lokale server inlezen (een WAL-kop wordt bij het inlezen omgezet). Gegevens in de browserversie gelden per browser en apparaat; de browser kan ze opruimen tenzij blijvende opslag is toegestaan (`navigator.storage.persist()`).
 ### Webinterface
 
 `index.html` is alleen een shell: zijbalk met navigatie, paginakop en een leeg `#view`. Elk scherm wordt door een eigen script opgebouwd en registreert zich met `UI.page(sleutel, { title, subtitle, nav, render })`; `app.js` routeert. De navigatie toont, in deze volgorde, Keuzehulp, Mijn berekeningen, Accu’s vergelijken, Energiegegevens, Zelf doorrekenen en Instellingen. Routes: `#/keuzehulp` (ook een lege hash), `#/berekeningen`, `#/berekeningen/:id`, `#/accus`, `#/accus/vergelijk`, `#/energie`, `#/energie/import`, `#/energie/:id`, `#/zelf` en `#/instellingen`. Adressen uit eerdere versies (`#/dashboard`, `#/scenarios…`, `#/opwek…`) worden doorgestuurd. Na een schermwissel krijgt de schermtitel focus; op smalle schermen opent een menuknop de navigatie.
 
 | Script | Verantwoordelijkheid |
 | --- | --- |
+| `local.js` | Kiest de backend; in de browserversie `Local.fetch` (zelfde vorm als `fetch`) naar de worker, back-up, terugzetten en blijvende opslag |
+| `worker.js` | Alleen browserversie: laadt de WebAssembly-module, IndexedDB-opslag na elke wijziging |
 | `ui.js` | `h()`-elementbouwer (alleen tekstknopen, geen HTML-tekenreeksen), nl-NL-opmaak, API, browseropslag met `try/catch`, meldingen, formuliervelden, tabbladen, wizard, dialoog, CSV-export en SVG-grafieken met tabel als alternatief |
 | `data.js` | API-cache, vaste labels, geschiktheid van profielen, `describe()` (bronclaims → rekengegevens met benoemde aannames), `estimateCosts()` (alle 26 kostenposten met bron of aanname) en standaardaannames |
 | `keuzehulp.js` | Begeleide keuzehulp; zie [keuzehulp](keuzehulp.md) |
@@ -28,7 +42,7 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 
 Formulieren in de keuzehulp en Zelf doorrekenen houden hun toestand in één object en bouwen het scherm daaruit op; ze lezen geen waarden terug uit de DOM. Concepten (`thuisaccu-keuzehulp`, `thuisaccu-scenario`), de vergelijkingskeuze, standaardaannames (`thuisaccu-standaard`), thema en dichtheid staan alleen in `localStorage`. Zonder browseropslag werkt alles met de oorspronkelijke waarden. Bevestigingen worden nooit uit een concept of een overgenomen run gehaald. Fictieve gegevens uit een oudere database (`is_demo`) blijven overal herkenbaar als FICTIEF.
 
-Alle scripts en het stijlblad staan in de tabel `ASSETS` in `crates/server/src/lib.rs` en worden met `include_str!` uit de binary geserveerd; `crates/server/tests/http.rs` controleert voor elk script de route, het content-type, het laden door de shell en de afwezigheid van `innerHTML`. Na een wijziging in `web/` moet de server opnieuw worden gebouwd. Er zijn geen externe fonts, scripts of grafiekdiensten.
+Alle scripts en het stijlblad staan in de tabel `ASSETS` in `crates/server/src/lib.rs` en worden met `include_str!` uit de binary geserveerd; `crates/server/tests/http.rs` controleert voor elk script de route, het content-type, het laden door de shell en de afwezigheid van `innerHTML`. Ze gaan met `Cache-Control: no-cache` de deur uit, zodat de browser na een nieuwe build geen oude scripts gebruikt. Na een wijziging in `web/` moet de server opnieuw worden gebouwd. Er zijn geen externe fonts, scripts of grafiekdiensten.
 
 De vergelijking houdt maximaal vier uitvoeringen vast; filters veranderen alleen de presentatie en de CSV-export, claims worden niet samengevoegd. Resultaten gebruiken uitsluitend de bewaarde invoer en uitkomst, zodat oudere runs ongewijzigd te tonen blijven. Het netdeel van het verbruik wordt afgeleid als bruto vraag min direct gebruikte zonnestroom en acculevering; een resterend deel van de productiebalans heet ‘Overig (o.a. sluimerverbruik)’. Gevoeligheidsbanden zijn modelvarianten, geen betrouwbaarheidsintervallen.
 

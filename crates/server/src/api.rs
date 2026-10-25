@@ -30,20 +30,9 @@ pub fn database_error(error: StorageError) -> ApiError {
         StorageError::InvalidInput(_)
         | StorageError::UnknownCode(_)
         | StorageError::NonFiniteNumber => bad_request(error.to_string()),
-        StorageError::Database(sqlx_error)
-            if sqlx_error.as_database_error().is_some_and(|e| {
-                e.is_check_violation()
-                    || e.is_foreign_key_violation()
-                    || e.is_unique_violation()
-                    || e.code()
-                        .and_then(|code| code.parse::<u32>().ok())
-                        .is_some_and(|code| code & 255 == 19)
-            }) =>
-        {
-            bad_request(
-                "De invoer voldoet niet aan de gegevensregels; controleer waarden, codes en brongegevens.",
-            )
-        }
+        _ if error.is_constraint_violation() => bad_request(
+            "De invoer voldoet niet aan de gegevensregels; controleer waarden, codes en brongegevens.",
+        ),
         _ => {
             tracing::error!(%error, "Database operation failed");
             (
@@ -70,7 +59,7 @@ pub async fn add_candidate(
 }
 
 /// Elke set heeft een eigen sleutel: een eerder geladen set wordt niet opnieuw ingevoegd.
-const REFERENCE_SETS: [(&str, &str); 3] = [
+const REFERENCE_SETS: [(&str, &str); 5] = [
     (
         "research-2026-10-24-v1",
         include_str!("../resources/references.json"),
@@ -82,6 +71,14 @@ const REFERENCE_SETS: [(&str, &str); 3] = [
     (
         "research-2026-10-24-nl-v2",
         include_str!("../resources/references-nl-2.json"),
+    ),
+    (
+        "research-2026-10-25-nl-v3",
+        include_str!("../resources/references-nl-3.json"),
+    ),
+    (
+        "research-2026-10-25-nl-v4",
+        include_str!("../resources/references-nl-4.json"),
     ),
 ];
 
@@ -206,12 +203,12 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
 
 pub async fn inspect(multipart: Multipart) -> Result<Json<Value>, ApiError> {
     let input = upload(multipart).await?;
-    let result = tokio::task::spawn_blocking(move || {
+    let result = crate::blocking(move || {
         solar_import::read_table(&input.filename, &input.bytes, &input.options)
             .map(|table| table.inspection())
     })
     .await
-    .map_err(|_| bad_request("Bestand kon niet worden gelezen."))?
+    .ok_or_else(|| bad_request("Bestand kon niet worden gelezen."))?
     .map_err(bad_request)?;
     Ok(Json(json!(result)))
 }
@@ -227,7 +224,7 @@ async fn process(
     ApiError,
 > {
     let input = upload(multipart).await?;
-    tokio::task::spawn_blocking(move || {
+    crate::blocking(move || {
         let table = solar_import::read_table(&input.filename, &input.bytes, &input.options)?;
         let (intervals, summary) = solar_import::normalize(&table, &input.options)?;
         let Some(meter) = &input.meter else {
@@ -247,7 +244,7 @@ async fn process(
         Ok((input, intervals, summary))
     })
     .await
-    .map_err(|_| bad_request("Bestand kon niet worden verwerkt."))?
+    .ok_or_else(|| bad_request("Bestand kon niet worden verwerkt."))?
     .map_err(bad_request)
 }
 
@@ -315,9 +312,9 @@ pub async fn save_typical(
     State(catalog): State<Catalog>,
     Json(request): Json<TypicalRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let profile = tokio::task::spawn_blocking(move || typical_profile::build(&request))
+    let profile = crate::blocking(move || typical_profile::build(&request))
         .await
-        .map_err(|_| bad_request("Het geschatte profiel kon niet worden gemaakt."))?
+        .ok_or_else(|| bad_request("Het geschatte profiel kon niet worden gemaakt."))?
         .map_err(bad_request)?;
     let serialized =
         serde_json::to_vec(&profile.intervals).map_err(|e| bad_request(e.to_string()))?;

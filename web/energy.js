@@ -1,7 +1,7 @@
 "use strict";
 
 // Energieprofielen: overzicht, detail en de importwizard voor omvormer- en meterbestanden.
-// Bestanden worden alleen door de eigen lokale server verwerkt.
+// Bestanden worden alleen door de eigen lokale server verwerkt, of in de browserversie in deze browser.
 (() => {
   const { h, button, link, external, badge, table, stats, chart, field, input, numberInput, select, kwh, number: n,
     toast } = UI;
@@ -33,7 +33,7 @@
 
   UI.page("energie", {
     nav: "Energiegegevens", icon: "sun", title: "Energiegegevens",
-      subtitle: "Bewaarde profielen met opwek en verbruik, op deze computer.",
+      subtitle: `Bewaarde profielen met opwek en verbruik, ${Local.where}.`,
     async render(view, actions) {
       actions.append(link("+ Importeer een bestand", "#/energie/import", "button"));
       const items = await Data.imports();

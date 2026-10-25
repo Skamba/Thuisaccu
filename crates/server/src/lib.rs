@@ -3,10 +3,11 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
-    http::{StatusCode, header},
-    response::Html,
+    http::StatusCode,
     routing::{get, post},
 };
+#[cfg(not(target_family = "wasm"))]
+use axum::{http::header, response::Html};
 use serde::Serialize;
 use thuisaccu_storage::Catalog;
 
@@ -15,18 +16,10 @@ pub mod scenario_api;
 pub mod solar_import;
 pub mod typical_profile;
 
-/// Bouwt de routes zonder een netwerkpoort te openen.
+/// Bouwt de routes zonder een netwerkpoort te openen. In de browser (crates/browser) draait
+/// dezelfde router als WebAssembly; de statische site levert daar de webbestanden.
 pub fn app(catalog: Catalog) -> Router {
-    let assets = ASSETS
-        .iter()
-        .fold(Router::new(), |router, &(path, body, kind)| {
-            router.route(
-                path,
-                get(move || async move { ([(header::CONTENT_TYPE, kind)], body) }),
-            )
-        });
-    assets
-        .route("/", get(index))
+    let router = Router::new()
         .route("/api/v1/analysis/costs", get(scenario_api::costs))
         .route(
             "/api/v1/analysis/runs",
@@ -52,20 +45,58 @@ pub fn app(catalog: Catalog) -> Router {
             "/api/v1/solar/imports/{id}/capacity",
             get(scenario_api::capacity_curve),
         )
-        .layer(DefaultBodyLimit::max(11 * 1024 * 1024))
-        .fallback(not_found)
-        .with_state(catalog)
+        .layer(DefaultBodyLimit::max(11 * 1024 * 1024));
+    #[cfg(not(target_family = "wasm"))]
+    let router = with_assets(router);
+    router.fallback(not_found).with_state(catalog)
 }
 
+/// Rekenwerk en bestandsparsing buiten de async-runtime. In de browser is er geen thread-pool;
+/// daar draait het werk direct (in een webworker, dus zonder de pagina te blokkeren).
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    #[cfg(not(target_family = "wasm"))]
+    return tokio::task::spawn_blocking(work).await.ok();
+    #[cfg(target_family = "wasm")]
+    return Some(work());
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn with_assets(router: Router<Catalog>) -> Router<Catalog> {
+    ASSETS.iter().fold(
+        router.route("/", get(index)),
+        |router, &(path, body, kind)| {
+            router.route(
+                path,
+                // De bestanden zitten in de binary; na een nieuwe versie moet de browser ze opnieuw ophalen.
+                get(move || async move {
+                    (
+                        [
+                            (header::CONTENT_TYPE, kind),
+                            (header::CACHE_CONTROL, "no-cache"),
+                        ],
+                        body,
+                    )
+                }),
+            )
+        },
+    )
+}
+
+#[cfg(not(target_family = "wasm"))]
 const JS: &str = "text/javascript; charset=utf-8";
 
-/// Ingebakken webbestanden: pad, inhoud en content-type. Een nieuw bestand in `web/` komt hier.
+/// Ingebakken webbestanden: pad, inhoud en content-type. Een nieuw bestand in `web/` komt hier,
+/// behalve `worker.js`: dat hoort alleen bij de browserversie (tools/build-site.sh).
+#[cfg(not(target_family = "wasm"))]
 const ASSETS: &[(&str, &str, &str)] = &[
     (
         "/styles.css",
         include_str!("../../../web/styles.css"),
         "text/css; charset=utf-8",
     ),
+    ("/local.js", include_str!("../../../web/local.js"), JS),
     ("/ui.js", include_str!("../../../web/ui.js"), JS),
     ("/data.js", include_str!("../../../web/data.js"), JS),
     ("/results.js", include_str!("../../../web/results.js"), JS),
@@ -80,6 +111,7 @@ const ASSETS: &[(&str, &str, &str)] = &[
     ("/app.js", include_str!("../../../web/app.js"), JS),
 ];
 
+#[cfg(not(target_family = "wasm"))]
 async fn index() -> Html<&'static str> {
     Html(include_str!("../../../web/index.html"))
 }

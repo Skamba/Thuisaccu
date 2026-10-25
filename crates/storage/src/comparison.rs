@@ -1,7 +1,7 @@
 //! Leesmodel voor de vergelijking en atomische invoer van een onderzoeksdossier.
 
+use rusqlite::{Row, Transaction, params};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use thuisaccu_core::products::{
     FeatureMetric, FeatureStatus, MeasurementBoundary, NumberQualifier, NumericMetric, ProductKind,
     SourceKind, TextMetric,
@@ -9,7 +9,7 @@ use thuisaccu_core::products::{
 
 use crate::{Catalog, Result, StorageError};
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct ConfigurationRow {
     pub id: i64,
     pub product_id: i64,
@@ -21,7 +21,7 @@ pub struct ConfigurationRow {
     pub product_kind: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct NumberRow {
     pub id: i64,
     pub configuration_id: i64,
@@ -48,7 +48,7 @@ pub struct NumberRow {
     pub observed_at_unix_s: i64,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct FeatureRow {
     pub configuration_id: i64,
     pub metric_key: String,
@@ -60,7 +60,7 @@ pub struct FeatureRow {
     pub market: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct TextRow {
     pub configuration_id: i64,
     pub metric_key: String,
@@ -72,7 +72,7 @@ pub struct TextRow {
     pub market: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct WarrantyRow {
     pub configuration_id: i64,
     pub product_months: Option<i64>,
@@ -89,7 +89,7 @@ pub struct WarrantyRow {
     pub market: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize)]
 pub struct OfferRow {
     pub configuration_id: i64,
     pub seller: String,
@@ -192,18 +192,153 @@ pub struct CandidateDraft {
     pub price: Option<DraftPrice>,
 }
 
+/// Leest een rij op kolomnaam; extra kolommen in de query worden genegeerd.
+macro_rules! from_row {
+    ($name:ident { $($field:ident),+ $(,)? }) => {
+        impl $name {
+            fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+                Ok(Self { $($field: row.get(stringify!($field))?),+ })
+            }
+        }
+    };
+}
+
+from_row!(ConfigurationRow {
+    id,
+    product_id,
+    manufacturer_name,
+    product_name,
+    model_code,
+    name,
+    hardware_revision,
+    product_kind,
+});
+from_row!(NumberRow {
+    id,
+    configuration_id,
+    metric_key,
+    qualifier,
+    value,
+    upper_value,
+    unit,
+    boundary,
+    reported_value,
+    test_temperature_c,
+    test_power_w,
+    test_soc_pct,
+    test_depth_of_discharge_pct,
+    test_c_rate,
+    conditions,
+    entry_conditions,
+    source_url,
+    source_title,
+    document_revision,
+    locator,
+    market,
+    review_status,
+    observed_at_unix_s,
+});
+from_row!(FeatureRow {
+    configuration_id,
+    metric_key,
+    status,
+    conditions,
+    source_url,
+    source_title,
+    review_status,
+    market,
+});
+from_row!(TextRow {
+    configuration_id,
+    metric_key,
+    value,
+    conditions,
+    source_url,
+    source_title,
+    review_status,
+    market,
+});
+from_row!(WarrantyRow {
+    configuration_id,
+    product_months,
+    performance_months,
+    retained_capacity_pct,
+    cycle_limit,
+    throughput_wh,
+    limit_rule,
+    application,
+    exclusions,
+    source_url,
+    source_title,
+    review_status,
+    market,
+});
+from_row!(OfferRow {
+    configuration_id,
+    seller,
+    currency,
+    minor_unit_exponent,
+    upfront_amount_minor,
+    recurring_amount_minor,
+    recurring_period,
+    tax_basis,
+    includes_installation,
+    includes_battery,
+    includes_inverter,
+    includes_gateway,
+    includes_delivery,
+    valid_until_unix_s,
+    observed_at_unix_s,
+    additional_costs_notes,
+    source_url,
+    source_title,
+    review_status,
+    market,
+});
+
+fn all<T>(
+    tx: &Transaction<'_>,
+    sql: &str,
+    read: fn(&Row<'_>) -> rusqlite::Result<T>,
+) -> rusqlite::Result<Vec<T>> {
+    tx.prepare(sql)?.query_map([], read)?.collect()
+}
+
 impl Catalog {
     pub async fn comparison(&self) -> Result<Comparison> {
-        let mut tx = self.pool().begin().await?;
-        let configurations = sqlx::query_as("SELECT c.id, c.product_id, c.name, c.hardware_revision, p.name AS product_name, p.model_code, p.kind AS product_kind, m.name AS manufacturer_name FROM configurations c JOIN products p ON p.id = c.product_id JOIN manufacturers m ON m.id = p.manufacturer_id ORDER BY m.name, p.name, c.id").fetch_all(&mut *tx).await?;
-        let numbers = sqlx::query_as("SELECT * FROM numeric_research ORDER BY id")
-            .fetch_all(&mut *tx)
-            .await?;
-        let features = sqlx::query_as("SELECT e.configuration_id, f.metric_key, f.status, f.conditions, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM feature_observations f JOIN research_entries e ON e.id = f.entry_id JOIN sources s ON s.id = e.source_id ORDER BY f.id").fetch_all(&mut *tx).await?;
-        let texts = sqlx::query_as("SELECT e.configuration_id, t.metric_key, t.value, t.conditions, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM text_observations t JOIN research_entries e ON e.id = t.entry_id JOIN sources s ON s.id = e.source_id ORDER BY t.id").fetch_all(&mut *tx).await?;
-        let warranties = sqlx::query_as("SELECT e.configuration_id, w.*, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM warranty_terms w JOIN research_entries e ON e.id = w.entry_id JOIN sources s ON s.id = e.source_id ORDER BY w.id").fetch_all(&mut *tx).await?;
-        let offers = sqlx::query_as("SELECT e.configuration_id, o.*, e.observed_at_unix_s, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM offers o JOIN research_entries e ON e.id = o.entry_id JOIN sources s ON s.id = e.source_id ORDER BY o.id").fetch_all(&mut *tx).await?;
-        tx.commit().await?;
+        let mut connection = self.connection();
+        let tx = connection.transaction()?;
+        let configurations = all(
+            &tx,
+            "SELECT c.id, c.product_id, c.name, c.hardware_revision, p.name AS product_name, p.model_code, p.kind AS product_kind, m.name AS manufacturer_name FROM configurations c JOIN products p ON p.id = c.product_id JOIN manufacturers m ON m.id = p.manufacturer_id ORDER BY m.name, p.name, c.id",
+            ConfigurationRow::from_row,
+        )?;
+        let numbers = all(
+            &tx,
+            "SELECT * FROM numeric_research ORDER BY id",
+            NumberRow::from_row,
+        )?;
+        let features = all(
+            &tx,
+            "SELECT e.configuration_id, f.metric_key, f.status, f.conditions, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM feature_observations f JOIN research_entries e ON e.id = f.entry_id JOIN sources s ON s.id = e.source_id ORDER BY f.id",
+            FeatureRow::from_row,
+        )?;
+        let texts = all(
+            &tx,
+            "SELECT e.configuration_id, t.metric_key, t.value, t.conditions, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM text_observations t JOIN research_entries e ON e.id = t.entry_id JOIN sources s ON s.id = e.source_id ORDER BY t.id",
+            TextRow::from_row,
+        )?;
+        let warranties = all(
+            &tx,
+            "SELECT e.configuration_id, w.*, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM warranty_terms w JOIN research_entries e ON e.id = w.entry_id JOIN sources s ON s.id = e.source_id ORDER BY w.id",
+            WarrantyRow::from_row,
+        )?;
+        let offers = all(
+            &tx,
+            "SELECT e.configuration_id, o.*, e.observed_at_unix_s, s.url AS source_url, s.title AS source_title, e.review_status, e.market FROM offers o JOIN research_entries e ON e.id = o.entry_id JOIN sources s ON s.id = e.source_id ORDER BY o.id",
+            OfferRow::from_row,
+        )?;
+        tx.commit()?;
         Ok(Comparison {
             configurations,
             numbers,
@@ -216,9 +351,10 @@ impl Catalog {
 
     /// Eén dossier, inclusief de claims, wordt volledig opgeslagen of teruggerold.
     pub async fn add_candidate(&self, draft: &CandidateDraft, now: i64) -> Result<i64> {
-        let mut tx = self.pool().begin().await?;
-        let id = insert_candidate(&mut tx, draft, now).await?;
-        tx.commit().await?;
+        let mut connection = self.connection();
+        let tx = connection.transaction()?;
+        let id = insert_candidate(&tx, draft, now)?;
+        tx.commit()?;
         Ok(id)
     }
 
@@ -229,26 +365,24 @@ impl Catalog {
         drafts: &[CandidateDraft],
         now: i64,
     ) -> Result<bool> {
-        let mut tx = self.pool().begin().await?;
-        let inserted = sqlx::query("INSERT INTO reference_imports (key, imported_at_unix_s) VALUES (?, ?) ON CONFLICT DO NOTHING")
-            .bind(key).bind(now).execute(&mut *tx).await?.rows_affected();
+        let mut connection = self.connection();
+        let tx = connection.transaction()?;
+        let inserted = tx.execute(
+            "INSERT INTO reference_imports (key, imported_at_unix_s) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            params![key, now],
+        )?;
         if inserted == 0 {
-            tx.rollback().await?;
             return Ok(false);
         }
         for draft in drafts {
-            insert_candidate(&mut tx, draft, now).await?;
+            insert_candidate(&tx, draft, now)?;
         }
-        tx.commit().await?;
+        tx.commit()?;
         Ok(true)
     }
 }
 
-async fn insert_candidate(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    d: &CandidateDraft,
-    now: i64,
-) -> Result<i64> {
+fn insert_candidate(tx: &Transaction<'_>, d: &CandidateDraft, now: i64) -> Result<i64> {
     d.product_kind.parse::<ProductKind>()?;
     for text in [
         &d.manufacturer,
@@ -267,21 +401,36 @@ async fn insert_candidate(
     if d.numbers.len() > 100 || d.features.len() > 50 || d.texts.len() > 50 {
         return Err(StorageError::InvalidInput("Too many claims".into()));
     }
-    let manufacturer_id: i64 = sqlx::query_scalar("INSERT INTO manufacturers (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = manufacturers.name RETURNING id")
-        .bind(d.manufacturer.trim()).fetch_one(&mut **tx).await?;
-    let product_id: i64 = sqlx::query_scalar("INSERT INTO products (manufacturer_id, name, model_code, kind) VALUES (?, ?, ?, ?) ON CONFLICT(manufacturer_id, name, model_code) DO UPDATE SET name = products.name RETURNING id")
-        .bind(manufacturer_id).bind(d.product.trim()).bind(d.model_code.trim()).bind(&d.product_kind).fetch_one(&mut **tx).await?;
-    let existing_kind: String = sqlx::query_scalar("SELECT kind FROM products WHERE id = ?")
-        .bind(product_id)
-        .fetch_one(&mut **tx)
-        .await?;
+    let id = |sql: &str, values: &[&dyn rusqlite::ToSql]| -> rusqlite::Result<i64> {
+        tx.query_row(sql, values, |row| row.get(0))
+    };
+    let manufacturer_id = id(
+        "INSERT INTO manufacturers (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = manufacturers.name RETURNING id",
+        params![d.manufacturer.trim()],
+    )?;
+    let product_id = id(
+        "INSERT INTO products (manufacturer_id, name, model_code, kind) VALUES (?, ?, ?, ?) ON CONFLICT(manufacturer_id, name, model_code) DO UPDATE SET name = products.name RETURNING id",
+        params![
+            manufacturer_id,
+            d.product.trim(),
+            d.model_code.trim(),
+            d.product_kind
+        ],
+    )?;
+    let existing_kind: String = tx.query_row(
+        "SELECT kind FROM products WHERE id = ?",
+        [product_id],
+        |row| row.get(0),
+    )?;
     if existing_kind != d.product_kind {
         return Err(StorageError::InvalidInput(
             "Existing product has a different kind".into(),
         ));
     }
-    let config_id: i64 = sqlx::query_scalar("INSERT INTO configurations (product_id, name) VALUES (?, ?) ON CONFLICT(product_id, name, variant_code, hardware_revision) DO UPDATE SET name = configurations.name RETURNING id")
-        .bind(product_id).bind(d.configuration.trim()).fetch_one(&mut **tx).await?;
+    let config_id = id(
+        "INSERT INTO configurations (product_id, name) VALUES (?, ?) ON CONFLICT(product_id, name, variant_code, hardware_revision) DO UPDATE SET name = configurations.name RETURNING id",
+        params![product_id, d.configuration.trim()],
+    )?;
     let url = if d.source_url.trim().is_empty() {
         format!("urn:thuisaccu:manual:{now}")
     } else {
@@ -292,10 +441,21 @@ async fn insert_candidate(
         .as_deref()
         .unwrap_or("other")
         .parse::<SourceKind>()?;
-    let source_id: i64 = sqlx::query_scalar("INSERT INTO sources (kind, title, url, document_revision, published_on, retrieved_at_unix_s) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
-        .bind(source_kind.as_str()).bind(&d.source_title).bind(url).bind(&d.document_revision).bind(&d.published_on).bind(now).fetch_one(&mut **tx).await?;
-    let entry_id: i64 = sqlx::query_scalar("INSERT INTO research_entries (configuration_id, source_id, locator, observed_at_unix_s, market, conditions) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
-        .bind(config_id).bind(source_id).bind(&d.locator).bind(now).bind(&d.market).bind(&d.conditions).fetch_one(&mut **tx).await?;
+    let source_id = id(
+        "INSERT INTO sources (kind, title, url, document_revision, published_on, retrieved_at_unix_s) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        params![
+            source_kind.as_str(),
+            d.source_title,
+            url,
+            d.document_revision,
+            d.published_on,
+            now
+        ],
+    )?;
+    let entry_id = id(
+        "INSERT INTO research_entries (configuration_id, source_id, locator, observed_at_unix_s, market, conditions) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        params![config_id, source_id, d.locator, now, d.market, d.conditions],
+    )?;
     for n in &d.numbers {
         n.metric.parse::<NumericMetric>()?;
         n.qualifier.parse::<NumberQualifier>()?;
@@ -303,27 +463,27 @@ async fn insert_candidate(
         if !n.value.is_finite() || n.upper_value.is_some_and(|v| !v.is_finite()) {
             return Err(StorageError::NonFiniteNumber);
         }
-        sqlx::query("INSERT INTO numeric_observations (entry_id, metric_key, qualifier, value, upper_value, boundary, reported_value, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(entry_id).bind(&n.metric).bind(&n.qualifier).bind(n.value).bind(n.upper_value).bind(&n.boundary).bind(&n.reported_value).bind(&n.conditions).execute(&mut **tx).await?;
+        tx.execute("INSERT INTO numeric_observations (entry_id, metric_key, qualifier, value, upper_value, boundary, reported_value, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![entry_id, n.metric, n.qualifier, n.value, n.upper_value, n.boundary, n.reported_value, n.conditions])?;
     }
     for f in &d.features {
         f.metric.parse::<FeatureMetric>()?;
         f.status.parse::<FeatureStatus>()?;
-        sqlx::query("INSERT INTO feature_observations (entry_id, metric_key, status, conditions) VALUES (?, ?, ?, ?)")
-            .bind(entry_id).bind(&f.metric).bind(&f.status).bind(&f.conditions).execute(&mut **tx).await?;
+        tx.execute("INSERT INTO feature_observations (entry_id, metric_key, status, conditions) VALUES (?, ?, ?, ?)",
+            params![entry_id, f.metric, f.status, f.conditions])?;
     }
     for t in &d.texts {
         t.metric.parse::<TextMetric>()?;
-        sqlx::query("INSERT INTO text_observations (entry_id, metric_key, value, conditions) VALUES (?, ?, ?, ?)")
-            .bind(entry_id).bind(&t.metric).bind(&t.value).bind(&t.conditions).execute(&mut **tx).await?;
+        tx.execute("INSERT INTO text_observations (entry_id, metric_key, value, conditions) VALUES (?, ?, ?, ?)",
+            params![entry_id, t.metric, t.value, t.conditions])?;
     }
     if let Some(months) = d.product_warranty_months {
-        sqlx::query("INSERT INTO warranty_terms (entry_id, product_months, limit_rule, application, exclusions) VALUES (?, ?, 'not_stated', 'Zie bron', 'Samenvatting; controleer de volledige garantievoorwaarden')")
-            .bind(entry_id).bind(months).execute(&mut **tx).await?;
+        tx.execute("INSERT INTO warranty_terms (entry_id, product_months, limit_rule, application, exclusions) VALUES (?, ?, 'not_stated', 'Zie bron', 'Samenvatting; controleer de volledige garantievoorwaarden')",
+            params![entry_id, months])?;
     }
     if let Some(p) = &d.price {
-        sqlx::query("INSERT INTO offers (entry_id, seller, currency, minor_unit_exponent, upfront_amount_minor, tax_basis, includes_installation, availability) VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown')")
-            .bind(entry_id).bind(&p.seller).bind(&p.currency).bind(p.minor_unit_exponent).bind(p.amount_minor).bind(&p.tax_basis).bind(p.includes_installation).execute(&mut **tx).await?;
+        tx.execute("INSERT INTO offers (entry_id, seller, currency, minor_unit_exponent, upfront_amount_minor, tax_basis, includes_installation, availability) VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown')",
+            params![entry_id, p.seller, p.currency, p.minor_unit_exponent, p.amount_minor, p.tax_basis, p.includes_installation])?;
     }
     Ok(config_id)
 }

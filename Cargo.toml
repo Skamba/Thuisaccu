@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/storage", "crates/server"]
+members = ["crates/core", "crates/storage", "crates/server", "crates/browser"]
 default-members = ["crates/server"]
 resolver = "3"
 
@@ -9,14 +9,15 @@ edition = "2024"
 publish = false
 
 [workspace.dependencies]
-axum = "0.8"
+# Zonder standaardfeatures, zodat dezelfde router ook naar WebAssembly compileert.
+axum = { version = "0.8", default-features = false, features = ["json", "query", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tokio = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.5", features = ["util"] }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+rusqlite = { version = "0.40", features = ["serialize"] }
 thiserror = "2"
 tempfile = "3"
 chrono = { version = "0.4", features = ["serde"] }
@@ -25,7 +26,19 @@ csv = "1"
 calamine = { version = "0.37", features = ["dates"] }
 sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "native-tls"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+
+# Voor de browserversie (tools/build-site.sh): een kleiner WebAssembly-bestand.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

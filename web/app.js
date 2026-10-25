@@ -92,18 +92,65 @@
         h("section", { class: "panel" }, h("h2", {}, "Weergave"), h("div", { class: "grid" },
           preference("theme", "Thema", [["system", "Volg het systeem"], ["light", "Licht"], ["dark", "Donker"]]),
           preference("density", "Dichtheid", [["comfortable", "Ruim"], ["compact", "Compact"]]))),
-        h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
-          h("p", {},
-            "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."),
-          h("p", {},
-            "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
-          button("Wis concepten in deze browser", () => { for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null); toast("Concepten gewist."); }, "secondary")),
+        dataPanel(),
         h("section", { class: "panel" }, h("h2", {}, "Over het model"),
           h("p", {},
             "Het model rekent per meetperiode hoeveel zonnestroom een accu opslaat en later zelf gebruikt, met vaste tarieven. Vanaf 2027 zonder salderen. Dynamische handel, netladen en onbalansinkomsten zijn niet opgenomen."),
           h("p", {}, "Een aanbeveling geldt alleen voor de doorgerekende opties en vastgelegde aannames; ‘geen accu’ is een volwaardige uitkomst. De app beoordeelt geen installatiegeschiktheid of elektrische veiligheid.")));
     }
   });
+
+  // Waar de gegevens staan verschilt per manier van draaien (zie local.js).
+  function dataPanel() {
+    const clear = button("Wis concepten in deze browser", () => { for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null); toast("Concepten gewist."); }, "secondary");
+    if (!Local.enabled) return h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
+      h("p", {},
+        "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."),
+      h("p", {},
+        "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
+      clear);
+
+    const status = h("p", { class: "help", "aria-live": "polite" }, "Opslagstatus controleren…");
+    const showPersisted = granted => { status.textContent = granted
+      ? "Deze browser bewaart de gegevens blijvend en ruimt ze niet vanzelf op."
+      : "De browser mag deze gegevens opruimen als de schijf vol raakt. Vraag om blijvende opslag, en maak af en toe een back-up."; };
+    Local.persisted().then(showPersisted, () => { status.textContent = "Opslagstatus is niet beschikbaar in deze browser."; });
+    const persist = button("Vraag om blijvende opslag", async () => {
+      const granted = await Local.persist().catch(() => false);
+      showPersisted(granted);
+      if (!granted) toast("De browser heeft blijvende opslag niet toegestaan. Een back-up blijft verstandig.", true);
+    }, "secondary");
+
+    const download = button("Download back-up", async () => {
+      try { UI.downloadBlob(`thuisaccu-${new Date().toISOString().slice(0, 10)}.sqlite3`, await Local.backup()); }
+      catch (error) { toast(`Back-up maken mislukt: ${error.message}`, true); }
+    }, "secondary");
+
+    // Formulierstatus in een object; de knop werkt pas met een gekozen bestand.
+    const state = { file: null };
+    const replace = button("Vervang de gegevens in deze browser", async () => {
+      if (!state.file) return;
+      replace.disabled = true;
+      try { await Local.restore(state.file); toast("Back-up teruggezet."); setTimeout(() => location.reload(), 600); }
+      catch (error) { toast(`Terugzetten mislukt; je huidige gegevens zijn ongewijzigd. ${error.message}`, true);
+        replace.disabled = false; }
+    }, "ghost");
+    replace.disabled = true;
+    const chooser = h("input", { type: "file", accept: ".sqlite3,.sqlite,.db,application/vnd.sqlite3,application/x-sqlite3",
+      onchange: event => { state.file = event.target.files[0] || null; replace.disabled = !state.file; } });
+
+    return h("section", { class: "panel" }, h("h2", {}, "Gegevens in deze browser"),
+      h("p", {},
+        "Alles wat je bewaart, staat in deze browser op dit apparaat. Een andere browser of een ander apparaat ziet het niet, en wie de sitegegevens van deze browser wist, wist ook je berekeningen."),
+      h("p", {},
+        "Het rekenen gebeurt in je browser. Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’; dat gaat rechtstreeks van je browser naar PDOK."),
+      status, h("div", { class: "actions" }, persist, download),
+      h("h3", {}, "Back-up terugzetten"),
+      h("p", { class: "help" },
+        "Kies een back-up van deze site, of het databasebestand van de lokale app (data/research.sqlite3; stop die app eerst). Alle gegevens in deze browser worden vervangen."),
+      field("Back-upbestand", chooser),
+      h("div", { class: "actions" }, replace, clear));
+  }
 
   // Router: #/pad of #/pad/:id. Onbekende adressen gaan naar de keuzehulp.
   function match(path) {
@@ -152,9 +199,14 @@
       event => { event.preventDefault(); $("page-title").focus(); });
     window.addEventListener("hashchange", route);
     const service = $("service");
-    UI.api("/api/v1/health").then(() => { service.textContent = "Lokale service actief";
+    if (Local.enabled) $("footer").replaceChildren(
+      "Thuisaccu rekent volledig in je browser; je gegevens blijven in deze browser op dit apparaat.");
+    UI.api("/api/v1/health").then(() => {
+      service.textContent = Local.enabled ? "Rekent in deze browser" : "Lokale service actief";
       service.classList.add("online"); })
-      .catch(() => { service.textContent = "Service niet bereikbaar"; service.classList.add("offline"); });
+      .catch(error => { service.textContent = Local.enabled ? "Rekenmodule niet geladen" : "Service niet bereikbaar";
+        service.classList.add("offline");
+        if (Local.enabled) toast(error.message, true); });
     route();
   }
   // Volgorde in de navigatie: keuzehulp eerst, daarna resultaten, gegevens en instellingen.

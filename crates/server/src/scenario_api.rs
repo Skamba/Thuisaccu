@@ -8,7 +8,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::time::Duration;
 use thuisaccu_core::{
     analysis::{self, Candidate, Parameters},
     sizing::{self, EnergyInterval},
@@ -100,11 +99,10 @@ pub async fn run(
     let input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
     let parameters = request.parameters.clone();
     let candidates = request.candidates.clone();
-    let mut result =
-        tokio::task::spawn_blocking(move || analysis::analyze(&profile, &parameters, &candidates))
-            .await
-            .map_err(|_| invalid("De scenarioanalyse kon niet worden voltooid."))?
-            .map_err(|e| invalid(e.to_string()))?;
+    let mut result = crate::blocking(move || analysis::analyze(&profile, &parameters, &candidates))
+        .await
+        .ok_or_else(|| invalid("De scenarioanalyse kon niet worden voltooid."))?
+        .map_err(|e| invalid(e.to_string()))?;
     if metadata["options"]["is_demo"] == true {
         result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
     } else if metadata["options"]["generator"] == crate::typical_profile::GENERATOR {
@@ -182,9 +180,9 @@ pub async fn capacity_curve(
         0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0,
     ]
     .to_vec();
-    let points = tokio::task::spawn_blocking(move || sizing::capacity_curve(&profile, &capacities))
+    let points = crate::blocking(move || sizing::capacity_curve(&profile, &capacities))
         .await
-        .map_err(|_| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
+        .ok_or_else(|| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
     Ok(Json(json!({
         "points": points,
         "assumptions": "Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening.",
@@ -207,28 +205,7 @@ pub async fn address(Json(input): Json<AddressSearch>) -> Result<Json<Value>, Ap
     if !(4..=200).contains(&input.query.trim().len()) {
         return Err(invalid("Vul een adres of postcode met huisnummer in."));
     }
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent("Thuisaccu/0.1 (explicit address search)")
-        .build()
-        .map_err(|_| invalid("Adresdienst kon niet worden geopend."))?;
-    let response = client.get("https://api.pdok.nl/bzk/locatieserver/search/v3_1/free")
-        .query(&[("q",input.query.trim()),("fq","type:adres"),("rows","5"),("fl","id,weergavenaam,centroide_ll,nummeraanduiding_id")])
-        .send().await.map_err(|_| invalid("PDOK is niet bereikbaar. Je kunt het adres ook handmatig gebruiken; gemeten energiegegevens blijven leidend."))?
-        .error_for_status().map_err(|_| invalid("PDOK gaf geen geldig antwoord."))?;
-    let mut response = response;
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| invalid("PDOK-antwoord kon niet worden gelezen."))?
-    {
-        if bytes.len() + chunk.len() > 1_000_000 {
-            return Err(invalid("PDOK-antwoord is te groot."));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = pdok::search(input.query.trim()).await.map_err(invalid)?;
     let value: Value =
         serde_json::from_slice(&bytes).map_err(|_| invalid("PDOK-antwoord is niet geldig."))?;
     Ok(Json(
@@ -261,4 +238,118 @@ pub fn parse_addresses(value: &Value) -> Vec<Site> {
             })
         })
         .collect()
+}
+
+/// PDOK Locatieserver: vaste host, HTTPS, timeout, geen redirects en een antwoordlimiet.
+/// Alleen een expliciete zoekactie van de gebruiker komt hier.
+mod pdok {
+    const URL: &str = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free";
+    const FIELDS: &str = "id,weergavenaam,centroide_ll,nummeraanduiding_id";
+    const LIMIT: usize = 1_000_000;
+    const UNREACHABLE: &str = "PDOK is niet bereikbaar. Je kunt het adres ook handmatig gebruiken; gemeten energiegegevens blijven leidend.";
+    const BAD_STATUS: &str = "PDOK gaf geen geldig antwoord.";
+    const UNREADABLE: &str = "PDOK-antwoord kon niet worden gelezen.";
+    const TOO_LARGE: &str = "PDOK-antwoord is te groot.";
+
+    #[cfg(not(target_family = "wasm"))]
+    pub async fn search(query: &str) -> Result<Vec<u8>, &'static str> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("Thuisaccu/0.1 (explicit address search)")
+            .build()
+            .map_err(|_| "Adresdienst kon niet worden geopend.")?;
+        let mut response = client
+            .get(URL)
+            .query(&[
+                ("q", query),
+                ("fq", "type:adres"),
+                ("rows", "5"),
+                ("fl", FIELDS),
+            ])
+            .send()
+            .await
+            .map_err(|_| UNREACHABLE)?
+            .error_for_status()
+            .map_err(|_| BAD_STATUS)?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| UNREADABLE)? {
+            if bytes.len() + chunk.len() > LIMIT {
+                return Err(TOO_LARGE);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
+    /// De fetch van de browser is geen `Send`-future, zoals axum-handlers vereisen. Die draait
+    /// daarom los op de JavaScript-eventloop en geeft alleen de bytes terug.
+    #[cfg(target_family = "wasm")]
+    pub async fn search(query: &str) -> Result<Vec<u8>, &'static str> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let query = query.to_owned();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = sender.send(fetch(&query).await);
+        });
+        receiver.await.unwrap_or(Err(UNREACHABLE))
+    }
+
+    #[cfg(target_family = "wasm")]
+    async fn fetch(query: &str) -> Result<Vec<u8>, &'static str> {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{
+            AbortSignal, ReferrerPolicy, RequestCredentials, RequestInit, RequestRedirect,
+            Response, Url, Window, WorkerGlobalScope,
+        };
+
+        let url = Url::new(URL).map_err(|_| UNREACHABLE)?;
+        let search = url.search_params();
+        for (key, value) in [
+            ("q", query),
+            ("fq", "type:adres"),
+            ("rows", "5"),
+            ("fl", FIELDS),
+        ] {
+            search.append(key, value);
+        }
+        let init = RequestInit::new();
+        init.set_method("GET");
+        init.set_redirect(RequestRedirect::Error);
+        init.set_credentials(RequestCredentials::Omit);
+        init.set_referrer_policy(ReferrerPolicy::NoReferrer);
+        init.set_signal(Some(&AbortSignal::timeout_with_u32(10_000)));
+        let global = js_sys::global();
+        let pending = if let Some(window) = global.dyn_ref::<Window>() {
+            window.fetch_with_str_and_init(&url.href(), &init)
+        } else {
+            global
+                .unchecked_ref::<WorkerGlobalScope>()
+                .fetch_with_str_and_init(&url.href(), &init)
+        };
+        let response: Response = JsFuture::from(pending)
+            .await
+            .map_err(|_| UNREACHABLE)?
+            .unchecked_into();
+        if !response.ok() {
+            return Err(BAD_STATUS);
+        }
+        let declared = response
+            .headers()
+            .get("content-length")
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse::<usize>().ok());
+        if declared.is_some_and(|length| length > LIMIT) {
+            return Err(TOO_LARGE);
+        }
+        let buffer = JsFuture::from(response.array_buffer().map_err(|_| UNREADABLE)?)
+            .await
+            .map_err(|_| UNREADABLE)?;
+        let bytes = js_sys::Uint8Array::new(&buffer);
+        if bytes.length() as usize > LIMIT {
+            return Err(TOO_LARGE);
+        }
+        Ok(bytes.to_vec())
+    }
 }

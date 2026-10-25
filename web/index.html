@@ -1,19 +1,20 @@
 <!doctype html>
-<html lang="nl">
+<html lang="nl" data-backend="server">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <title>Thuisaccu · Welke thuisaccu past bij jou?</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script src="/ui.js" defer></script>
-    <script src="/data.js" defer></script>
-    <script src="/results.js" defer></script>
-    <script src="/keuzehulp.js" defer></script>
-    <script src="/catalog.js" defer></script>
-    <script src="/energy.js" defer></script>
-    <script src="/scenario.js" defer></script>
-    <script src="/app.js" defer></script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="local.js" defer></script>
+    <script src="ui.js" defer></script>
+    <script src="data.js" defer></script>
+    <script src="results.js" defer></script>
+    <script src="keuzehulp.js" defer></script>
+    <script src="catalog.js" defer></script>
+    <script src="energy.js" defer></script>
+    <script src="scenario.js" defer></script>
+    <script src="app.js" defer></script>
   </head>
   <body>
     <a class="skip" href="#view">Naar de inhoud</a>
@@ -34,8 +35,8 @@
         <div id="page-actions" class="actions"></div>
       </header>
       <div id="view"><p class="help">Laden…</p></div>
-      <footer>Thuisaccu draait lokaal; je gegevens blijven op deze computer. <a href="/api/v1/health">Servicestatus</a></footer>
+      <footer id="footer">Thuisaccu draait lokaal; je gegevens blijven op deze computer. <a href="api/v1/health">Servicestatus</a></footer>
     </main>
-    <noscript>Deze app vereist JavaScript. De server en database draaien lokaal.</noscript>
+    <noscript>Deze app vereist JavaScript.</noscript>
   </body>
 </html>

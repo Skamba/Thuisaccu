@@ -7,7 +7,12 @@ use thuisaccu_storage::Catalog;
 use tower::ServiceExt;
 
 async fn response_json(response: axum::response::Response) -> Value {
-    serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap()).unwrap()
+    serde_json::from_slice(
+        &to_bytes(response.into_body(), 4 * 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 #[tokio::test]
@@ -45,30 +50,37 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let data = response_json(response).await;
-    // Drie internationale momentopnamen, vijf Nederlandse uitvoeringen en vier uit de tweede
-    // Nederlandse set; de Powerwall-datasheet hangt als extra bron aan de bestaande uitvoering.
-    assert_eq!(data["configurations"].as_array().unwrap().len(), 12);
+    // Drie internationale momentopnamen, vijf Nederlandse uitvoeringen, vier uit de tweede,
+    // twintig uit de derde en zeventig uit de vierde set (catalogus Jay's Desk). De Powerwall-
+    // datasheet, de test van de Zendure AC+ en de catalogusgegevens van al opgenomen accu's
+    // hangen als extra bron aan een bestaande uitvoering.
+    assert_eq!(data["configurations"].as_array().unwrap().len(), 102);
     let offers = data["offers"].as_array().unwrap();
-    assert_eq!(offers.len(), 9);
+    // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding.
+    assert_eq!(offers.len(), 32);
     assert!(offers.iter().all(
         |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
     ));
-    // Een prijs ‘na teruggave btw’ blijft exclusief btw en zonder bekende installatie.
+    // Een prijs ‘na teruggave btw’ blijft exclusief btw (Zonneplan en Sigenergy); bij Zonneplan
+    // is onbekend of installatie inbegrepen is.
     let excluded: Vec<_> = offers
         .iter()
         .filter(|o| o["tax_basis"] == "excluded")
         .collect();
-    assert_eq!(excluded.len(), 2);
-    assert!(
+    assert_eq!(excluded.len(), 4);
+    assert_eq!(
         excluded
             .iter()
-            .all(|o| o["includes_installation"].is_null())
+            .filter(|o| o["includes_installation"].is_null())
+            .count(),
+        2
     );
+    // Geen webwinkelprijs inclusief btw bevat installatie; onbekend blijft onbekend.
     assert!(
         offers
             .iter()
             .filter(|o| o["tax_basis"] == "included")
-            .all(|o| o["includes_installation"] == false)
+            .all(|o| o["includes_installation"] != true)
     );
     let tesla = data["configurations"]
         .as_array()

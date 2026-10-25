@@ -1,12 +1,16 @@
 "use strict";
 
-// Browsertests voor de ingebakken webapp. Start de gebouwde server met een tijdelijke
-// database, gebruikt alleen synthetische gegevens en faalt bij elk verzoek buiten 127.0.0.1.
+// Browsertests voor de webapp. Start de gebouwde server met een tijdelijke database, of met
+// E2E_MODE=browser de statische browserversie (site/ van tools/build-site.sh) achter een
+// eenvoudige lokale webserver. Gebruikt alleen synthetische gegevens en faalt bij elk verzoek
+// buiten 127.0.0.1.
 // Draaien: cargo build --locked -p thuisaccu-server && (cd tests/e2e && npm test)
+//          sh tools/build-site.sh && (cd tests/e2e && E2E_MODE=browser npm test)
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -15,7 +19,30 @@ const ROOT = path.resolve(__dirname, "..", "..");
 const BINARY = process.env.THUISACCU_BIN
   || path.join(ROOT, "target", "debug", process.platform === "win32" ? "thuisaccu-server.exe" : "thuisaccu-server");
 
+const BROWSER_MODE = process.env.E2E_MODE === "browser";
+const SITE = path.resolve(process.env.THUISACCU_SITE || path.join(ROOT, "site"));
+
 let server, base, browser, workdir;
+
+// Statische site zoals GitHub Pages die levert, in een submap om relatieve paden te toetsen.
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8", ".wasm": "application/wasm" };
+function startSite() {
+  return new Promise((resolve, reject) => {
+    server = http.createServer((request, response) => {
+      const url = new URL(request.url, "http://127.0.0.1");
+      const relative = decodeURIComponent(url.pathname).replace(/^\/thuisaccu\//, "");
+      const file = path.resolve(SITE, relative || "index.html");
+      if (!url.pathname.startsWith("/thuisaccu/") || !file.startsWith(SITE + path.sep) || !fs.existsSync(file)) {
+        response.writeHead(404).end(); return;
+      }
+      response.writeHead(200, { "content-type": TYPES[path.extname(file)] || "application/octet-stream" });
+      fs.createReadStream(file).pipe(response);
+    });
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve(`http://127.0.0.1:${server.address().port}/thuisaccu`));
+  });
+}
 
 function startServer() {
   return new Promise((resolve, reject) => {
@@ -37,15 +64,26 @@ function startServer() {
 }
 
 before(async () => {
-  assert.ok(fs.existsSync(BINARY), `Bouw eerst de server: ${BINARY} ontbreekt.`);
   workdir = fs.mkdtempSync(path.join(os.tmpdir(), "thuisaccu-e2e-"));
-  base = await startServer();
+  if (BROWSER_MODE) {
+    assert.ok(fs.existsSync(path.join(SITE, "pkg")), `Bouw eerst de site: ${SITE} ontbreekt.`);
+    base = await startSite();
+  } else {
+    assert.ok(fs.existsSync(BINARY), `Bouw eerst de server: ${BINARY} ontbreekt.`);
+    base = await startServer();
+  }
   browser = await chromium.launch();
 });
 
 after(async () => {
   await browser?.close();
-  server?.kill();
+  if (BROWSER_MODE) server?.close();
+  else if (server && server.exitCode === null) {
+    // Op Windows blijft de database bezet tot het proces echt gestopt is.
+    const stopped = new Promise(resolve => server.once("exit", resolve));
+    server.kill();
+    await stopped;
+  }
   if (workdir) fs.rmSync(workdir, { recursive: true, force: true });
 });
 
@@ -90,8 +128,9 @@ function syntheticYear(dir) {
 
 test("startscherm is de keuzehulp, offline en zonder fouten", async () => {
   const { page, problems, close } = await open();
-  await page.goto(base);
+  await page.goto(`${base}/`);
   await page.waitForSelector(".wizard");
+  await page.waitForSelector("#service.online");
   assert.match(await page.evaluate(() => location.hash), /keuzehulp/);
   // Elk formulierveld heeft een zichtbaar label of een toegankelijke naam.
   const unlabelled = await page.$$eval("input, select, textarea", controls => controls
@@ -121,7 +160,12 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await next(page);
   // Lege catalogus: de onderzochte accu's worden pas op verzoek geladen.
   await page.click("button:has-text('Laad onderzochte accu’s')");
-  await page.waitForSelector(".product", { timeout: 30000 });
+  await page.waitForSelector(".product-group", { timeout: 30000 });
+  // Alle passende accu's met een prijs gaan automatisch mee; de rest staat ingeklapt met de reden.
+  assert.match(await page.textContent(".wizard-body"), /We rekenen alle \d+ accu’s door/);
+  assert.doesNotMatch(await page.textContent(".wizard-body"), /null/);
+  assert.match(await page.textContent(".product-group:last-of-type summary"), /niet meegerekend/);
+  assert.match(await page.textContent(".product-group:last-of-type"), /Past niet/);
   const lead = () => page.textContent(".wizard-body .lead");
   const before = await lead();
   await page.click("text=Zo veel mogelijk eigen zonnestroom");
@@ -175,7 +219,11 @@ test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async ()
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
   await page.goto(`${base}/#/accus`);
-  await page.waitForSelector("table");
+  // De browserversie begint per test met een lege database; de server deelt er één.
+  const load = page.getByRole("button", { name: "Laad onderzochte uitvoeringen" });
+  await page.locator("table").or(load).first().waitFor();
+  if (!await page.locator("table").count()) await load.click();
+  await page.waitForSelector("table", { timeout: 30000 });
   assert.equal(await page.locator(".callout", { hasText: "verouderd" }).count(), 0);
   await page.clock.setFixedTime(new Date("2027-02-01T12:00:00"));
   await page.reload();
@@ -197,5 +245,36 @@ test("smal scherm: menu werkt met het toetsenbord", async () => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(overflow <= 1, `horizontaal scrollen: ${overflow}px`);
   assert.deepEqual(problems, []);
+  await close();
+});
+
+test("browserversie bewaart gegevens in deze browser en maakt een back-up", { skip: !BROWSER_MODE }, async () => {
+  const { page, problems, close } = await open({ acceptDownloads: true });
+  await page.goto(`${base}/#/accus`);
+  await page.click("button:has-text('Laad onderzochte uitvoeringen')");
+  await page.waitForSelector("table tbody tr", { timeout: 30000 });
+  const rows = await page.locator("table tbody tr").count();
+  // Na herladen komt de catalogus uit IndexedDB, niet van een server.
+  await page.reload();
+  await page.waitForSelector("table tbody tr", { timeout: 30000 });
+  assert.equal(await page.locator("table tbody tr").count(), rows);
+  await page.goto(`${base}/#/instellingen`);
+  await page.waitForSelector("text=Gegevens in deze browser");
+  const [download] = await Promise.all([page.waitForEvent("download"),
+    page.click("button:has-text('Download back-up')")]);
+  const file = path.join(workdir, "backup.sqlite3");
+  await download.saveAs(file);
+  assert.equal(fs.readFileSync(file).subarray(0, 15).toString(), "SQLite format 3");
+  // Terugzetten in een lege browser geeft dezelfde catalogus.
+  const fresh = await open();
+  await fresh.page.goto(`${base}/#/instellingen`);
+  await fresh.page.setInputFiles("input[type=file]", file);
+  await fresh.page.click("button:has-text('Vervang de gegevens in deze browser')");
+  await fresh.page.waitForEvent("load");
+  await fresh.page.goto(`${base}/#/accus`);
+  await fresh.page.waitForSelector("table tbody tr", { timeout: 30000 });
+  assert.equal(await fresh.page.locator("table tbody tr").count(), rows);
+  assert.deepEqual([...problems, ...fresh.problems], []);
+  await fresh.close();
   await close();
 });

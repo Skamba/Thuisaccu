@@ -14,14 +14,28 @@ cargo run --locked -p thuisaccu-server
 
 Open <http://127.0.0.1:3000>. Stop met Ctrl+C. De server maakt `data/research.sqlite3` aan en past de ingebouwde migraties toe. SQLite wordt meegebouwd; een aparte databaseserver is niet nodig. HTML, CSS en JavaScript zitten in de executable. Node.js en een frontend-build zijn niet nodig voor gebruik. Na wijzigingen in `web/` moet je de server opnieuw bouwen/starten.
 
+## In de browser (GitHub Pages)
+
+Dezelfde app draait ook volledig in de browser, zonder server: de API en SQLite zijn naar WebAssembly gecompileerd (`crates/browser`) en draaien in een webworker. De database staat in IndexedDB van die browser. Er gaat niets naar een server, behalve een adres dat je zelf opzoekt via PDOK (rechtstreeks vanuit de browser). Onder Instellingen download je een back-up (een gewoon SQLite-bestand) of zet je er een terug; ook `data/research.sqlite3` van de lokale app werkt, als je die app eerst stopt.
+
+Bouwen vereist het WebAssembly-target, clang (voor SQLite) en `wasm-bindgen-cli` in de versie uit `Cargo.lock`:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --locked --version 0.2.129
+sh tools/build-site.sh            # statische site in site/
+```
+
+Serveer `site/` met een willekeurige statische webserver (de wasm moet als `application/wasm` komen). CI bouwt de site, test hem met Playwright en publiceert hem bij een push naar `main` op GitHub Pages; zet daarvoor eenmalig *Settings → Pages → Source* op *GitHub Actions*.
+
 ## Gebruik
 
-1. **Keuzehulp** (startscherm) stelt vijf vragen in gewone taal: je energie (jaartotalen of een bestand), je woning, je contract, wat je belangrijk vindt, en dan het advies. Met jaartotalen maakt de server een geschat uurprofiel uit het standaardprofiel E1A 2026 en PVGIS-zonnedata. Het advies toont een zinvol capaciteitsbereik, welke accu’s passen en waarom niet, een bewerkbare kostenindicatie voor alle 26 posten met bron of aanname, en rekent de gekozen accu’s door tegenover geen accu. Zie [keuzehulp](docs/keuzehulp.md).
+1. **Keuzehulp** (startscherm) stelt vijf vragen in gewone taal: je energie (jaartotalen of een bestand), je woning, je contract, wat je belangrijk vindt, en dan het advies. Met jaartotalen maakt de server een geschat uurprofiel uit het standaardprofiel E1A 2026 en PVGIS-zonnedata. Het advies toont een zinvol capaciteitsbereik, welke accu’s passen en waarom niet, en rekent automatisch alle passende accu’s met een gepubliceerde prijs door tegenover geen accu, met een kostenindicatie voor alle 26 posten met bron of aanname. Zie [keuzehulp](docs/keuzehulp.md).
 2. **Mijn berekeningen** bewaart elke uitkomst met de oorspronkelijke invoer: aanbeveling, samenvatting in gewone taal en tabbladen voor overzicht, kasstromen, energie, gevoeligheid, invoer en waarschuwingen. ‘Pas aan en reken opnieuw’ neemt een uitkomst over in Zelf doorrekenen; CSV-export en afdrukken zijn beschikbaar.
 3. **Accu’s vergelijken** toont de onderzochte uitvoeringen (bronmomentopnamen van 24 oktober 2026, waarvan vijf met een Nederlandse prijs) en eigen dossiers. Zet er maximaal vier naast elkaar; iedere bronclaim behoudt bron, vindplaats en meetgrens. Er wordt geen winnaar gekozen.
 4. **Energiegegevens** toont bewaarde profielen met hun geschiktheid en een capaciteitscurve. De importwizard leest CSV, Excel of JSON van omvormers en van de slimme meter (P1: opwek, netafname en teruglevering in één bestand).
 5. **Zelf doorrekenen** is voor wie offertes heeft: alle aannames, tot twaalf opties met techniek, 26 kostenposten en financiering zelf invullen, met een knop die open posten vult met bronvermelde indicaties. Adres opzoeken via PDOK gebeurt alleen met de zoekknop.
-6. **Instellingen** bewaart standaardaannames, thema en dichtheid in deze browser en kan concepten wissen.
+6. **Instellingen** bewaart standaardaannames, thema en dichtheid in deze browser en kan concepten wissen. In de browserversie staan hier ook back-up, terugzetten en blijvende opslag.
 
 Fictieve gegevens uit een oudere database blijven als FICTIEF gemarkeerd; de interface biedt geen demo-acties.
 
@@ -86,4 +100,3 @@ Met Node.js: voer `node --check` uit op alle scripts in `web/` en draai de brows
 `Cargo.lock` legt dependencyversies vast. Stable Rust wordt niet op een specifieke compilerpatch vastgezet. De GitHub Actions-workflow draait zodra de repo naar GitHub wordt gepusht.
 
 Zie [architectuur](docs/architecture.md), [API](docs/api.md), [ontwikkelafspraken](CONTRIBUTING.md) en [vervolgstappen](docs/roadmap.md).
-

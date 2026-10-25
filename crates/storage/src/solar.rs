@@ -1,5 +1,5 @@
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 use crate::{Catalog, Result, StorageError};
 
@@ -42,6 +42,10 @@ pub struct SavedSolar {
     pub summary: serde_json::Value,
 }
 
+pub(crate) fn json(text: &str) -> Result<serde_json::Value> {
+    serde_json::from_str(text).map_err(|e| StorageError::InvalidInput(e.to_string()))
+}
+
 impl Catalog {
     pub async fn save_solar(
         &self,
@@ -69,45 +73,55 @@ impl Catalog {
                 ));
             }
         }
-        let mut tx = self.pool().begin().await?;
-        let inserted: Option<i64> = sqlx::query_scalar("INSERT INTO solar_imports (filename, sha256, imported_at_unix_s, options_json, summary_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(sha256, options_json) DO NOTHING RETURNING id")
-        .bind(filename).bind(sha256).bind(now).bind(options).bind(summary)
-        .fetch_optional(&mut *tx)
-        .await?;
+        let mut connection = self.connection();
+        let tx = connection.transaction()?;
+        let inserted: Option<i64> = tx.query_row("INSERT INTO solar_imports (filename, sha256, imported_at_unix_s, options_json, summary_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(sha256, options_json) DO NOTHING RETURNING id",
+            params![filename, sha256, now, options, summary], |row| row.get(0)).optional()?;
         let Some(id) = inserted else {
-            let id: i64 = sqlx::query_scalar(
+            return Ok(tx.query_row(
                 "SELECT id FROM solar_imports WHERE sha256 = ? AND options_json = ?",
-            )
-            .bind(sha256)
-            .bind(options)
-            .fetch_one(&mut *tx)
-            .await?;
-            tx.rollback().await?;
-            return Ok(id);
+                params![sha256, options],
+                |row| row.get(0),
+            )?);
         };
-        for item in intervals {
-            sqlx::query("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh) VALUES (?, ?, ?, ?, ?)")
-                .bind(id).bind(item.start_unix_s).bind(item.end_unix_s).bind(item.production_wh).bind(item.consumption_wh).execute(&mut *tx).await?;
+        {
+            let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh) VALUES (?, ?, ?, ?, ?)")?;
+            for item in intervals {
+                insert.execute(params![
+                    id,
+                    item.start_unix_s,
+                    item.end_unix_s,
+                    item.production_wh,
+                    item.consumption_wh
+                ])?;
+            }
         }
-        tx.commit().await?;
+        tx.commit()?;
         Ok(id)
     }
 
     pub async fn list_solar(&self) -> Result<Vec<SavedSolar>> {
-        let rows = sqlx::query("SELECT id, filename, imported_at_unix_s, options_json, summary_json FROM solar_imports ORDER BY id DESC")
-            .fetch_all(self.pool()).await?;
+        let connection = self.connection();
+        let rows = connection
+            .prepare("SELECT id, filename, imported_at_unix_s, options_json, summary_json FROM solar_imports ORDER BY id DESC")?
+            .query_map([], |r| {
+                Ok((
+                    r.get("id")?,
+                    r.get("filename")?,
+                    r.get("imported_at_unix_s")?,
+                    r.get::<_, String>("options_json")?,
+                    r.get::<_, String>("summary_json")?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|r| {
-                let options: String = r.try_get("options_json")?;
-                let summary: String = r.try_get("summary_json")?;
+            .map(|(id, filename, imported_at_unix_s, options, summary)| {
                 Ok(SavedSolar {
-                    id: r.try_get("id")?,
-                    filename: r.try_get("filename")?,
-                    imported_at_unix_s: r.try_get("imported_at_unix_s")?,
-                    options: serde_json::from_str(&options)
-                        .map_err(|e| StorageError::InvalidInput(e.to_string()))?,
-                    summary: serde_json::from_str(&summary)
-                        .map_err(|e| StorageError::InvalidInput(e.to_string()))?,
+                    id,
+                    filename,
+                    imported_at_unix_s,
+                    options: json(&options)?,
+                    summary: json(&summary)?,
                 })
             })
             .collect()

@@ -1,0 +1,21 @@
+[package]
+name = "thuisaccu-browser"
+description = "Thuisaccu als WebAssembly-module: dezelfde API en opslag, volledig in de browser"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+# Buiten WebAssembly is dit een lege bibliotheek, zodat `cargo build --workspace` gewoon slaagt.
+[target.'cfg(target_family = "wasm")'.dependencies]
+axum.workspace = true
+tower.workspace = true
+thuisaccu-server = { path = "../server" }
+thuisaccu-storage = { path = "../storage" }
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+
+[lints]
+workspace = true

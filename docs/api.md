@@ -11,7 +11,7 @@ De volgende routes bestaan:
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
-| `POST /api/v1/references` | `200`, JSON | Expliciete invoer van twee sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was |
+| `POST /api/v1/references` | `200`, JSON | Expliciete invoer van vijf sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was |
 | `POST /api/v1/solar/inspect` | `200`, JSON | Kolommen, eerste acht rijen, werkbladen, aantal rijen, eventuele metadata |
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |
@@ -70,7 +70,7 @@ Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfd
 | `solar_import_id` | Bestaande import met één aaneengesloten volledig jaar en bruto verbruik per interval |
 | `site` | `address`, optioneel samen `latitude`/`longitude` binnen Nederland, optioneel `bag_id` |
 | `parameters` | Startjaar, horizon, discontovoet, kostenindex, PV-afname, verbruiksgroei, doel, optioneel budget, tarieven en gevoeligheidspercentages |
-| `candidates` | 1–12 kandidaten met unieke `key`, `name`, optioneel `configuration_id`, `battery`, `costs`, `financing` en `assumptions` |
+| `candidates` | 1–50 kandidaten met unieke `key`, `name`, optioneel `configuration_id`, `battery`, `costs`, `financing` en `assumptions` |
 | `costs_confirmed`, `technical_assumptions_confirmed`, `consumption_is_gross`, `production_is_ac` | Alle `true` voor een schatting met bevestigde kosten en meetgrenzen |
 
 `objective` is `net_present_value`, `roi`, `payback` of `self_consumption`. `tariff` bevat `import_eur_per_kwh`, `export_eur_per_kwh`, `export_fee_eur_per_kwh`, `export_fee_bands`, `fixed_annual_eur` en `annual_price_change_pct`. Een staffel is `{ "up_to_kwh": 1000, "annual_eur": 120 }`; de laatste bovengrens moet `null` zijn. Optioneel is `export_variant`: `{ "label": "Geen vergoeding vanaf 2030", "from_calendar_year": 2030, "export_eur_per_kwh": 0, "export_fee_eur_per_kwh": 0.05 }`, met een beginjaar op of na `start_year`. Bedragen zijn all-in EUR zoals van toepassing op het scenario.
@@ -85,11 +85,11 @@ De opgeslagen `input` bevat `request`, `profile` (importmetadata), `profile_sha2
 
 ## Adresopzoeken
 
-`POST /api/v1/locations/search` accepteert `{ "query": "Binnenhof 1 Den Haag" }` met 4–200 bytes na trimmen. De server stuurt die zoekterm naar de vaste HTTPS-PDOK-host, beperkt tot vijf adresresultaten. Ieder resultaat heeft `address`, `latitude`, `longitude`, `bag_id`. Er worden geen energieprofielen meegestuurd. Timeout: 10 seconden; geen redirects; maximaal 1 MB antwoord. De browser vereist een expliciete zoekactie en resultaatkeuze. Handmatig adresgebruik blijft mogelijk als PDOK niet beschikbaar is. Een adres levert geen automatische aansluiting, tarief of PV-schatting.
+`POST /api/v1/locations/search` accepteert `{ "query": "Binnenhof 1 Den Haag" }` met 4–200 bytes na trimmen. De server (in de browserversie: de webworker, rechtstreeks en zonder cookies of referrer) stuurt die zoekterm naar de vaste HTTPS-PDOK-host, beperkt tot vijf adresresultaten. Ieder resultaat heeft `address`, `latitude`, `longitude`, `bag_id`. Er worden geen energieprofielen meegestuurd. Timeout: 10 seconden; geen redirects; maximaal 1 MB antwoord. De browser vereist een expliciete zoekactie en resultaatkeuze. Handmatig adresgebruik blijft mogelijk als PDOK niet beschikbaar is. Een adres levert geen automatische aansluiting, tarief of PV-schatting.
 
 ## Fouten en grenzen
 
 Inhoudelijk ongeldige invoer geeft `400` met `error: invalid_input` (catalogus/import) of `invalid_analysis` (scenario/adres) en een gebruikersmelding. Databasefouten geven `500` met `error: database_error`; interne details blijven in de serverlog. Axum-rejections, bijvoorbeeld verkeerde JSON-typen, een verkeerde content-type of een te grote body, gebruiken vooralsnog de frameworkresponse en kunnen onder meer `413`, `415` of `422` geven.
 
-De vergelijkingsroute levert alle catalogusclaims zonder paginering, bronselectie of automatische reviewfiltering; dit past bij de huidige lokale onderzoekscatalogus. De healthcheck is liveness en geen aparte database-readinesscheck. Browser en API gebruiken dezelfde oorsprong, zonder CORS-configuratie. Alle routes zijn voor lokaal gebruik; er is geen authenticatie. Alleen adreszoeken gebruikt een externe dienst.
+De vergelijkingsroute levert alle catalogusclaims zonder paginering, bronselectie of automatische reviewfiltering; dit past bij de huidige lokale onderzoekscatalogus. De healthcheck is liveness en geen aparte database-readinesscheck. Browser en API gebruiken dezelfde oorsprong, zonder CORS-configuratie. Alle routes zijn voor lokaal gebruik; er is geen authenticatie. In de browserversie beantwoordt dezelfde router de routes in een webworker (`Local.fetch` in `web/local.js`); de webbestanden (`/`, `/*.js`, `/styles.css`) levert daar de statische site. Alleen adreszoeken gebruikt een externe dienst.
 

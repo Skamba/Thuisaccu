@@ -378,3 +378,22 @@ fn export_variant_before_the_start_year_is_rejected() {
     });
     assert!(analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)]).is_err());
 }
+
+#[test]
+fn up_to_fifty_battery_options_are_compared_at_once() {
+    // De keuzehulp rekent alle passende accu's met een prijs door; de grens ligt op vijftig.
+    let p = parameters();
+    let options = |count: usize| -> Vec<_> {
+        (0..count)
+            .map(|i| candidate(&format!("battery-{i}"), 2.0, 50_000))
+            .collect()
+    };
+    let r = analysis::analyze(&profile(), &p, &options(50)).unwrap();
+    assert_eq!(r.candidates.len(), 50);
+    assert!(
+        analysis::analyze(&profile(), &p, &options(51))
+            .unwrap_err()
+            .to_string()
+            .contains("1 tot 50")
+    );
+}

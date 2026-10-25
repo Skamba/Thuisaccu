@@ -54,7 +54,8 @@ window.UI = (() => {
     if (json !== undefined) { options.headers = { "content-type": "application/json" };
       options.body = JSON.stringify(json); }
     else if (body !== undefined) options.body = body;
-    const response = await fetch(url, options);
+    // In de browserversie (local.js) beantwoordt een webworker de API in plaats van de server.
+    const response = await (Local.enabled ? Local.fetch : fetch)(url, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || `Verzoek mislukt (${response.status}).`);
     return data;
@@ -219,6 +220,10 @@ window.UI = (() => {
     };
     const blob = new Blob(["﻿" + rows.map(row => row.map(cell).join(";")).join("\r\n")],
       { type: "text/csv;charset=utf-8" });
+    downloadBlob(filename, blob);
+  }
+
+  function downloadBlob(filename, blob) {
     const url = URL.createObjectURL(blob), a = h("a", { href: url, download: filename });
     a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -249,10 +254,14 @@ window.UI = (() => {
     const colour = (i, s) => s?.color || palette[i % palette.length];
     const values = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0),
       0)] : r.values).filter(finite);
-    const min = Math.min(0, ...values), max = Math.max(0, ...values), span = max - min || 1;
+    // Ronde aswaarden (1, 2, 2,5 of 5 × een macht van tien), ongeveer vier intervallen.
+    const low = Math.min(0, ...values), high = Math.max(0, ...values), rough = (high - low || 1) / 4;
+    const magnitude = 10 ** Math.floor(Math.log10(rough));
+    const step = [1, 2, 2.5, 5, 10].map(f => f * magnitude).find(s => s >= rough);
+    const min = Math.floor(low / step) * step, max = Math.ceil(high / step) * step, span = max - min || 1;
     const x = v => left + (v - min) / span * plotW, y = v => top + (max - v) / span * plotH;
-    for (let i = 0; i <= 4; i++) {
-      const value = min + i * span / 4;
+    for (let i = 0; i <= Math.round(span / step); i++) {
+      const value = min + i * step;
       if (horizontal) { draw("line",
         { x1: x(value), x2: x(value), y1: top, y2: height - bottom, class: "chart-grid" });
         text(x(value), height - 26, format(value), "middle"); }
@@ -326,7 +335,8 @@ window.UI = (() => {
     }
     text(width - right, height - 6, unit, "end");
     const legend = h("ul", { class: "legend" }, series.map((s, i) => h("li", {},
-      h("span", { class: "swatch", style: `background:${type === "range" ? "currentColor" : colour(i, s)}` }), s.label)));
+      type === "range" ? h("span", { class: `swatch ${i === 1 ? "swatch-base" : "swatch-tick"}` })
+        : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));
     const data = h("details", {}, h("summary", {}, "Toon als tabel"),
       table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")])));
     return h("figure", { class: "chart" }, h("figcaption", {}, title), svg, legend, data);
@@ -339,6 +349,6 @@ window.UI = (() => {
   return {
     h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, api, store, toast, busy,
     button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, table, stats, empty,
-    tabs, wizard, dialog, downloadCsv, chart, palette, pages, page
+    tabs, wizard, dialog, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

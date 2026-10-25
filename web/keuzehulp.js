@@ -3,7 +3,7 @@
 // Keuzehulp: vijf stappen in gewone taal en daarna een doorrekening met zichtbare aannames.
 // Antwoorden staan alleen als concept in deze browser; er gaat niets naar externe diensten.
 (() => {
-  const { h, field, numberInput, select, choice, checkbox, badge, button, link, external, table, chart, money, kwh,
+  const { h, field, numberInput, select, choice, checkbox, button, link, external, table, chart, money, kwh,
     number: n, parse, store } = UI;
   const STORE = "thuisaccu-keuzehulp";
 
@@ -185,7 +185,7 @@
     electric.append(evChoice);
     body.append(grid, derived, electric,
       h("p", { class: "help" },
-        "We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven op deze computer."));
+        `We maken hiermee een geschat uurprofiel: het standaardverbruiksprofiel voor huishoudens (E1A 2026) en zonnedata van PVGIS voor De Bilt. Echte pieken en dalen zijn groter, dus de uitkomst is een indicatie. Je gegevens blijven ${Local.where}.`));
     rerenderEv();
   }
 
@@ -275,8 +275,11 @@
       else if (!p.backup || p.backup.status === "unknown") notes.push("Onbekend of noodstroom mogelijk is.");
     }
     if (answers.place === "outside" && p.outdoor?.status === "unsupported") no.push("Niet geschikt voor buiten.");
-    if (/hybride/i.test(p.coupling)) notes.push("Hybride systeem: combineert met of vervangt je omvormer. Laat een installateur dat beoordelen.");
-    if (/DC/.test(p.coupling) && !/hybride/i.test(p.coupling)) notes.push("Heeft een geschikte (hybride) omvormer nodig.");
+    if (/hybride/i.test(p.coupling) && p.kind === "plug") {
+      notes.push("Heeft ook eigen zonne-ingangen (MPPT); panelen daarop aansluiten mag, maar hoeft niet. De berekening rekent met laden uit je overschot via het stopcontact.");
+    } else if (/hybride/i.test(p.coupling)) notes.push("Hybride systeem: combineert met of vervangt je omvormer. Laat een installateur dat beoordelen.");
+    if (/micro-omvormer/i.test(p.coupling)) notes.push("Zit tussen zonnepanelen en een aparte micro-omvormer: slaat alleen stroom op van de panelen die erop zijn aangesloten, en vermogens gelden aan de DC-kant.");
+    else if (/DC/.test(p.coupling) && !/hybride/i.test(p.coupling)) notes.push("Heeft een geschikte (hybride) omvormer nodig.");
     if (p.missing.length) notes.push(`Kan nog niet worden doorgerekend: ${p.missing.join(" en ")} onbekend.`);
     if (!p.offer && p.otherOffer) {
       notes.push(`${p.otherOffer.seller} publiceert alleen een prijs ${p.otherOffer.tax_basis === "excluded"
@@ -304,109 +307,25 @@
     return (await UI.api("/api/v1/solar/typical", { method: "POST", json })).id;
   }
 
-  // Bewerkbare kostenopbouw per accu; een ingevuld bedrag vervangt de indicatie.
-  function costEditor(lines, categories, priceInput) {
-    const labels = Object.fromEntries(categories.map(c => [c.key, c.label])), inputs = new Map();
-    const summary = h("summary"), totals = h("p", { class: "help" }),
-      box = h("details", { class: "costs" }, summary, totals);
-    const statusText = { included: "Inbegrepen", not_applicable: "Niet van toepassing", unknown: "Nog in te vullen" };
-    const fixedLine = line => line.timing === "event" || ["grant", "vat_refund"].includes(line.category);
-    const item = line => {
-      const head = h("div", { class: "cost-head" }, h("span", {}, labels[line.category]));
-      if (fixedLine(line)) head.append(h("span", { class: "cost-status" },
-        line.status === "priced" ? money(line.amount_minor / 100) : statusText[line.status]));
-      else {
-        const control = numberInput({ min: "0", step: "0.01", placeholder: statusText[line.status] || "",
-          "aria-label": `${labels[line.category]} in euro`, oninput: update });
-        control.value = line.status === "priced" ? String(line.amount_minor / 100) : "";
-        inputs.set(line.category, control); head.append(control);
-      }
-      const assumed = Data.isAssumption(line);
-      return h("div", { class: "cost" }, head, h("p", { class: "cost-basis" },
-        badge(assumed ? "Aanname" : "Bron", assumed ? "warning" : "success"), " ", line.notes.replace(/^Aanname: /, ""),
-        /^https:\/\//.test(line.source) ? [" · ", external("bron", line.source)] : null));
-    };
-    const groups = [
-      ["Startkosten", l => l.timing === "upfront" && !["grant", "vat_refund"].includes(l.category)],
-      ["Per jaar", l => l.timing === "annual"],
-      ["Later en aftrekposten", l => fixedLine(l)]
-    ];
-    for (const [title, match] of groups) {
-      const group = lines.filter(l => l.category !== "battery" && match(l)),
-        rest = group.filter(l => l.status === "not_applicable");
-      box.append(h("div", { class: "cost-group" }, h("h4", {}, title), group.filter(l => l.status !== "not_applicable").map(item),
-        rest.length ? h("details", {}, h("summary", {}, `${rest.length} ${rest.length === 1 ? "post" : "posten"} niet van toepassing`), rest.map(item)) : null));
-    }
-    function collect() {
-      return lines.map(line => {
-        const control = inputs.get(line.category);
-        if (!control) return { ...line };
-        const value = parse(control.value), original = line.status === "priced" ? line.amount_minor : null;
-        if (value != null && value > 0) {
-          const minor = Math.round(value * 100);
-          return minor === original ? { ...line } : { ...line, status: "priced", amount_minor: minor,
-            source: "Eigen invoer in de keuzehulp", notes: `Aangepast; indicatie was: ${line.notes}` };
-        }
-        return original != null ? { ...line, status: "not_applicable", amount_minor: 0,
-          source: "Eigen invoer in de keuzehulp", notes: "Door de gebruiker op nul gezet." } : { ...line };
-      });
-    }
-    function update() {
-      const all = collect(), price = parse(priceInput.value) || 0;
-      const start = price + all.filter(l => l.timing === "upfront" && l.status === "priced" && !["grant",
-        "vat_refund"].includes(l.category)).reduce((t, l) => t + l.amount_minor,
-        0) / 100;
-      const yearly = all.filter(l => l.timing === "annual" && l.status === "priced").reduce((t,
-        l) => t + l.amount_minor,
-        0) / 100;
-      const open = all.filter(l => l.status === "unknown" && l.category !== "battery").length;
-      summary.textContent = `Kosten: ${money(start, { decimals: 0 })} bij de start${yearly ? ` + ${money(yearly, { decimals: 0 })} per jaar` : ""}${open ? ` · ${open} nog in te vullen` : ""}`;
-      totals.textContent = `Startkosten inclusief accu ${money(start, { decimals: 0 })}, extra jaarkosten ${money(yearly, { decimals: 0 })}. Elke post noemt zijn bron of aanname; vervang een indicatie door je offertebedrag.`;
-    }
-    priceInput.addEventListener("input", update); update();
-    return { element: box, collect, label: key => labels[key] };
+  // Kostenopbouw met de gepubliceerde prijs als accupost; de overige posten zijn bronvermelde indicaties.
+  function costLines(p, costCatalog) {
+    const installation = p.offer.includes_installation === true ? ", inclusief installatie"
+      : p.offer.includes_installation === false ? ", exclusief installatie" : "";
+    return Data.estimateCosts(costCatalog, { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases,
+      inverterIncluded: p.inverterIncluded }, answers).map(line => line.category !== "battery" ? line : {
+      ...line, status: "priced", amount_minor: p.offer.upfront_amount_minor,
+      source: `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${Data.RESEARCHED_ON})`,
+      notes: `Gepubliceerde prijs inclusief btw${installation}.`
+    });
   }
 
-  function productCard(p, costCatalog, range, preselect) {
-    const check = h("input", { type: "checkbox", id: UI.uid("accu"), disabled: !p.fit.ok || p.missing.length > 0 });
-    check.checked = !check.disabled && preselect;
-    const priceInput = numberInput({ min: "0", step: "0.01", placeholder: "Offertebedrag" });
-    priceInput.value = p.offer ? String(p.offer.upfront_amount_minor / 100) : "";
-    const editor = costEditor(Data.estimateCosts(costCatalog,
-      { kind: p.kind, manufacturer: p.config.manufacturer_name, phases: p.phases,
-        inverterIncluded: p.inverterIncluded },
-      answers),
-      costCatalog.categories, priceInput);
-    const rangeBadge = h("span");
-    const updateRange = current => {
-      rangeBadge.replaceChildren();
-      if (p.capacity == null || !current) return;
-      const text = p.capacity < current.low ? "Kleiner dan het zinvolle bereik"
-        : p.capacity > current.high ? "Groter dan het zinvolle bereik" : "Binnen het zinvolle bereik";
-      rangeBadge.append(badge(text, text.startsWith("Binnen") ? "success" : ""));
-    };
-    updateRange(range);
-    const card = h("article", { class: `panel product${p.fit.ok ? "" : " unfit"}` },
-      h("div", { class: "product-head" }, check, h("label", { for: check.id }, p.name)),
-      h("p", {}, [p.kind === "plug" ? "Stekkerbatterij" : p.kind === "fixed" ? "Vaste installatie" : "Aansluiting onbekend",
-        p.capacity != null ? `${n(p.capacity, 1)} kWh bruikbaar` : "capaciteit onbekend",
-        p.dischargeKw != null ? `${n(p.dischargeKw, 1)} kW ontladen` : "vermogen onbekend",
-        p.warrantyYears ? `${n(p.warrantyYears, 0)} jaar productgarantie` : null].filter(Boolean).join(" · ")),
-      rangeBadge,
-      p.fit.no.map(reason => h("p", { class: "warning" }, `Past niet: ${reason}`)),
-      p.fit.notes.map(note => h("p", { class: "help" }, note)),
-      field("Aanschafprijs (€, incl. btw)", priceInput,
-        p.offer ? h("span", {}, external(`Prijs volgens ${p.offer.seller}`, p.offer.source_url),
-          p.offer.includes_installation === false ? " · exclusief installatie" : "") : null),
-      editor.element,
-      h("details", {}, h("summary", {}, "Zo rekenen we met deze accu"),
-        table(["Rekengegeven", "Waarde"], [
-          ["Bruikbare capaciteit", p.capacity != null ? `${n(p.capacity)} kWh` : "Onbekend"],
-          ["Laden / ontladen (AC)",
-            p.chargeKw != null && p.dischargeKw != null ? `${n(p.chargeKw)} / ${n(p.dischargeKw)} kW` : "Onbekend"],
-          ["Rendement heen en terug", `${n(p.efficiency, 0)}%`], ["Sluimerverbruik", `${n(p.standby, 0)} W`]]),
-        h("ul", {}, p.notes.map(note => h("li", {}, note))), link("Bekijk alle bronclaims", "#/accus")));
-    return { card, check, priceInput, editor, p, updateRange };
+  // Waarom een accu niet meedoet in de berekening; null als hij wel meedoet.
+  function exclusion(p, labels) {
+    if (!p.fit.ok) return `Past niet: ${p.fit.no.join("; ")}`;
+    if (p.missing.length) return `Gegevens ontbreken: ${p.missing.join(" en ")}`;
+    if (!p.offer) return p.otherOffer ? "Alleen een prijs zonder btw gepubliceerd" : "Geen gepubliceerde prijs";
+    const open = p.lines.filter(l => l.status === "unknown" && l.category !== "battery");
+    return open.length ? `Kosten onbekend: ${open.map(l => labels[l.category]).join(", ")}` : null;
   }
 
   function buildRequest(importId, chosen) {
@@ -419,21 +338,9 @@
       label: `Geen terugleververgoeding vanaf ${INDICATION.variantYear}`, from_calendar_year: INDICATION.variantYear,
       export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
     } : undefined;
-    const candidates = chosen.map(({ p, priceInput, editor }) => {
-      const price = parse(priceInput.value);
-      if (!(price > 0)) throw new Error(`Vul een aanschafprijs in voor ${p.name}.`);
-      const lines = editor.collect(), open = lines.find(l => l.status === "unknown" && l.category !== "battery");
-      if (open) throw new Error(`Vul bij ${p.name} een bedrag in voor ‘${editor.label(open.category)}’.`);
-      const fromOffer = p.offer && Math.round(price * 100) === p.offer.upfront_amount_minor;
-      Object.assign(lines.find(l => l.category === "battery"), {
-        status: "priced", amount_minor: Math.round(price * 100),
-        source: fromOffer ? `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${Data.RESEARCHED_ON})` : "Eigen invoer in de keuzehulp",
-        notes: fromOffer ? "Gepubliceerde prijs inclusief btw, exclusief installatie." : "Door de gebruiker ingevoerd bedrag."
-      });
-      return { key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id, battery: p.battery,
-        costs: lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
-        assumptions: `Keuzehulp. ${p.notes.join(" ")}` };
-    });
+    const candidates = chosen.map(p => ({ key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id,
+      battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
+      assumptions: `Keuzehulp. ${p.notes.join(" ")}` }));
     return {
       title: `Keuzehulp ${new Date().toLocaleDateString("nl-NL")}`, solar_import_id: importId,
       site: { address: "Nederland (keuzehulp, geen adres opgegeven)", latitude: null, longitude: null, bag_id: null },
@@ -467,7 +374,9 @@
     const at = share => points.find(p => p.battery_to_load_kwh >= share * max)?.usable_capacity_kwh;
     const rangeFor = key => max > 0 ? { low: at(SIZING[key].low), high: at(SIZING[key].high) } : null;
     if (!SIZING[answers.sizing]) answers.sizing = "value";
-    let range = rangeFor(answers.sizing), cards = [];
+    // De rekenkern vergelijkt maximaal vijftig accu's tegelijk.
+    const MAX_CANDIDATES = 50;
+    let range = rangeFor(answers.sizing), included = [], renderPick = () => {};
     body.replaceChildren(h("h2", {}, "Je advies"));
 
     const size = h("section", { class: "panel" }, h("h3", {}, "1. Hoe groot moet een accu zijn?"));
@@ -498,32 +407,60 @@
       size.append(
         UI.choice("Wat wil je met de accu bereiken?", "kh-sizing", options, answers.sizing, value => {
           answers.sizing = value; save(); range = rangeFor(value); renderSize();
-          cards.forEach(c => c.updateRange(range));
+          renderPick();
         }),
         sizeBody, h("p", { class: "help" }, curve.assumptions));
       renderSize();
     }
 
-    const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp,
-      c)).map(p => ({ ...p, fit: fit(p) }))
-      .sort((a, b) => Number(b.fit.ok) - Number(a.fit.ok) || (a.capacity ?? 99) - (b.capacity ?? 99));
-    const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s passen bij je woning?"));
+    const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
+    const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c))
+      .map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? costLines(p, costCatalog) : null }))
+      .map(p => ({ ...p, reason: exclusion(p, labels) }));
+    const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s rekenen we door?"));
     if (!products.length) {
       pickSection.append(h("p", {}, "Er staan nog geen accu’s in je catalogus."),
         button("Laad onderzochte accu’s", event => UI.busy(event.target, async () => { await UI.api("/api/v1/references", { method: "POST" }); Data.invalidateCatalog(); flow.rerender(); })));
       body.append(size, pickSection); return;
     }
-    let preselected = 0;
-    cards = products.map(p => {
-      const preselect = p.fit.ok && !p.missing.length && Boolean(p.offer) && preselected < 6;
-      if (preselect) preselected++;
-      return productCard(p, costCatalog, range, preselect);
-    });
-    const age = Data.priceAge();
-    if (age.stale) pickSection.append(h("p", { class: "callout", role: "note" }, age.text));
-    pickSection.append(h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. Een vinkje betekent: neem mee in de berekening.`),
-      h("div", { class: "products" }, cards.map(c => c.card)));
-
+    // Iedere passende accu met een prijs en bekende kosten doet mee; de gebruiker hoeft niet te kiezen.
+    // Boven de grens van de rekenkern gaan de accu's voor die het dichtst bij het zinvolle bereik liggen.
+    const distance = p => !range ? 0 : Math.max(0, range.low - p.capacity, p.capacity - range.high);
+    const position = p => !range ? "—" : p.capacity < range.low ? "Kleiner" : p.capacity > range.high ? "Groter" : "Binnen";
+    const excluded = products.filter(p => p.reason).sort((a, b) => a.name.localeCompare(b.name, "nl"));
+    const opened = { included: false, excluded: false }, pickBody = h("div");
+    const group = (key, text, content) => {
+      const box = h("details", { class: "product-group", open: opened[key] }, h("summary", {}, text), content);
+      box.addEventListener("toggle", () => { opened[key] = box.open; });
+      return box;
+    };
+    renderPick = () => {
+      const eligible = products.filter(p => !p.reason)
+        .sort((a, b) => distance(a) - distance(b) || a.capacity - b.capacity);
+      included = eligible.slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
+      const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast" };
+      pickBody.replaceChildren(...[
+        h("p", {}, included.length
+          ? `We rekenen ${eligible.length > included.length ? `de ${included.length} van de ${eligible.length}` : `alle ${included.length}`} ` +
+            `accu’s door die bij je antwoorden passen en waarvan prijs, capaciteit en vermogen bekend zijn` +
+            `${eligible.length > included.length ? " die het dichtst bij het zinvolle bereik liggen" : ""}, ` +
+            "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."
+          : "Geen enkele accu past bij je antwoorden en heeft tegelijk een gepubliceerde prijs en volledige gegevens."),
+        age.stale ? h("p", { class: "callout", role: "note" }, age.text) : null,
+        h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. ` +
+          "Heb je een offerte, of wil je een accu zonder gepubliceerde prijs meenemen? Gebruik ", link("Zelf doorrekenen", "#/zelf"), "."),
+        included.length ? group("included", `Bekijk de ${included.length} accu’s die we doorrekenen`,
+          table(["Accu", "Soort", "Bruikbaar", "Ontladen (AC)", "Prijs incl. btw", "Zinvol bereik"], included.map(p => [
+            p.name, soort[p.kind] || "Onbekend", `${n(p.capacity, 1)} kWh`, `${n(p.dischargeKw, 1)} kW`,
+            h("span", {}, external(money(p.offer.upfront_amount_minor / 100, { decimals: 0 }), p.offer.source_url),
+              p.offer.includes_installation === false ? " excl. installatie" : ""),
+            position(p)]), { caption: "Accu’s in de berekening", className: "product-table" })) : null,
+        excluded.length ? group("excluded", `${excluded.length} ${excluded.length === 1 ? "accu" : "accu’s"} niet meegerekend, met de reden`,
+          table(["Accu", "Waarom niet"], excluded.map(p => [p.name, p.reason]),
+            { caption: "Accu’s buiten de berekening", className: "product-table" })) : null].filter(Boolean));
+    };
+    renderPick();
+    pickSection.append(pickBody);
     const confirmations = [
       answers.data === "file" ? "Mijn bestand bevat de opwek van mijn omvormer en het totale verbruik van het huis (of P1-afname en -teruglevering waaruit dat is afgeleid), zonder bestaande accu." : "Ik begrijp dat mijn verbruik en opwek zijn geschat uit jaartotalen met standaardprofielen.",
       "Ik begrijp dat de accugegevens uit de bronnen komen, aangevuld met de genoemde aannames, en dat de keuzehulp niet controleert of een accu in mijn meterkast past.",
@@ -532,11 +469,9 @@
     const status = h("p", { class: "help", "aria-live": "polite" });
     const go = button("Bereken mijn advies", () => UI.busy(go, async () => {
       if (!confirmations.every(c => c.box.checked)) throw new Error("Vink de drie bevestigingen aan.");
-      const chosen = cards.filter(c => c.check.checked);
-      if (!chosen.length) throw new Error("Kies minstens één accu om mee te vergelijken.");
-      if (chosen.length > 12) throw new Error("Kies maximaal twaalf accu’s.");
-      status.textContent = "Bezig met rekenen…";
-      const response = await UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, chosen) });
+      if (!included.length) throw new Error("Er is geen accu om door te rekenen; reken een offerte door met Zelf doorrekenen.");
+      status.textContent = `Bezig met rekenen aan ${included.length} ${included.length === 1 ? "accu" : "accu’s"}…`;
+      const response = await UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included) });
       location.hash = `#/berekeningen/${response.id}`;
     }).finally(() => { status.textContent = ""; }));
     const run = h("section", { class: "panel" }, h("h3", {}, "3. Reken het door"),

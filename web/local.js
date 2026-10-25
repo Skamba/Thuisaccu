@@ -1,0 +1,65 @@
+"use strict";
+// Twee manieren om Thuisaccu te draaien. Met de lokale server (cargo run) gaan API-verzoeken
+// naar die server. In de browserversie (tools/build-site.sh, bijvoorbeeld op GitHub Pages)
+// beantwoordt een webworker ze met dezelfde API als WebAssembly, en staat de database in
+// IndexedDB in deze browser. index.html zegt welke van de twee: data-backend="server|browser".
+window.Local = (() => {
+  const enabled = document.documentElement.dataset.backend === "browser";
+  const pending = new Map();
+  let worker = null, sequence = 0;
+
+  function fail(message) {
+    for (const job of pending.values()) job.reject(new Error(message));
+    pending.clear(); worker = null;
+  }
+
+  function call(message, transfer = []) {
+    if (!worker) {
+      worker = new Worker("worker.js", { type: "module" });
+      worker.onmessage = ({ data }) => {
+        const job = pending.get(data.id);
+        if (!job) return;
+        pending.delete(data.id);
+        if (data.error) job.reject(new Error(data.error)); else job.resolve(data);
+      };
+      worker.onerror = event => { event.preventDefault(); fail("De rekenmodule in deze browser kon niet starten."); };
+    }
+    return new Promise((resolve, reject) => {
+      const id = ++sequence;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ ...message, id }, transfer);
+    });
+  }
+
+  // Zelfde vorm als fetch(): een Request erin (ook FormData), een Response eruit.
+  async function localFetch(url, init = {}) {
+    const request = new Request(new URL(url, location.origin), init);
+    const target = new URL(request.url);
+    const body = ["GET", "HEAD"].includes(request.method) ? new ArrayBuffer(0) : await request.arrayBuffer();
+    const reply = await call({ type: "request", method: request.method, path: target.pathname + target.search,
+      contentType: request.headers.get("content-type"), body }, [body]);
+    const empty = [204, 205, 304].includes(reply.status);
+    return new Response(empty ? null : reply.body,
+      { status: reply.status, headers: reply.contentType ? { "content-type": reply.contentType } : {} });
+  }
+
+  // Een kopie van de database als SQLite-bestand, hetzelfde formaat als data/research.sqlite3.
+  async function backup() {
+    const { bytes } = await call({ type: "export" });
+    return new Blob([bytes], { type: "application/vnd.sqlite3" });
+  }
+
+  // Vervangt de database in deze browser; een ongeldig bestand laat de huidige gegevens staan.
+  async function restore(file) {
+    const bytes = await file.arrayBuffer();
+    await call({ type: "restore", bytes }, [bytes]);
+  }
+
+  const persisted = async () => Boolean(await navigator.storage?.persisted?.());
+  const persist = async () => Boolean(await navigator.storage?.persist?.());
+
+  // Waar bewaarde gegevens staan, voor teksten in de interface.
+  const where = enabled ? "in deze browser" : "op deze computer";
+
+  return { enabled, where, fetch: localFetch, backup, restore, persisted, persist };
+})();

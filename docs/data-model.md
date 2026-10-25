@@ -1,6 +1,6 @@
 # SQLite-onderzoekscatalogus
 
-De eerste migratie staat in `crates/storage/migrations/0001_research_catalog.sql`. De Rust-domeintypen staan in `thuisaccu_core::products`; `thuisaccu-storage` verzorgt SQLite via SQLx. Het [onderzoek](battery-research.md) motiveert de gekozen gegevens.
+De eerste migratie staat in `crates/storage/migrations/0001_research_catalog.sql`. De Rust-domeintypen staan in `thuisaccu_core::products`; `thuisaccu-storage` verzorgt SQLite via rusqlite. Het [onderzoek](battery-research.md) motiveert de gekozen gegevens.
 
 ## Relaties
 
@@ -87,13 +87,13 @@ Dit onderzoeksmodel bewaart prijswaarnemingen. De aparte scenario-invoer legt co
 
 ## Gebruik en migraties
 
-De server opent standaard `data/research.sqlite3`, maakt de map aan en voert de ingebouwde SQLx-migraties uit vóór het openen van de HTTP-poort. `DATABASE_PATH` is een bestandspad, geen SQLite-URL. SQLite wordt meegebouwd; een aparte databaseserver of SQLx CLI is niet nodig.
+De server opent standaard `data/research.sqlite3`, maakt de map aan en voert de ingebouwde migraties uit vóór het openen van de HTTP-poort. `DATABASE_PATH` is een bestandspad, geen SQLite-URL. SQLite wordt meegebouwd; een aparte databaseserver is niet nodig. De browserversie houdt dezelfde database in het geheugen en bewaart hem als bytes in IndexedDB (zie [architectuur](architecture.md)).
 
-De opslagbibliotheek biedt `Catalog::open`, `Catalog::in_memory`, typed `add_*`-methoden voor alle entiteiten, `list_products` en `list_numeric_observations`. `Catalog::pool()` biedt toegang voor verdere SQLx-queries en transacties. Losse `add_*`-aanroepen zijn elk één atomische write; gebruik een expliciete pooltransactie voor een import die volledig moet slagen of terugrollen.
+De opslagbibliotheek biedt `Catalog::open`, `Catalog::in_memory`, `Catalog::from_bytes` en `Catalog::to_bytes` (database als bestandsinhoud, voor de browser en back-ups), typed `add_*`-methoden voor alle entiteiten, `list_products` en `list_numeric_observations`. `Catalog::connection()` geeft de rusqlite-verbinding voor verdere queries en transacties. Losse `add_*`-aanroepen zijn elk één atomische write; gebruik een expliciete transactie (`connection().transaction()`) voor een import die volledig moet slagen of terugrollen. Houd de verbinding niet vast over een `.await` heen.
 
-Migraties zitten in de executable. Voeg een volgende genummerde migratie toe voor schemawijzigingen; wijzig geen migratie die al op een gedeelde database is toegepast. SQLx bewaakt de checksum in `_sqlx_migrations`. De build wordt opnieuw uitgevoerd als migratiebestanden wijzigen.
+Migraties zitten in de executable. Voeg een volgende genummerde migratie toe voor schemawijzigingen; wijzig geen migratie die al op een gedeelde database is toegepast. De tabel `_sqlx_migrations` (dezelfde vorm als eerdere versies met SQLx) bewaart per versie een SHA-384-controlegetal van de SQL; een gewijzigde of onbekende (nieuwere) migratie laat het openen mislukken. Een nieuwe migratie krijgt een regel in `MIGRATIONS` in `crates/storage/src/migrations.rs`. De build wordt opnieuw uitgevoerd als migratiebestanden wijzigen.
 
-Bestandsdatabases gebruiken WAL, `synchronous=FULL`, maximaal vijf verbindingen en een busy-timeout van vijf seconden. Externe SQLite-clients moeten zelf `PRAGMA foreign_keys = ON` instellen. Testdatabases draaien geïsoleerd in geheugen of in een tijdelijke map.
+Bestandsdatabases gebruiken WAL, `synchronous=FULL`, één verbinding en een busy-timeout van vijf seconden; bij afsluiten wordt de WAL teruggeschreven, zodat het bestand op zichzelf compleet is. Externe SQLite-clients moeten zelf `PRAGMA foreign_keys = ON` instellen. Testdatabases draaien geïsoleerd in geheugen of in een tijdelijke map.
 
 Open het bestand eventueel met een SQLite-client. De volgende query maakt een onderzoeksdossier leesbaar en behoudt de herkomst:
 

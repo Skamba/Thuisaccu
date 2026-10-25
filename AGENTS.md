@@ -9,9 +9,10 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 | Pad | Inhoud |
 | --- | --- |
 | `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
-| `crates/storage` | SQLx/SQLite, migraties in `migrations/`, opslagmethoden en leesmodellen. |
+| `crates/storage` | SQLite via rusqlite (één verbinding achter een mutex), migraties in `migrations/`, opslagmethoden en leesmodellen. Werkt native en als WebAssembly. |
 | `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
-| `web/` | `index.html` (shell), `styles.css`, `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`. |
+| `crates/browser` | WebAssembly-module voor de browserversie: dezelfde router uit `thuisaccu-server` zonder netwerkpoort, database als bytes in en uit (IndexedDB in `web/worker.js`). Native een lege bibliotheek. |
+| `web/` | `index.html` (shell; `data-backend` is `server` of `browser`), `styles.css`, `local.js` (API via webworker in de browserversie), `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`; `worker.js` hoort alleen bij de browserversie. |
 | `docs/` | Architectuur, API-contract, datamodel, importafspraken, rekenmodel, onderzoek en roadmap. |
 
 ## Commando's
@@ -25,9 +26,13 @@ cargo build --workspace --locked
 cargo doc --workspace --no-deps --locked
 for f in web/*.js; do node --check "$f"; done   # als Node aanwezig is
 cargo build --locked -p thuisaccu-server && (cd tests/e2e && npm ci && npm test)   # browsertests
+sh tools/build-site.sh && (cd tests/e2e && E2E_MODE=browser npm test)                # browserversie
+cargo clippy --locked --target wasm32-unknown-unknown -p thuisaccu-browser -p thuisaccu-server -p thuisaccu-storage --lib -- -D warnings
 ```
 
-Draai alle vijf de cargo-controles voordat je werk afrondt; CI (`.github/workflows/ci.yml`) draait precies deze op Linux én Windows, en daarnaast op Linux de browsertests in `tests/e2e/` (Playwright met Chromium, vastgezet in `package-lock.json`). Gebruik altijd `--locked`. Wijzig je iets in `web/`, draai dan ook de browsertests; ze starten de gebouwde server met een tijdelijke database en falen bij elk verzoek buiten 127.0.0.1.
+De browserversie bouwen vereist `rustup target add wasm32-unknown-unknown`, clang (SQLite wordt naar WebAssembly gecompileerd; op Windows bijvoorbeeld `scoop install llvm`) en `wasm-bindgen-cli` in precies de versie van `wasm-bindgen` in `Cargo.lock`.
+
+Draai alle vijf de cargo-controles voordat je werk afrondt; CI (`.github/workflows/ci.yml`) draait precies deze op Linux én Windows, en daarnaast op Linux de WebAssembly-build en de browsertests in `tests/e2e/` (Playwright met Chromium, vastgezet in `package-lock.json`) tegen zowel de server als de browserversie. Op `main` publiceert CI daarna de browserversie op GitHub Pages. Gebruik altijd `--locked`. Wijzig je iets in `web/`, draai dan ook de browsertests; ze starten de gebouwde server met een tijdelijke database en falen bij elk verzoek buiten 127.0.0.1.
 
 Configuratie via omgevingsvariabelen: `LISTEN_ADDR`, `RUST_LOG`, `DATABASE_PATH`. `.env` wordt niet geladen. Gebruik voor handmatig testen een tijdelijke database (`DATABASE_PATH=<tempdir>/test.sqlite3`) zodat je de onderzoeksdata van de gebruiker niet vervuilt.
 
@@ -38,7 +43,8 @@ Configuratie via omgevingsvariabelen: `LISTEN_ADDR`, `RUST_LOG`, `DATABASE_PATH`
 - Regionale regels (Nederlandse tarieven, salderen, belasting) zijn scenario-invoer of afzonderlijke beleidsonderdelen, nooit stilzwijgend ingebouwd in de rekenkern.
 - Workspace-lints: `unsafe_code = "forbid"`, Clippy met `-D warnings`. Voeg geen `#[allow(...)]` toe zonder reden in een comment.
 - Nieuwe dependencies alleen als het echt nodig is; declareer ze in `[workspace.dependencies]` en commit `Cargo.lock`.
-- Blokkerend werk (bestandsparsing, simulatie) draait via `tokio::task::spawn_blocking`, zoals in `api.rs` en `scenario_api.rs`.
+- Blokkerend werk (bestandsparsing, simulatie) draait via `crate::blocking` (native `spawn_blocking`, in de browser direct in de worker), zoals in `api.rs` en `scenario_api.rs`.
+- Alles in `thuisaccu-core`, `thuisaccu-storage` en de router van `thuisaccu-server` moet ook naar `wasm32-unknown-unknown` compileren. Platformcode staat achter `#[cfg(target_family = "wasm")]`: geen `std::time::Instant`/`SystemTime`, threads, bestandssysteem of tokio-runtime in gedeelde code; tijd via `chrono::Utc::now()`. Handlers moeten `Send`-futures blijven (zie `pdok` in `scenario_api.rs` voor browser-fetch).
 - `.editorconfig`: LF, UTF-8, 4 spaties; 2 spaties voor HTML, CSS en YAML.
 
 ## Domeinregels die niet mogen breken
@@ -57,7 +63,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 ## Database en migraties
 
-- Migraties in `crates/storage/migrations/` worden met `sqlx::migrate!()` in de binary gebakken en bij het opstarten toegepast.
+- Migraties in `crates/storage/migrations/` staan met `include_str!` in `crates/storage/src/migrations.rs` en worden bij het openen toegepast. De boekhouding gebruikt de tabel `_sqlx_migrations` met SHA-384-controlegetallen, compatibel met databases van eerdere versies (SQLx). Een nieuwe migratie krijgt ook een regel in `MIGRATIONS`.
 - **Wijzig nooit een bestaande migratie**; bestaande databases hebben de checksum al vastgelegd. Voeg een nieuw bestand toe met het volgende volgnummer (`0004_….sql`).
 - Het schema bewaakt ook zelf validatie (foreign keys, CHECK-constraints, metricgrenzen). Houd schema- en Rust-validatie in lijn en werk [docs/data-model.md](docs/data-model.md) bij.
 - Meervoudige inserts (dossiers, imports, runs) gebeuren transactioneel; bij één ongeldige claim wordt alles teruggerold.
@@ -70,9 +76,10 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 ## Frontend (`web/`)
 
-- Geen frameworks, build-stap, CDN, externe fonts of scripts: de app moet volledig offline werken. Grafieken met inline SVG.
+- Geen frameworks, build-stap, CDN, externe fonts of scripts: de app moet volledig offline werken. Grafieken met inline SVG. Paden in `index.html` zijn relatief, zodat de site ook in een submap (GitHub Pages) werkt.
+- API-verzoeken lopen via `UI.api`; dat kiest tussen `fetch` en `Local.fetch`. Roep `fetch` niet direct aan voor de API. Teksten over waar gegevens staan gebruiken `Local.where`.
 - Na elke wijziging in `web/` moet de server opnieuw gebouwd en gestart worden; de bestanden zitten in de binary.
-- Een nieuw script in `web/` krijgt een regel in `ASSETS` (`crates/server/src/lib.rs`), een `<script defer>` in `index.html` vóór `app.js`, en een regel in de assettest in `crates/server/tests/http.rs`. Een scherm registreert zich met `UI.page(...)`.
+- Een nieuw script in `web/` krijgt een regel in `ASSETS` (`crates/server/src/lib.rs`), een `<script defer>` met relatief pad in `index.html` vóór `app.js`, en een regel in de assettest in `crates/server/tests/http.rs`. Een scherm registreert zich met `UI.page(...)`.
 - Bouw de DOM met `UI.h()`; tekst wordt altijd als tekstknoop ingevoegd. Nooit `innerHTML` (de HTTP-test controleert dat). Formulieren houden hun toestand in een object en lezen niet terug uit de DOM.
 - Toegankelijkheid: echte `<label>`s, `aria-live` voor statusmeldingen, zichtbare focus, toetsenbordbediening. Kleur is niet de enige betekenisdrager.
 - Getallen in `nl-NL`-notatie; houd valuta, eenheid en meetgrens bij elke waarde zichtbaar.
@@ -87,7 +94,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 ## Ingebouwde onderzoeksdata
 
-- `crates/server/resources/references.json`, `references-nl.json` en `references-nl-2.json` zijn gedateerde bronmomentopnamen (24 oktober 2026), elk met een eigen importsleutel in `REFERENCE_SETS` (`api.rs`); alleen de Nederlandse sets bevatten prijzen. Nieuwe producten komen in een nieuwe set met een nieuwe sleutel, zodat bestaande databases ze kunnen bijladen zonder dat oude claims veranderen. De interface waarschuwt drie maanden na de peildatum (`RESEARCHED_ISO` in `web/data.js`). `typical-profiles.json` bevat de profielvormen voor de keuzehulp, gebouwd met `tools/build_typical_profiles.py`; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
+- `crates/server/resources/references.json`, `references-nl.json`, `references-nl-2.json` (24 oktober 2026) en `references-nl-3.json` en `references-nl-4.json` (25 oktober 2026) zijn gedateerde bronmomentopnamen, elk met een eigen importsleutel in `REFERENCE_SETS` (`api.rs`); alleen de Nederlandse sets bevatten prijzen. Nieuwe producten komen in een nieuwe set met een nieuwe sleutel, zodat bestaande databases ze kunnen bijladen zonder dat oude claims veranderen. De interface waarschuwt drie maanden na de peildatum (`RESEARCHED_ISO` in `web/data.js`). `typical-profiles.json` bevat de profielvormen voor de keuzehulp, gebouwd met `tools/build_typical_profiles.py`; `cost-catalog.json` is het kostenonderzoek met `researched_on` en bronlinks.
 - Verzin geen specificaties, prijzen of bronnen. Bij bijwerken: nieuwe peildatum, controleerbare bron-URL en vindplaats, en de documentatie in [docs/battery-research.md](docs/battery-research.md) of [docs/roi-model.md](docs/roi-model.md) bijwerken.
 
 ## Wat buiten scope is tenzij gevraagd

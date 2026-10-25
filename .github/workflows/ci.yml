@@ -31,16 +31,24 @@ jobs:
       - name: Documentation
         run: cargo doc --workspace --no-deps --locked
 
-
   e2e:
-    name: Browsertests (ubuntu-latest)
+    name: Browsertests en browserversie (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install stable Rust
-        run: rustup toolchain install stable --profile minimal
+      - name: Install stable Rust with the WebAssembly target
+        run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+      # SQLite wordt voor de browserversie met clang naar WebAssembly gecompileerd.
+      - name: Install clang and llvm-ar
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+      - name: Install wasm-bindgen-cli (versie uit Cargo.lock)
+        run: cargo install wasm-bindgen-cli --locked --version "$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | tail -1 | cut -d'"' -f2)"
       - name: Build server
         run: cargo build --locked -p thuisaccu-server
+      - name: Lint WebAssembly build
+        run: cargo clippy --locked --target wasm32-unknown-unknown -p thuisaccu-browser -p thuisaccu-server -p thuisaccu-storage --lib -- -D warnings
+      - name: Build browser version
+        run: sh tools/build-site.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -51,6 +59,36 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Browser tests
+      - name: Browser tests (local server)
         working-directory: tests/e2e
         run: npm test
+      - name: Browser tests (browser version)
+        working-directory: tests/e2e
+        env:
+          E2E_MODE: browser
+        run: npm test
+      - name: Upload site for GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Publiceert de browserversie pas als alle controles op main geslaagd zijn.
+  # Vereist eenmalig: Settings → Pages → Source: GitHub Actions.
+  pages:
+    name: GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
