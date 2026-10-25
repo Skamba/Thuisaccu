@@ -514,7 +514,7 @@ pub fn normalize(
     }
     let mut intervals: Vec<SolarInterval> = Vec::new();
     let mut gaps = 0;
-    let mut derived_negative = 0;
+    let mut balance = GrossBalance::default();
     for (index, (timestamp, production, consumption, export)) in readings.iter().enumerate() {
         let (start, end, production, consumption, export) = if options.mode == "cumulative" {
             if index == 0 {
@@ -545,18 +545,6 @@ pub fn normalize(
             };
             (start, end, *production, *consumption, *export)
         };
-        // Energiebalans zonder bestaande accu: wat het huis gebruikte is wat erin kwam
-        // (opwek + netafname) minus wat eruit ging (teruglevering).
-        let consumption = match (net_meter, consumption, export) {
-            (true, Some(import), Some(export)) => {
-                let gross = production + import - export;
-                if gross < -1e-9 {
-                    derived_negative += 1;
-                }
-                Some(gross.max(0.0))
-            }
-            _ => consumption,
-        };
         let duration = (end - start).num_seconds();
         if duration <= 0 {
             return Err("Niet-positieve meetperiode.".into());
@@ -579,18 +567,26 @@ pub fn normalize(
             "w" => duration as f64 / 3600.0,
             _ => unreachable!(),
         };
+        // Energiebalans zonder bestaande accu: wat het huis gebruikte is wat erin kwam
+        // (opwek + netafname) minus wat eruit ging (teruglevering).
+        let consumption_wh = match (net_meter, consumption, export) {
+            (true, Some(import), Some(export)) => Some(balance.derive(
+                production * factor,
+                import * factor,
+                export * factor,
+                duration,
+            )),
+            _ => consumption.map(|v| v * factor),
+        };
         intervals.push(SolarInterval {
             start_unix_s: start.timestamp(),
             end_unix_s: end.timestamp(),
             production_wh: production * factor,
-            consumption_wh: consumption.map(|v| v * factor),
+            consumption_wh,
+            steady_consumption_wh: None,
         });
     }
-    if derived_negative > intervals.len() / 100 {
-        return Err(format!(
-            "In {derived_negative} meetperioden is teruglevering groter dan opwek plus netafname. Opwek en meterdata lopen waarschijnlijk niet gelijk in tijd, gebruiken verschillende eenheden, of er is al een accu. Controleer tijdzone, tijdstempelpositie en eenheid."
-        ));
-    }
+    balance.check(intervals.len(), "Opwek en meterdata")?;
     if intervals.is_empty() {
         return Err(
             "Geen meetperioden; voor cumulatieve standen zijn minstens twee metingen nodig.".into(),
@@ -620,21 +616,22 @@ pub fn normalize(
     }
     if net_meter {
         warnings.push("Bruto verbruik is afgeleid als opwek + netafname − teruglevering. Dit klopt alleen zonder bestaande accu en als omvormer- en meterdata dezelfde tijdsperioden beschrijven.".into());
-        if derived_negative > 0 {
-            warnings.push(format!("{derived_negative} meetperiode(n) gaven een licht negatief afgeleid verbruik door meetafwijkingen; die zijn op 0 gezet."));
-        }
+        warnings.extend(balance.warning());
     }
     if options.data_kind == "modelled" {
         warnings.push("Dit bestand is gemodelleerde opwek, geen gemeten productie.".into());
     }
     warnings.push("Maandtotalen zijn ingedeeld op de lokale start van elk interval; intervallen die maandgrenzen overschrijden worden niet opgesplitst.".into());
-    let summary = summarize(
+    let mut summary = summarize(
         &intervals,
         timezone,
         options.consumption_column.is_some(),
         gaps,
         warnings,
     )?;
+    if net_meter {
+        summary.clipped_consumption_kwh = Some(balance.clipped_wh / 1000.0);
+    }
     Ok((intervals, summary))
 }
 
@@ -697,6 +694,7 @@ fn summarize(
             })
             .collect(),
         warnings,
+        clipped_consumption_kwh: None,
     })
 }
 
@@ -769,7 +767,7 @@ pub fn combine_with_meter(
     };
     let unmatched = outside(&solar).max(outside(&grid));
     let mut intervals = Vec::with_capacity(keys.len());
-    let mut negative = 0;
+    let mut balance = GrossBalance::default();
     let mut gaps = 0;
     for (index, key) in keys.iter().enumerate() {
         if index > 0 && keys[index - 1] + 1 != *key {
@@ -777,22 +775,15 @@ pub fn combine_with_meter(
         }
         let produced = solar[key].0;
         let (imported, exported, _) = grid[key];
-        let gross = produced + imported - exported;
-        if gross < -1e-6 {
-            negative += 1;
-        }
         intervals.push(SolarInterval {
             start_unix_s: key * bucket,
             end_unix_s: (key + 1) * bucket,
             production_wh: produced,
-            consumption_wh: Some(gross.max(0.0)),
+            consumption_wh: Some(balance.derive(produced, imported, exported, bucket)),
+            steady_consumption_wh: None,
         });
     }
-    if negative > intervals.len() / 100 {
-        return Err(format!(
-            "In {negative} meetperioden is de teruglevering groter dan opwek plus netafname. Omvormer en meter lopen waarschijnlijk niet gelijk in tijd of gebruiken verschillende eenheden, of er is al een accu. Controleer tijdzone, tijdstempelpositie en eenheid van beide bestanden."
-        ));
-    }
+    balance.check(intervals.len(), "Omvormer en meter")?;
     let mut warnings: Vec<String> = production_summary
         .warnings
         .iter()
@@ -814,10 +805,77 @@ pub fn combine_with_meter(
             "{gaps} gat(en) in de gecombineerde meetreeks; deze worden niet met nullen aangevuld."
         ));
     }
-    if negative > 0 {
-        warnings.push(format!("{negative} meetperiode(n) gaven een licht negatief afgeleid verbruik door meetafwijkingen; die zijn op 0 gezet."));
-    }
+    warnings.extend(balance.warning());
     warnings.push("Maandtotalen zijn ingedeeld op de lokale start van elk interval; intervallen die maandgrenzen overschrijden worden niet opgesplitst.".into());
-    let summary = summarize(&intervals, timezone, true, gaps, warnings)?;
+    let mut summary = summarize(&intervals, timezone, true, gaps, warnings)?;
+    summary.clipped_consumption_kwh = Some(balance.clipped_wh / 1000.0);
     Ok((intervals, summary))
+}
+
+/// Toegestane meetafwijking per periode bij het afleiden van bruto verbruik: gemiddeld 100 W
+/// (afgeronde tellerstanden, enkele seconden verschil tussen omvormer- en meterklok) plus 5% van
+/// de energie die het huis in kwam (opwek + netafname). Daarbuiten stopt de import.
+const BALANCE_TOLERANCE_W: f64 = 100.0;
+const BALANCE_TOLERANCE_SHARE: f64 = 0.05;
+/// Hoogstens 1% van de perioden en 1% van het afgeleide verbruik mag op nul worden gezet.
+const BALANCE_MAX_SHARE: f64 = 0.01;
+
+/// Bruto verbruik = opwek + netafname − teruglevering, met boekhouding van wat negatief uitkwam.
+/// Een klein negatief saldo is een meetafwijking en wordt op nul gezet; de omvang blijft bewaard.
+#[derive(Default)]
+struct GrossBalance {
+    clipped: usize,
+    clipped_wh: f64,
+    worst_wh: f64,
+    too_large: usize,
+    gross_wh: f64,
+}
+
+impl GrossBalance {
+    fn derive(&mut self, production_wh: f64, import_wh: f64, export_wh: f64, seconds: i64) -> f64 {
+        let gross = production_wh + import_wh - export_wh;
+        if gross < -1e-6 {
+            let tolerance = BALANCE_TOLERANCE_W * seconds as f64 / 3600.0
+                + BALANCE_TOLERANCE_SHARE * (production_wh + import_wh);
+            if -gross > tolerance {
+                self.too_large += 1;
+            }
+            self.clipped += 1;
+            self.clipped_wh -= gross;
+            self.worst_wh = self.worst_wh.max(-gross);
+        }
+        let gross = gross.max(0.0);
+        self.gross_wh += gross;
+        gross
+    }
+
+    fn check(&self, intervals: usize, sources: &str) -> Result<(), String> {
+        if self.too_large > 0
+            || self.clipped > intervals / 100
+            || self.clipped_wh > self.gross_wh * BALANCE_MAX_SHARE
+        {
+            return Err(format!(
+                "In {} meetperiode(n) is de teruglevering groter dan opwek plus netafname: samen {} kWh, in één periode tot {} kWh. Dat is meer dan een meetafwijking. {sources} lopen waarschijnlijk niet gelijk in tijd, gebruiken verschillende eenheden, of er is al een accu. Controleer tijdzone, tijdstempelpositie en eenheid.",
+                self.clipped,
+                kwh(self.clipped_wh),
+                kwh(self.worst_wh)
+            ));
+        }
+        Ok(())
+    }
+
+    fn warning(&self) -> Option<String> {
+        (self.clipped > 0).then(|| {
+            format!(
+                "{} meetperiode(n) gaven een licht negatief afgeleid verbruik door meetafwijkingen (samen {} kWh, in één periode tot {} kWh); die zijn op 0 gezet.",
+                self.clipped,
+                kwh(self.clipped_wh),
+                kwh(self.worst_wh)
+            )
+        })
+    }
+}
+
+fn kwh(wh: f64) -> String {
+    format!("{:.3}", wh / 1000.0).replace('.', ",")
 }

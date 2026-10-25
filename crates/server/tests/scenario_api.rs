@@ -41,6 +41,7 @@ async fn legacy_demo_year(catalog: &Catalog) -> i64 {
             } else {
                 250.0
             }),
+            steady_consumption_wh: None,
         })
         .collect();
     catalog
@@ -68,7 +69,7 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let result = body(response).await;
-    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v1");
+    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v2");
     assert!(
         result["result"]["warnings"][0]
             .as_str()
@@ -216,6 +217,7 @@ async fn incomplete_coarse_or_production_only_imports_cannot_produce_saved_roi()
         end_unix_s: end,
         production_wh: 500.0,
         consumption_wh: consumption,
+        steady_consumption_wh: None,
     };
     let cases = [
         (

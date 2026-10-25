@@ -12,3 +12,4 @@ Thumbs.db
 
 tests/e2e/node_modules/
 /site/
+/reviews/

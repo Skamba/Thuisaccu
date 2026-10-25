@@ -1,7 +1,7 @@
 use thuisaccu_core::{
     analysis::{self, Candidate, Objective, Parameters},
     finance::{self, CostLine, CostStatus, CostTiming, ExportFeeBand, Financing, Tariff},
-    sizing::{self, Battery, EnergyInterval},
+    sizing::{self, Battery, EnergyInterval, LoadVariation},
 };
 
 fn battery(capacity: f64) -> Battery {
@@ -22,6 +22,7 @@ fn profile() -> Vec<EnergyInterval> {
             duration_hours: 1.0,
             production_kwh: if i % 2 == 0 { 2.0 } else { 0.0 },
             consumption_kwh: if i % 2 == 1 { 2.0 } else { 0.0 },
+            steady_consumption_kwh: None,
         })
         .collect()
 }
@@ -47,6 +48,7 @@ fn parameters() -> Parameters {
             annual_price_change_pct: 0.0,
         },
         export_variant: None,
+        load_variation: LoadVariation::Uniform,
     }
 }
 
@@ -88,16 +90,18 @@ fn energy_balance_conserves_energy_with_conversion_losses_and_capacity_limits() 
             duration_hours: 1.0,
             production_kwh: 6.0,
             consumption_kwh: 0.0,
+            steady_consumption_kwh: None,
         },
         EnergyInterval {
             duration_hours: 1.0,
             production_kwh: 0.0,
             consumption_kwh: 10.0,
+            steady_consumption_kwh: None,
         },
     ];
     let mut b = battery(5.0);
     b.ac_round_trip_efficiency_pct = 81.0;
-    let result = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 0.0);
+    let result = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Uniform);
     close(result.battery_to_load_kwh, 4.5);
     close(result.battery_charge_kwh, 5.0 / 0.9);
     close(
@@ -109,7 +113,7 @@ fn energy_balance_conserves_energy_with_conversion_losses_and_capacity_limits() 
             + result.end_storage_kwh,
     );
     b.charge_power_kw = 1.0;
-    let limited = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 0.0);
+    let limited = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Uniform);
     close(limited.battery_to_load_kwh, 0.81);
 }
 
@@ -119,11 +123,12 @@ fn standby_and_capacity_fade_do_not_create_solar_energy_or_free_end_storage() {
         duration_hours: 1.0,
         production_kwh: 0.0,
         consumption_kwh: 1.0,
+        steady_consumption_kwh: None,
     }];
     let mut b = battery(5.0);
     b.standby_w = 100.0;
     b.annual_capacity_loss_pct = 20.0;
-    let r = sizing::simulate_year(&p, Some(&b), 1, 1.0, 1.0, 5.0);
+    let r = sizing::simulate_year(&p, Some(&b), 1, 1.0, 1.0, 5.0, LoadVariation::Uniform);
     close(r.conversion_and_fade_loss_kwh, 1.0);
     close(r.grid_import_kwh, 0.1);
     close(r.end_storage_kwh, 3.0);
@@ -135,7 +140,7 @@ fn standby_and_capacity_fade_do_not_create_solar_energy_or_free_end_storage() {
             + r.conversion_and_fade_loss_kwh
             + r.end_storage_kwh,
     );
-    let inactive = sizing::simulate_year(&p, Some(&b), 15, 1.0, 1.0, 0.0);
+    let inactive = sizing::simulate_year(&p, Some(&b), 15, 1.0, 1.0, 0.0, LoadVariation::Uniform);
     close(inactive.standby_kwh, 0.0);
     close(inactive.grid_import_kwh, 1.0);
 }
@@ -300,6 +305,144 @@ fn short_profiles_unknown_costs_and_invalid_physical_assumptions_are_rejected() 
     assert!(analysis::analyze(&profile, &p, &[c]).is_err());
 }
 
+fn hour(production_kwh: f64, consumption_kwh: f64) -> Vec<EnergyInterval> {
+    vec![EnergyInterval {
+        duration_hours: 1.0,
+        production_kwh,
+        consumption_kwh,
+        steady_consumption_kwh: None,
+    }]
+}
+
+#[test]
+fn measured_spread_clips_peaks_above_800_w_discharge_within_an_hour() {
+    // 1,1154 kW gemiddeld is precies een klasse van de uurtabel (HTW Berlin): de tien delen van
+    // het uur verbruiken 0,3147 … 2,6692 × het gemiddelde. De vijf laagste delen blijven onder
+    // 0,8 kW, de vijf hoogste worden afgekapt: (1,1154 × 2,5314 + 5 × 0,8) / 10 = 0,68235 kWh.
+    // Gelijkmatig verdeeld zou de accu het volle uur 0,8 kW leveren.
+    let mut b = battery(10.0);
+    b.discharge_power_kw = 0.8;
+    let p = hour(0.0, 1.1154);
+    let spread = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 10.0, LoadVariation::Households);
+    close(spread.battery_to_load_kwh, (1.1154 * 2.5314 + 4.0) / 10.0);
+    close(
+        spread.grid_import_kwh,
+        1.1154 - (1.1154 * 2.5314 + 4.0) / 10.0,
+    );
+    let uniform = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 10.0, LoadVariation::Uniform);
+    close(uniform.battery_to_load_kwh, 0.8);
+    // Zonder vermogensgrens maakt de verdeling voor een uur zonder opwek niets uit.
+    let free = sizing::simulate_year(
+        &p,
+        Some(&battery(10.0)),
+        0,
+        1.0,
+        1.0,
+        10.0,
+        LoadVariation::Households,
+    );
+    close(free.battery_to_load_kwh, 1.1154);
+}
+
+#[test]
+fn steady_consumption_such_as_ev_charging_is_not_spread() {
+    // 3,7 kW laden plus 1,1154 kW huishouden: alle tien delen liggen boven 3,7 kW, dus een accu
+    // van 2,4 kW levert het hele uur 2,4 kWh, net als zonder verdeling.
+    let mut b = battery(10.0);
+    b.discharge_power_kw = 2.4;
+    let p = vec![EnergyInterval {
+        duration_hours: 1.0,
+        production_kwh: 0.0,
+        consumption_kwh: 3.7 + 1.1154,
+        steady_consumption_kwh: Some(3.7),
+    }];
+    let r = sizing::simulate_year(&p, Some(&b), 0, 1.0, 1.0, 10.0, LoadVariation::Households);
+    close(r.battery_to_load_kwh, 2.4);
+    // Zonder dat gelijkmatige deel zou de verdeling van een uur van 4,8 kW ook delen onder 2,4 kW geven.
+    let mut all = p.clone();
+    all[0].steady_consumption_kwh = None;
+    let spread =
+        sizing::simulate_year(&all, Some(&b), 0, 1.0, 1.0, 10.0, LoadVariation::Households);
+    assert!(spread.battery_to_load_kwh < 2.4 - 0.05);
+    let mut invalid = p;
+    invalid[0].steady_consumption_kwh = Some(5.0);
+    assert!(analysis::analyze(&invalid, &parameters(), &[candidate("a", 5.0, 100_000)]).is_err());
+}
+
+#[test]
+fn measured_spread_gives_surplus_and_deficit_in_one_hour_with_equal_totals() {
+    // Opwek gelijk aan het uurgemiddelde: de drie hoogste delen (1,2515; 1,7758; 2,6692 ×)
+    // vragen meer dan de opwek, de rest minder. Direct gebruik = 1,1154 × (4,3035 + 3) / 10.
+    let p = hour(1.1154, 1.1154);
+    let none = sizing::simulate_year(&p, None, 0, 1.0, 1.0, 0.0, LoadVariation::Households);
+    let direct = 1.1154 * (4.3035 + 3.0) / 10.0;
+    close(none.direct_solar_kwh, direct);
+    close(none.grid_export_kwh, 1.1154 - direct);
+    close(none.grid_import_kwh, 1.1154 - direct);
+    // Een accu laadt het overschot binnen hetzelfde uur en levert het weer terug.
+    let with = sizing::simulate_year(
+        &p,
+        Some(&battery(5.0)),
+        0,
+        1.0,
+        1.0,
+        0.0,
+        LoadVariation::Households,
+    );
+    close(with.battery_to_load_kwh, 1.1154 - direct);
+    close(with.grid_import_kwh, 0.0);
+    let uniform = sizing::simulate_year(&p, None, 0, 1.0, 1.0, 0.0, LoadVariation::Uniform);
+    close(uniform.direct_solar_kwh, 1.1154);
+}
+
+#[test]
+fn measured_spread_conserves_energy_and_leaves_other_periods_uniform() {
+    let mut b = battery(3.0);
+    b.ac_round_trip_efficiency_pct = 90.0;
+    b.charge_power_kw = 1.2;
+    b.discharge_power_kw = 0.8;
+    b.standby_w = 5.0;
+    let day: Vec<EnergyInterval> = (0..96)
+        .map(|i| EnergyInterval {
+            duration_hours: 0.25,
+            production_kwh: if (32..64).contains(&i) { 0.2 } else { 0.0 },
+            consumption_kwh: 0.05 + (i % 7) as f64 * 0.04,
+            steady_consumption_kwh: None,
+        })
+        .collect();
+    let r = sizing::simulate_year(&day, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Households);
+    close(
+        r.production_kwh + r.grid_import_kwh + r.start_storage_kwh,
+        r.consumption_kwh
+            + r.standby_kwh
+            + r.grid_export_kwh
+            + r.conversion_and_fade_loss_kwh
+            + r.end_storage_kwh,
+    );
+    let uniform = sizing::simulate_year(&day, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Uniform);
+    assert!(r.direct_solar_kwh < uniform.direct_solar_kwh);
+    // Minuutwaarden staan niet in de tabel en blijven gelijkmatig.
+    let minutes: Vec<EnergyInterval> = day
+        .iter()
+        .map(|i| EnergyInterval {
+            duration_hours: 1.0 / 60.0,
+            ..i.clone()
+        })
+        .collect();
+    let a = sizing::simulate_year(
+        &minutes,
+        Some(&b),
+        0,
+        1.0,
+        1.0,
+        0.0,
+        LoadVariation::Households,
+    );
+    let u = sizing::simulate_year(&minutes, Some(&b), 0, 1.0, 1.0, 0.0, LoadVariation::Uniform);
+    close(a.grid_import_kwh, u.grid_import_kwh);
+    close(a.battery_to_load_kwh, u.battery_to_load_kwh);
+}
+
 #[test]
 fn capacity_curve_is_bounded_by_the_daily_surplus_and_evening_deficit() {
     // Per dag één uur met 3 kWh overschot en één uur met 2 kWh tekort: een verliesvrije accu
@@ -311,16 +454,18 @@ fn capacity_curve_is_bounded_by_the_daily_surplus_and_evening_deficit() {
                     duration_hours: 1.0,
                     production_kwh: 3.0,
                     consumption_kwh: 0.0,
+                    steady_consumption_kwh: None,
                 },
                 EnergyInterval {
                     duration_hours: 1.0,
                     production_kwh: 0.0,
                     consumption_kwh: 2.0,
+                    steady_consumption_kwh: None,
                 },
             ]
         })
         .collect();
-    let points = sizing::capacity_curve(&days, &[0.0, 1.0, 2.0, 5.0]);
+    let points = sizing::capacity_curve(&days, &[0.0, 1.0, 2.0, 5.0], LoadVariation::Uniform);
     let delivered: Vec<f64> = points.iter().map(|p| p.battery_to_load_kwh).collect();
     for (actual, expected) in delivered.iter().zip([0.0, 10.0, 20.0, 20.0]) {
         close(*actual, expected);
@@ -395,5 +540,39 @@ fn up_to_fifty_battery_options_are_compared_at_once() {
             .unwrap_err()
             .to_string()
             .contains("1 tot 50")
+    );
+}
+
+#[test]
+fn entered_vat_refunds_grants_and_horizons_past_2028_get_policy_warnings() {
+    let mut p = parameters();
+    let plain = analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)]).unwrap();
+    // Eén jaar vanaf 2027: geen nettariefwaarschuwing, geen teruggave of subsidie ingevoerd.
+    assert!(!plain.warnings.iter().any(|w| w.contains("Nettarieven")));
+    assert!(!plain.warnings.iter().any(|w| w.contains("Btw-teruggave")));
+    let mut refunded = candidate("met-teruggave", 2.0, 50_000);
+    for line in refunded.costs.iter_mut() {
+        if ["vat_refund", "grant"].contains(&line.category.as_str()) {
+            line.status = CostStatus::Priced;
+            line.amount_minor = 10_000;
+        }
+    }
+    p.horizon_years = 3;
+    let r = analysis::analyze(&profile(), &p, &[refunded]).unwrap();
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("Nettarieven") && w.contains("2029"))
+    );
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("Btw-teruggave ingevoerd bij met-teruggave")
+                && w.contains("privégebruik"))
+    );
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("Subsidie ingevoerd bij met-teruggave"))
     );
 }

@@ -36,7 +36,7 @@ window.Scenario = (() => {
       title: "Mijn berekening", address: "", site: null, profile: "", objective: "net_present_value", budget: "",
       params: Object.fromEntries(PARAMS.map(([key]) => [key, String(d[key])])),
       tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
-      variant: { on: false, label: "Geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
+      variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
         options: []
     };
   }
@@ -109,7 +109,9 @@ window.Scenario = (() => {
       tariff: { import_eur_per_kwh: number(state.tariff.import, "Stroomprijs"),
         export_eur_per_kwh: number(state.tariff.export, "Terugleververgoeding"),
         export_fee_eur_per_kwh: number(state.tariff.fee, "Terugleverkosten"), export_fee_bands: exportBands,
-        fixed_annual_eur: state.tariff.fixed, annual_price_change_pct: number(state.tariff.change, "Prijsverandering") }
+        fixed_annual_eur: state.tariff.fixed, annual_price_change_pct: number(state.tariff.change, "Prijsverandering") },
+      // Pieken binnen de meetperiode volgens gemeten huishoudens; zie docs/roi-model.md.
+      load_variation: "households"
     };
     if (state.variant.on) {
       if (!state.variant.label.trim()) problems.push("Geef de terugleveringsvariant een omschrijving.");

@@ -8,7 +8,7 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 
 | Pad | Inhoud |
 | --- | --- |
-| `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
+| `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen; verdeling binnen een meetperiode uit het gegenereerde `load_spread.rs`, zie `tools/build_load_spread.py`), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
 | `crates/storage` | SQLite via rusqlite (één verbinding achter een mutex), migraties in `migrations/`, opslagmethoden en leesmodellen. Werkt native en als WebAssembly. |
 | `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
 | `crates/browser` | WebAssembly-module voor de browserversie: dezelfde router uit `thuisaccu-server` zonder netwerkpoort, database als bytes in en uit (IndexedDB in `web/worker.js`). Native een lege bibliotheek. |

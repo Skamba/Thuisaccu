@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thuisaccu_core::{
     analysis::{self, Candidate, Parameters},
-    sizing::{self, EnergyInterval},
+    sizing::{self, EnergyInterval, LoadVariation},
 };
 use thuisaccu_storage::{Catalog, analysis::NewAnalysis};
 
@@ -159,6 +159,7 @@ async fn load_profile(catalog: &Catalog, import_id: i64) -> Result<Vec<EnergyInt
             duration_hours: (item.end_unix_s - item.start_unix_s) as f64 / 3600.0,
             production_kwh: item.production_wh / 1000.0,
             consumption_kwh: load / 1000.0,
+            steady_consumption_kwh: item.steady_consumption_wh.map(|v| v / 1000.0),
         });
     }
     Ok(profile)
@@ -180,12 +181,14 @@ pub async fn capacity_curve(
         0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0,
     ]
     .to_vec();
-    let points = crate::blocking(move || sizing::capacity_curve(&profile, &capacities))
-        .await
-        .ok_or_else(|| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
+    let points = crate::blocking(move || {
+        sizing::capacity_curve(&profile, &capacities, LoadVariation::Households)
+    })
+    .await
+    .ok_or_else(|| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
     Ok(Json(json!({
         "points": points,
-        "assumptions": "Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening.",
+        "assumptions": "Verliesvrije accu zonder vermogensgrens, standby of slijtage; alleen eigen zonnestroom, geen netladen. Verbruik binnen iedere meetperiode verdeeld zoals bij gemeten huishoudens (HTW Berlin). Een bovengrens om een capaciteitsbereik te kiezen, geen productberekening.",
     })))
 }
 

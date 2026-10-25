@@ -312,6 +312,56 @@ fn p1_import_and_export_derive_gross_consumption_from_the_energy_balance() {
     assert!(analyze("time,p,i\n2026-06-01T10:00:00Z,1,1\n", &missing_export).is_err());
 }
 
+/// Honderd uren met 0,5 kWh afname; één uur met de opgegeven opwek, afname en teruglevering.
+fn hundred_hours_with(production: f64, import: f64, export: f64) -> String {
+    let mut text = String::from("time,production,import,export\n");
+    for hour in 0..100 {
+        let (p, i, e) = if hour == 50 {
+            (production, import, export)
+        } else {
+            (0.0, 0.5, 0.0)
+        };
+        text.push_str(&format!(
+            "2026-06-{:02}T{:02}:00:00Z,{p},{i},{e}\n",
+            1 + hour / 24,
+            hour % 24
+        ));
+    }
+    text
+}
+
+#[test]
+fn a_large_negative_balance_fails_even_in_a_single_period_and_small_ones_keep_their_size() {
+    let options = ImportOptions {
+        consumption_column: Some(2),
+        consumption_source: "net_meter".into(),
+        export_column: Some(3),
+        ..Default::default()
+    };
+    // Eén uur van honderd met −1000 kWh is geen meetafwijking maar een tijd- of eenheidsfout.
+    let error = analyze(&hundred_hours_with(0.0, 0.0, 1000.0), &options).unwrap_err();
+    assert!(error.contains("meer dan een meetafwijking"), "{error}");
+    assert!(error.contains("1000,000 kWh"), "{error}");
+    // 2 kWh opwek en 2,08 kWh teruglevering: −80 Wh valt binnen 100 Wh + 5% van 2 kWh.
+    let summary = analyze(&hundred_hours_with(2.0, 0.0, 2.08), &options).unwrap();
+    assert!((summary.clipped_consumption_kwh.unwrap() - 0.08).abs() < 1e-9);
+    assert!(
+        summary
+            .warnings
+            .iter()
+            .any(|w| w.contains("licht negatief") && w.contains("0,080 kWh"))
+    );
+    // −250 Wh ligt boven die grens (100 + 100 Wh) en stopt de import.
+    assert!(analyze(&hundred_hours_with(2.0, 0.0, 2.25), &options).is_err());
+    // Zonder afleiding blijft het veld leeg.
+    let gross = analyze(
+        "time,production\n2026-06-01T10:00:00Z,1\n",
+        &ImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(gross.clipped_consumption_kwh, None);
+}
+
 /// Synthetische reeksen: omvormer per 15 minuten, meter per uur.
 fn combine(
     inverter: &str,

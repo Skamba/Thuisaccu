@@ -141,7 +141,7 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
             "tariff":{"import_eur_per_kwh":0.26,"export_eur_per_kwh":0.07,"export_fee_eur_per_kwh":0,"export_fee_bands":[],"fixed_annual_eur":0,"annual_price_change_pct":0}},
         "candidates":[{"key":"plug","name":"Synthetic plug-in","configuration_id":null,"battery":{"usable_capacity_kwh":2.4,"charge_power_kw":0.8,"discharge_power_kw":0.8,"ac_round_trip_efficiency_pct":85,"standby_w":5,"annual_capacity_loss_pct":2,"operating_life_years":15},"costs":costs,"financing":{"loan_amount_eur":0,"annual_interest_pct":0,"years":0},"assumptions":"Synthetic"}],
         "costs_confirmed":true,"technical_assumptions_confirmed":true,"consumption_is_gross":true,"production_is_ac":true});
-    let (status, body) = send(&app, post("/api/v1/analysis/runs", run)).await;
+    let (status, body) = send(&app, post("/api/v1/analysis/runs", run.clone())).await;
     assert_eq!(status, StatusCode::CREATED);
     assert!(
         body["result"]["warnings"][0]
@@ -149,6 +149,20 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
             .unwrap()
             .starts_with("GESCHAT PROFIEL")
     );
+    // Zonder `load_variation` (runs van vóór modelversie 2) blijft het verbruik gelijkmatig.
+    let warnings = |body: &Value| body["result"]["warnings"].to_string();
+    assert!(warnings(&body).contains("gelijkmatig verondersteld"));
+    let mut spread = run;
+    spread["parameters"]["load_variation"] = json!("households");
+    let (status, varied) = send(&app, post("/api/v1/analysis/runs", spread)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(warnings(&varied).contains("HTW Berlin"));
+    let delivered = |body: &Value| {
+        body["result"]["candidates"][0]["first_year"]["battery_to_load_kwh"]
+            .as_f64()
+            .unwrap()
+    };
+    assert!((delivered(&varied) - delivered(&body)).abs() > 1.0);
 }
 
 #[test]
@@ -206,6 +220,21 @@ fn heat_pump_and_ev_reshape_the_year_but_keep_the_annual_total() {
     };
     let added = at(&charged, june_first_18h) - at(&plain, june_first_18h) * (4000.0 / 6000.0);
     assert!((added - 3680.0).abs() < 1.0, "{added}");
+    // Het laden is het gelijkmatige deel van dat uur; zonder auto of warmtepomp is er geen.
+    let steady = charged
+        .intervals
+        .iter()
+        .find(|i| i.start_unix_s == june_first_18h)
+        .unwrap()
+        .steady_consumption_wh
+        .unwrap();
+    assert!((steady - 3680.0).abs() < 1.0, "{steady}");
+    assert!(
+        plain
+            .intervals
+            .iter()
+            .all(|i| i.steady_consumption_wh.is_none())
+    );
     assert!(
         charged
             .summary

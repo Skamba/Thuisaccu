@@ -120,7 +120,7 @@ async fn file_database_survives_reopening_and_migrations_are_not_reapplied() {
         &reopened,
         "SELECT count(*) FROM _sqlx_migrations WHERE success = 1",
     );
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
     let journal: String = scalar(&reopened, "PRAGMA journal_mode");
     assert_eq!(journal, "wal");
     reopened.close().await;
@@ -452,7 +452,7 @@ async fn a_copy_of_a_wal_database_file_opens_in_memory_and_stays_writable() {
     let manufacturers: i64 = scalar(&again, "SELECT count(*) FROM manufacturers");
     assert_eq!(manufacturers, 2);
     let applied: i64 = scalar(&again, "SELECT count(*) FROM _sqlx_migrations");
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
     assert!(Catalog::from_bytes(b"not a database").await.is_err());
 }
 
@@ -500,4 +500,52 @@ async fn databases_are_isolated_and_empty_file_paths_are_rejected() {
         Catalog::open("").await,
         Err(StorageError::EmptyPath)
     ));
+}
+
+#[tokio::test]
+async fn steady_consumption_is_stored_and_never_exceeds_gross_consumption() {
+    use thuisaccu_storage::solar::SolarInterval;
+    let catalog = Catalog::in_memory().await.unwrap();
+    let interval = |steady| SolarInterval {
+        start_unix_s: 0,
+        end_unix_s: 3600,
+        production_wh: 0.0,
+        consumption_wh: Some(1000.0),
+        steady_consumption_wh: steady,
+    };
+    let id = catalog
+        .save_solar(
+            "fixture",
+            &"a".repeat(64),
+            "{}",
+            "{}",
+            &[interval(Some(400.0))],
+            0,
+        )
+        .await
+        .unwrap();
+    let stored = catalog.solar_intervals(id).await.unwrap();
+    assert_eq!(stored[0].steady_consumption_wh, Some(400.0));
+    assert!(
+        catalog
+            .save_solar(
+                "fixture",
+                &"b".repeat(64),
+                "{}",
+                "{}",
+                &[interval(Some(1000.5))],
+                0
+            )
+            .await
+            .is_err()
+    );
+    // Ook buiten de opslagmethode bewaakt het schema de grens.
+    assert!(
+        execute(
+            &catalog,
+            "UPDATE solar_intervals SET steady_consumption_wh = 2000 WHERE import_id = ?",
+            [id],
+        )
+        .is_err()
+    );
 }

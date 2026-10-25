@@ -1,7 +1,7 @@
 //! Transparante scenariovergelijking, inclusief de keuze om geen accu te kopen.
 use crate::{
     finance::{self, CostLine, CostStatus, CostTiming, Financing, Tariff},
-    sizing::{self, Battery, EnergyInterval, EnergyYear},
+    sizing::{self, Battery, EnergyInterval, EnergyYear, LoadVariation},
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,10 @@ pub struct Parameters {
     /// Ontbreekt in runs van vóór deze uitbreiding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export_variant: Option<ExportVariant>,
+    /// Verloop van het verbruik binnen een meetperiode. Ontbreekt in runs van vóór
+    /// modelversie 2 en is dan gelijkmatig.
+    #[serde(default)]
+    pub load_variation: LoadVariation,
 }
 
 /// Alternatieve terugleverprijzen vanaf een kalenderjaar, bijvoorbeeld wanneer het
@@ -161,6 +165,11 @@ pub fn validate(
         ensure(
             bounded(i.production_kwh, 0.0, 1e6) && bounded(i.consumption_kwh, 0.0, 1e6),
             "Ongeldige opwek of bruto huishoudelijk verbruik.",
+        )?;
+        ensure(
+            i.steady_consumption_kwh
+                .is_none_or(|v| bounded(v, 0.0, i.consumption_kwh)),
+            "Het gelijkmatige deel van het verbruik moet tussen nul en het totale verbruik liggen.",
         )?;
         hours += i.duration_hours;
     }
@@ -367,7 +376,15 @@ fn project(
     for year in 1..=p.horizon_years {
         let pv_factor = (1.0 - p.annual_pv_loss_pct / 100.0).powi((year - 1) as i32);
         let load_factor = (1.0 + p.annual_load_growth_pct / 100.0).powi((year - 1) as i32);
-        let baseline = sizing::simulate_year(profile, None, 0, pv_factor, load_factor, 0.0);
+        let baseline = sizing::simulate_year(
+            profile,
+            None,
+            0,
+            pv_factor,
+            load_factor,
+            0.0,
+            p.load_variation,
+        );
         let energy = sizing::simulate_year(
             profile,
             Some(&c.battery),
@@ -375,6 +392,7 @@ fn project(
             pv_factor,
             load_factor,
             state,
+            p.load_variation,
         );
         state = energy.end_storage_kwh;
         let price_factor = (1.0 + p.tariff.annual_price_change_pct / 100.0).powi((year - 1) as i32);
@@ -536,7 +554,8 @@ pub fn analyze(
         };
         results.push(base);
     }
-    let baseline = sizing::simulate_year(profile, None, 0, 1.0, 1.0, 0.0);
+    let baseline =
+        sizing::simulate_year(profile, None, 0, 1.0, 1.0, 0.0, parameters.load_variation);
     let best_key = choose(
         parameters.objective,
         baseline.self_consumption_pct,
@@ -571,23 +590,52 @@ pub fn analyze(
         "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt.".into(),
         "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde.".into(),
     ];
+    warnings.push(match parameters.load_variation {
+        LoadVariation::Households => "Binnen iedere meetperiode van 5 tot 60 minuten volgt het verbruik de gemiddelde verdeling van 74 per seconde gemeten Duitse huishoudens (HTW Berlin, 2010). Korte pieken boven het ontlaadvermogen en wisselingen tussen overschot en tekort binnen het uur tellen zo mee. Opwek is binnen de periode gelijkmatig. De regelvertraging van de accu is niet meegerekend: HTW Berlin mat bij 22 thuisaccusystemen gemiddeld 1 s totdat de accu reageert en 4,5 s totdat het nieuwe vermogen bereikt is (Stromspeicher-Inspektion 2025); in een controle per seconde kostte een vertraging van 2 tot 5 s ongeveer 2 tot 3% van de besparing.".into(),
+        LoadVariation::Uniform => "Het verbruik is binnen iedere meetperiode gelijkmatig verondersteld. Bij uur- of kwartierwaarden ontbreken korte pieken, waardoor vermogensgrenzen van de accu minder vaak knellen dan in werkelijkheid.".into(),
+    });
     if parameters.start_year <= 2026 {
         warnings.push("Voor 2026 gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf 2027 wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.".into());
     }
     if let Some(v) = &parameters.export_variant {
         warnings.push(format!(
-            "Terugleveringsvariant ‘{}’: vanaf {} rekent deze variant met € {} vergoeding en € {} terugleverkosten per kWh, met verder dezelfde aannames. Het is een aanname over toekomstige contracten, geen prognose.",
+            "Terugleveringsvariant ‘{}’: vanaf {} rekent deze variant met € {} vergoeding en € {} terugleverkosten per kWh, met verder dezelfde aannames. Het is een stresstest voor toekomstige contracten, geen prognose of aangekondigde regel: volgens de ACM houd je recht op een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief, terwijl terugleverkosten die vergoeding kunnen overtreffen.",
             v.label,
             v.from_calendar_year,
             euro(v.export_eur_per_kwh),
             euro(v.export_fee_eur_per_kwh)
         ));
     }
+    // De ACM wil vanaf 2029 volume- en tijdsafhankelijke nettarieven (ontwerpbesluit 8 oktober 2026).
+    if parameters.start_year + parameters.horizon_years > 2029 {
+        warnings.push("Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen.".into());
+    }
+    // Namen van opties met een ingevoerde teruggave of subsidie in deze categorie.
+    let credited = |category: &str| {
+        candidates
+            .iter()
+            .filter(|c| {
+                c.costs.iter().any(|l| {
+                    l.category == category && l.status == CostStatus::Priced && l.amount_minor != 0
+                })
+            })
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let vat = credited("vat_refund");
+    if !vat.is_empty() {
+        warnings.push(format!("Btw-teruggave ingevoerd bij {}. Dit model rekent alleen met eigen gebruik van zonnestroom; volgens de Belastingdienst geeft alleen privégebruik geen recht op teruggave. Teruggave vraagt onder meer handel in stroom als btw-ondernemer, en dan kan btw over privégebruik verschuldigd zijn in het aanschafjaar en de vier jaren daarna. Die lasten zitten niet in deze berekening.", vat));
+    }
+    let grant = credited("grant");
+    if !grant.is_empty() {
+        warnings.push(format!("Subsidie ingevoerd bij {}. Tel een subsidie alleen mee als die is toegekend; regionale regelingen hebben eigen voorwaarden en een beperkt budget. Noteer regeling, toekenning en datum bij de kostenpost.", grant));
+    }
     if matches!(parameters.objective, Objective::SelfConsumption) {
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
-        model_version: "nl-self-consumption-v1".into(),
+        model_version: "nl-self-consumption-v2".into(),
         recommended_key: best_key,
         recommendation,
         baseline_first_year: baseline,

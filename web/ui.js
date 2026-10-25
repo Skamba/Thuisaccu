@@ -272,7 +272,10 @@ window.UI = (() => {
     else draw("line", { x1: left, x2: width - right, y1: y(0), y2: y(0), class: "chart-axis" });
 
     if (type === "line") {
-      const px = i => left + i / Math.max(1, rows.length - 1) * plotW;
+      // Met een getal `x` in elke rij staan de punten op een echte getallenas; anders op gelijke afstand.
+      const numeric = rows.length > 1 && rows.every(r => finite(r.x));
+      const first = numeric ? rows[0].x : 0, last = numeric ? rows[rows.length - 1].x : rows.length - 1;
+      const px = i => left + ((numeric ? rows[i].x : i) - first) / (last - first || 1) * plotW;
       series.forEach((s, si) => {
         const points = rows.map((r,
           i) => finite(r.values[si]) ? `${px(i)},${y(r.values[si])}` : null).filter(Boolean).join(" ");
@@ -284,9 +287,19 @@ window.UI = (() => {
             { cx: px(i), cy: y(r.values[si]), r: 4, fill: colour(si, s) },
             `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); });
       });
-      const step = Math.max(1, Math.ceil(rows.length / 10));
-      rows.forEach((r,
-        i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
+      if (numeric) {
+        // Alleen labels die elkaar niet raken; het laatste punt krijgt altijd een label.
+        let previous = -Infinity;
+        rows.forEach((r, i) => {
+          const at = px(i), end = i === rows.length - 1;
+          if (at - previous < 56 || (!end && px(rows.length - 1) - at < 56)) return;
+          text(at, height - 28, r.label, "middle"); previous = at;
+        });
+      } else {
+        const step = Math.max(1, Math.ceil(rows.length / 10));
+        rows.forEach((r,
+          i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
+      }
       for (const mark of marks) {
         const index = rows.findIndex(r => r.label === mark.at); if (index < 0) continue;
         draw("line", { x1: px(index), x2: px(index), y1: top, y2: height - bottom, class: "chart-mark" }, mark.label);

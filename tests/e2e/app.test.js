@@ -161,6 +161,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Lege catalogus: de onderzochte accu's worden pas op verzoek geladen.
   await page.click("button:has-text('Laad onderzochte accu’s')");
   await page.waitForSelector(".product-group", { timeout: 30000 });
+  // Opwek 3.800 − teruglevering 2.900 kWh: 24% direct zelf gebruikt, naast het geschatte profiel.
+  assert.match(await page.textContent(".wizard-body [role=note]"),
+    /Volgens je jaarafrekening gebruik je 24% van je zonnestroom direct zelf.*het geschatte profiel gaat uit van \d+%/);
   // Alle passende accu's met een prijs gaan automatisch mee; de rest staat ingeklapt met de reden.
   assert.match(await page.textContent(".wizard-body"), /We rekenen alle \d+ accu’s door/);
   assert.doesNotMatch(await page.textContent(".wizard-body"), /null/);
@@ -181,6 +184,34 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/keuzehulp`);
+  await page.click("text=Het totale verbruik van het huis");
+  assert.equal(await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").count(), 0);
+  await page.getByLabel("Totaal verbruik per jaar (kWh)").fill("8000");
+  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("10000");
+  await page.getByLabel("Waarvan elektrische auto, thuis geladen (kWh per jaar)").fill("3000");
+  assert.match(await page.textContent(".derived"), /8\.000 kWh per jaar\./);
+  await next(page);
+  await next(page);
+  await page.click("button:has-text('Gebruik de indicatie')");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".wizard-body figure.chart", { timeout: 30000 });
+  // De punten staan op afstand naar accugrootte, niet op gelijke afstand.
+  const spread = await page.$eval(".wizard-body figure.chart", figure => {
+    const sizes = [...figure.querySelectorAll("tbody td:first-child")]
+      .map(cell => Number(cell.textContent.replace(/[^\d,]/g, "").replace(",", "."))).filter(Number.isFinite);
+    const xs = [...figure.querySelectorAll("circle")].map(c => Number(c.getAttribute("cx")));
+    const scale = (xs.at(-1) - xs[0]) / (sizes.at(-1) - sizes[0]);
+    return Math.max(...xs.map((x, i) => Math.abs(x - xs[0] - (sizes[i] - sizes[0]) * scale)));
+  });
+  assert.ok(spread < 0.5, `afwijking ${spread}`);
   assert.deepEqual(problems, []);
   await close();
 });

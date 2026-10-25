@@ -1,11 +1,16 @@
 //! AC-energiebalans voor zonnestroom opslaan en later zelf gebruiken.
+use crate::load_spread::TABLES;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EnergyInterval {
     pub duration_hours: f64,
     pub production_kwh: f64,
     pub consumption_kwh: f64,
+    /// Deel van `consumption_kwh` dat binnen de periode gelijkmatig loopt, zoals warmtepomp en
+    /// laadpaal in een geschat profiel. Alleen de rest volgt `LoadVariation::Households`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steady_consumption_kwh: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +47,80 @@ pub struct EnergyYear {
     pub max_grid_import_kw: f64,
 }
 
+/// Verloop van het verbruik binnen één meetperiode. Opwek is binnen een periode altijd gelijkmatig.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadVariation {
+    /// Het gemiddelde vermogen geldt de hele periode, zoals in modelversie 1.
+    #[default]
+    Uniform,
+    /// Gemiddelde verdeling binnen de periode van 74 per seconde gemeten huishoudens (HTW Berlin)
+    /// voor perioden van 5, 10, 15, 30 en 60 minuten; andere perioden blijven gelijkmatig.
+    Households,
+}
+
+/// Tien even lange delen van de periode, als factor van het gemiddelde verbruik.
+const BANDS: usize = 10;
+
+/// Verdeling voor deze periode en dit gemiddelde vermogen, lineair tussen de klassen van de tabel.
+fn spread(variation: LoadVariation, duration_hours: f64, load_kw: f64) -> Option<[f64; BANDS]> {
+    if variation == LoadVariation::Uniform {
+        return None;
+    }
+    let seconds = duration_hours * 3600.0;
+    let (_, rows) = TABLES
+        .iter()
+        .find(|(s, _)| (f64::from(*s) - seconds).abs() < 0.5)?;
+    let (first, last) = (rows[0], rows[rows.len() - 1]);
+    let mut shape = if load_kw <= first.0 {
+        first.1
+    } else if load_kw >= last.0 {
+        last.1
+    } else {
+        let i = rows.iter().position(|r| r.0 > load_kw)?;
+        let ((x0, a), (x1, b)) = (rows[i - 1], rows[i]);
+        let t = (load_kw - x0) / (x1 - x0);
+        std::array::from_fn(|k| a[k] + t * (b[k] - a[k]))
+    };
+    // Afronding in de tabel mag de energie van de periode niet veranderen.
+    let mean = shape.iter().sum::<f64>() / BANDS as f64;
+    shape.iter_mut().for_each(|q| *q /= mean);
+    Some(shape)
+}
+
+/// Energiestromen binnen één periode vóór laadtoestand en standby.
+#[derive(Default)]
+struct Split {
+    direct: f64,
+    surplus: f64,
+    deficit: f64,
+    chargeable: f64,
+    dischargeable: f64,
+}
+
+fn split(
+    production: f64,
+    steady: f64,
+    variable: f64,
+    shape: &[f64],
+    charge_limit: f64,
+    discharge_limit: f64,
+) -> Split {
+    let share = 1.0 / shape.len() as f64;
+    let mut s = Split::default();
+    for q in shape {
+        let part = steady + variable * q;
+        let surplus = (production - part).max(0.0);
+        let deficit = (part - production).max(0.0);
+        s.direct += production.min(part) * share;
+        s.surplus += surplus * share;
+        s.deficit += deficit * share;
+        s.chargeable += surplus.min(charge_limit) * share;
+        s.dischargeable += deficit.min(discharge_limit) * share;
+    }
+    s
+}
+
 /// Geen netladen, netverkoop vanuit de accu of voorspelde handelsopbrengsten.
 /// De laad-/ontlaadverliezen verdelen de AC-RTE symmetrisch over beide paden.
 pub fn simulate_year(
@@ -51,6 +130,7 @@ pub fn simulate_year(
     pv_factor: f64,
     load_factor: f64,
     initial_storage: f64,
+    variation: LoadVariation,
 ) -> EnergyYear {
     let active = battery.filter(|b| age < b.operating_life_years);
     let capacity = active.map_or(0.0, |b| {
@@ -67,23 +147,42 @@ pub fn simulate_year(
     for i in profile {
         let production = i.production_kwh * pv_factor;
         let load = i.consumption_kwh * load_factor;
-        let direct = production.min(load);
-        let mut surplus = production - direct;
-        let mut deficit = load - direct;
+        let steady = (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
+        let shape = spread(
+            variation,
+            i.duration_hours,
+            (load - steady) / i.duration_hours,
+        );
+        let (charge_limit, discharge_limit) = active.map_or((0.0, 0.0), |b| {
+            (
+                b.charge_power_kw * i.duration_hours,
+                b.discharge_power_kw * i.duration_hours,
+            )
+        });
+        let s = split(
+            production,
+            steady,
+            load - steady,
+            shape.as_ref().map_or(&[1.0][..], |s| &s[..]),
+            charge_limit,
+            discharge_limit,
+        );
+        let direct = s.direct;
+        let mut surplus = s.surplus;
+        let mut deficit = s.deficit;
         let standby = active.map_or(0.0, |b| b.standby_w / 1000.0 * i.duration_hours);
         let solar_standby = surplus.min(standby);
         surplus -= solar_standby;
         let mut charged = 0.0;
         let mut delivered = 0.0;
-        if let Some(b) = active {
-            charged = surplus
-                .min(b.charge_power_kw * i.duration_hours)
+        if active.is_some() {
+            charged = s
+                .chargeable
+                .min(surplus)
                 .min((capacity - storage).max(0.0) / efficiency);
             storage += charged * efficiency;
             surplus -= charged;
-            delivered = deficit
-                .min(b.discharge_power_kw * i.duration_hours)
-                .min(storage * efficiency);
+            delivered = s.dischargeable.min(storage * efficiency);
             storage -= delivered / efficiency;
             deficit -= delivered;
             discharged_storage += delivered / efficiency;
@@ -129,7 +228,11 @@ pub struct CapacityPoint {
 
 /// Simuleert twee opeenvolgende jaren zodat de beginlading geen invloed heeft op het resultaat.
 /// Dit is een hulpmiddel om een capaciteitsbereik te kiezen, geen productberekening.
-pub fn capacity_curve(profile: &[EnergyInterval], capacities_kwh: &[f64]) -> Vec<CapacityPoint> {
+pub fn capacity_curve(
+    profile: &[EnergyInterval],
+    capacities_kwh: &[f64],
+    variation: LoadVariation,
+) -> Vec<CapacityPoint> {
     capacities_kwh
         .iter()
         .map(|&capacity| {
@@ -143,8 +246,16 @@ pub fn capacity_curve(profile: &[EnergyInterval], capacities_kwh: &[f64]) -> Vec
                 operating_life_years: 2,
             };
             let battery = (capacity > 0.0).then_some(&ideal);
-            let warm_up = simulate_year(profile, battery, 0, 1.0, 1.0, 0.0);
-            let year = simulate_year(profile, battery, 1, 1.0, 1.0, warm_up.end_storage_kwh);
+            let warm_up = simulate_year(profile, battery, 0, 1.0, 1.0, 0.0, variation);
+            let year = simulate_year(
+                profile,
+                battery,
+                1,
+                1.0,
+                1.0,
+                warm_up.end_storage_kwh,
+                variation,
+            );
             CapacityPoint {
                 usable_capacity_kwh: capacity,
                 battery_to_load_kwh: year.battery_to_load_kwh,

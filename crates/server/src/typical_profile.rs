@@ -246,12 +246,16 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             let heating = heat_pump
                 * ((1.0 - TAP_WATER_SHARE) * r.heating.degree_hours[i] as f64 / degree_sum
                     + TAP_WATER_SHARE / hours as f64);
-            let kwh = r.load.values[i] as f64 / load_sum * household + heating + charging[i];
+            // Warmtepomp en laden lopen binnen het uur gelijkmatig; alleen het huishouden heeft pieken.
+            // Zo opgeteld is het gelijkmatige deel nooit groter dan het totaal.
+            let steady = heating + charging[i];
+            let kwh = r.load.values[i] as f64 / load_sum * household + steady;
             SolarInterval {
                 start_unix_s: start,
                 end_unix_s: start + r.interval_s,
                 production_wh: pv[i] * 1000.0,
                 consumption_wh: Some(kwh * 1000.0),
+                steady_consumption_wh: (steady > 0.0).then_some(steady * 1000.0),
             }
         })
         .collect();
@@ -296,6 +300,7 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             })
             .collect(),
         warnings,
+        clipped_consumption_kwh: None,
     };
     let solar_label = request
         .solar

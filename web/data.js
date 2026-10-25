@@ -65,15 +65,44 @@ window.Data = (() => {
   // Aannames voor gegevens die een bron niet noemt; altijd zichtbaar bij de accu.
   const FALLBACK = { usableShare: 90, efficiency: 85, standby: 5, degradation: 2, life: 15 };
 
+  // Meetgrenzen op volgorde van voorkeur. Vermogen en rendement rekenen aan de AC-kant: een
+  // DC-waarde (accu DC, DC → DC) mist de omvormer en telt daar niet mee.
+  const ANY_BOUNDARY = ["system_ac", "ac_ac", "unspecified", "pv_ac", "battery_dc", "dc_dc"];
+  const AC_BOUNDARY = ["system_ac", "ac_ac", "unspecified", "pv_ac"];
+  // Bij meerdere bruikbare claims met dezelfde meetgrens telt de voorzichtigste waarde.
+  const HIGHER_IS_CAUTIOUS = new Set(["standby_power_w"]);
+  const METRIC_LABELS = { usable_energy_wh: "bruikbare capaciteit", nominal_energy_wh: "nominale capaciteit",
+    depth_of_discharge_pct: "ontlaaddiepte", continuous_discharge_power_w: "ontlaadvermogen",
+    continuous_charge_power_w: "laadvermogen", round_trip_efficiency_pct: "rendement", standby_power_w: "sluimerverbruik" };
+  // Waarde met eenheid zoals de interface rekent: energie in kWh, vermogen in kW, sluimerverbruik in W.
+  const shown = c => c.unit === "Wh" ? `${n(c.value / 1000, 1)} kWh`
+    : c.unit === "W" && c.metric_key !== "standby_power_w" ? `${n(c.value / 1000, 1)} kW` : `${n(c.value, 1)}${c.unit === "%" ? "%" : ` ${c.unit}`}`;
+
   // Rekengegevens uit de bronclaims van één uitvoering, met een lijst van aannames en ontbrekende gegevens.
   function describe(cmp, config) {
     const live = row => row.configuration_id === config.id && !["superseded", "disputed"].includes(row.review_status);
     const numbers = cmp.numbers.filter(live), features = cmp.features.filter(live), texts = cmp.texts.filter(live);
-    const order = ["system_ac", "ac_ac", "unspecified", "pv_ac", "battery_dc", "dc_dc"];
-    const claim = metric => numbers.filter(c => c.metric_key === metric).sort((a,
-      b) => order.indexOf(a.boundary) - order.indexOf(b.boundary))[0];
+    const notes = [], missing = [], used = [];
+    // Selectieregel: de meest geschikte meetgrens, daarbinnen de voorzichtigste waarde. Andere
+    // waarden worden genoemd; claim-ID en bron gaan mee in de aannames van de berekening.
+    const claim = (metric, order = ANY_BOUNDARY) => {
+      const fitting = numbers.filter(c => c.metric_key === metric && order.includes(c.boundary));
+      if (!fitting.length) return undefined;
+      const boundary = order.find(b => fitting.some(c => c.boundary === b));
+      const same = fitting.filter(c => c.boundary === boundary);
+      const higher = HIGHER_IS_CAUTIOUS.has(metric);
+      const pick = same.reduce((a, b) => (higher ? b.value > a.value : b.value < a.value) ? b : a);
+      if (METRIC_LABELS[metric]) {
+        used.push({ label: METRIC_LABELS[metric], claim: pick });
+        const values = [...new Set(fitting.map(c => c.value))];
+        if (values.length > 1) notes.push(`${fitting.length} bronclaims voor ${METRIC_LABELS[metric]} (${values.map(value => shown({ ...pick, value })).join(", ")}); ` +
+          `gerekend met claim #${pick.id}: de ${same.length > 1 ? `${higher ? "hoogste" : "laagste"} waarde bij de ` : ""}meest geschikte meetgrens (${boundaries[boundary] || boundary}).`);
+      }
+      return pick;
+    };
+    // DC-claims die niet als AC-waarde mogen gelden, voor de toelichting.
+    const dcOnly = metric => numbers.find(c => c.metric_key === metric && !AC_BOUNDARY.includes(c.boundary));
     const feature = metric => features.find(f => f.metric_key === metric);
-    const notes = [], missing = [];
 
     let capacity = null;
     const usable = claim("usable_energy_wh"), nominal = claim("nominal_energy_wh"),
@@ -86,20 +115,27 @@ window.Data = (() => {
       notes.push(`Aanname: ${FALLBACK.usableShare}% van de opgegeven ${n(nominal.value / 1000)} kWh is bruikbaar; de bron noemt geen bruikbare capaciteit.`); }
     else missing.push("bruikbare capaciteit");
 
-    const discharge = claim("continuous_discharge_power_w"), charge = claim("continuous_charge_power_w");
+    const dcNote = (metric, what) => {
+      const dc = dcOnly(metric);
+      return dc ? ` De bron noemt alleen ${shown(dc)} ${what} aan de DC-kant (${boundaries[dc.boundary]}); dat is geen AC-waarde en telt niet mee.` : "";
+    };
+    const discharge = claim("continuous_discharge_power_w", AC_BOUNDARY), charge = claim("continuous_charge_power_w", AC_BOUNDARY);
     const dischargeKw = discharge ? discharge.value / 1000 : null;
     let chargeKw = charge ? charge.value / 1000 : null;
-    if (dischargeKw == null) missing.push("werkelijk ontlaadvermogen in kW (kVA telt niet)");
+    if (dischargeKw == null) {
+      missing.push(dcOnly("continuous_discharge_power_w") ? "ontlaadvermogen aan de AC-kant (de bron noemt alleen DC)"
+        : "werkelijk ontlaadvermogen in kW (kVA telt niet)");
+    }
     if (chargeKw == null && dischargeKw != null) { chargeKw = dischargeKw;
-      notes.push("Aanname: laadvermogen gelijk aan ontlaadvermogen; de bron noemt geen laadvermogen."); }
+      notes.push(`Aanname: laadvermogen gelijk aan ontlaadvermogen; de bron noemt geen laadvermogen aan de AC-kant.${dcNote("continuous_charge_power_w", "laadvermogen")}`); }
 
-    const rte = claim("round_trip_efficiency_pct");
+    const rte = claim("round_trip_efficiency_pct", AC_BOUNDARY);
     let efficiency = FALLBACK.efficiency;
     if (rte) {
       efficiency = rte.value;
       const range = rte.qualifier === "range" ? `${n(rte.value, 0)}–${n(rte.upper_value, 0)}%, gerekend met de ondergrens` : `${n(rte.value, 0)}%`;
-      notes.push(`Rendement ${range}${rte.boundary === "ac_ac" ? " (AC → AC)" : `; meetgrens ${rte.boundary === "pv_ac" ? "PV → accu → AC" : "niet vermeld"}, gebruikt als AC → AC-aanname`}.`);
-    } else notes.push(`Aanname: ${FALLBACK.efficiency}% rendement heen en terug; de bron noemt geen round-trip-rendement.`);
+      notes.push(`Rendement ${range}${rte.boundary === "ac_ac" || rte.boundary === "system_ac" ? " (AC → AC)" : `; meetgrens ${rte.boundary === "pv_ac" ? "PV → accu → AC" : "niet vermeld"}, gebruikt als AC → AC-aanname`}.`);
+    } else notes.push(`Aanname: ${FALLBACK.efficiency}% rendement heen en terug; de bron noemt geen AC-rendement.${dcNote("round_trip_efficiency_pct", "rendement")}`);
 
     const standbyClaim = claim("standby_power_w"), standby = standbyClaim ? standbyClaim.value : FALLBACK.standby;
     if (!standbyClaim) notes.push(`Aanname: ${FALLBACK.standby} W sluimerverbruik; niet opgegeven.`);
@@ -107,16 +143,25 @@ window.Data = (() => {
 
     const coupling = texts.find(t => t.metric_key === "coupling")?.value || "";
     const kind = /stekker/i.test(coupling) ? "plug" : coupling ? "fixed" : null;
-    const offer = cmp.offers
-      .filter(o => o.configuration_id === config.id && o.currency === "EUR" && o.minor_unit_exponent === 2 && o.tax_basis === "included")
+    // Alleen aanbiedingen die niet betwist, vervangen of verlopen zijn.
+    const now = Date.now() / 1000;
+    const offers = cmp.offers.filter(o => live(o) && (o.valid_until_unix_s == null || o.valid_until_unix_s >= now));
+    const offer = offers
+      .filter(o => o.currency === "EUR" && o.minor_unit_exponent === 2 && o.tax_basis === "included")
       .sort((a, b) => b.observed_at_unix_s - a.observed_at_unix_s)[0] ?? null;
     // Een prijs zonder btw of na btw-teruggave wordt niet als aanschafprijs gebruikt, wel genoemd.
-    const otherOffer = offer ? null : cmp.offers.find(o => o.configuration_id === config.id) ?? null;
+    const otherOffer = offer ? null : offers[0] ?? null;
+    const phases = claim("phase_count")?.value ?? null;
+    const sources = new Map();
+    for (const { label, claim: c } of used) {
+      sources.set(c.source_title, [...(sources.get(c.source_title) || []), `${label} #${c.id}`]);
+    }
+    if (sources.size) notes.push(`Gebruikte bronclaims: ${[...sources].map(([title, list]) => `${title} (${list.join(", ")})`).join("; ")}.`);
     const warranty = cmp.warranties.filter(w => w.configuration_id === config.id && w.product_months != null).map(w => w.product_months);
     return {
       config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`,
       capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind,
-      phases: claim("phase_count")?.value ?? null, backup: feature("backup"), outdoor: feature("outdoor"),
+      phases, backup: feature("backup"), outdoor: feature("outdoor"),
       inverterIncluded: feature("inverter_included")?.status === "supported", offer, otherOffer,
       warrantyYears: warranty.length ? Math.max(...warranty) / 12 : null,
       battery: capacity != null && dischargeKw != null ? {
@@ -148,14 +193,24 @@ window.Data = (() => {
     else set("inverter", "unknown", "Nog in te vullen",
       "Dit product heeft een aparte of hybride omvormer nodig; vraag de prijs na.");
 
+    // Wat een aanbieding volgens de bron al omvat, telt niet nog eens als aparte post.
+    const offer = item.offer;
+    const inOffer = what => ({ url: offer.source_url, detail: `Inbegrepen in de aanbieding van ${offer.seller} (${what}).` });
+    if (offer?.includes_inverter === true) fact("inverter", inOffer("omvormer"), "included");
+
     if (fixed) {
-      const outside = situation.place === "outside";
-      priced("installation", outside ? amounts.installation_extended : amounts.installation_basic);
-      fact("ems_metering", pack("Meting via P1 of CT-klem zit in het installatiepakket."), "included");
-      fact("cabling_protection",
-        pack(outside ? "Langere kabelroute, doorvoer en extra beveiliging zitten in het uitgebreide pakket." : "Aparte groep met beveiliging zit in het basispakket."),
-        "included");
-      fact("survey_permits", pack("Een schouw vooraf is altijd inbegrepen."), "included");
+      const outside = situation.place === "outside", package_ = outside ? amounts.installation_extended : amounts.installation_basic;
+      if (offer?.includes_installation === true) {
+        fact("installation", inOffer("installatie; meerwerk na de schouw komt daar nog bij"), "included");
+        for (const key of ["ems_metering", "cabling_protection", "survey_permits"]) fact(key, inOffer("installatie"), "included");
+      } else {
+        priced("installation", package_);
+        fact("ems_metering", pack("Meting via P1 of CT-klem zit in het installatiepakket."), "included");
+        fact("cabling_protection",
+          pack(outside ? "Langere kabelroute, doorvoer en extra beveiliging zitten in het uitgebreide pakket." : "Aparte groep met beveiliging zit in het basispakket."),
+          "included");
+        fact("survey_permits", pack("Een schouw vooraf is altijd inbegrepen."), "included");
+      }
       if (situation.backup === "yes") priced("backup", amounts.backup_extra);
         else assume("backup", "Geen noodstroom gevraagd.");
       if (item.phases === 3) priced("meter_cabinet", amounts.meter_cabinet_three_phase);
@@ -167,16 +222,20 @@ window.Data = (() => {
         item.phases === 3 ? "Uitgaande van een bestaande 3-fasenaansluiting." : "Geen wijziging van de netaansluiting nodig.");
       assume("delivery",
         "Levering en voorrijkosten worden in de bron niet apart genoemd; aangenomen dat ze in pakket- of productprijs zitten.");
+      // Zit de installatie in de aanbieding, dan geldt de reserve voor meerwerk over de indicatieve pakketprijs.
+      const included = lines.get("installation").status === "included";
       const base = [...lines.values()].filter(l => ["installation", "backup", "meter_cabinet",
         "grid_connection"].includes(l.category)).reduce((sum, l) => sum + l.amount_minor,
-        0);
+        included ? Math.round(package_.amount_eur * 100) : 0);
       set("contingency", "priced", "Aanname",
-        `${amounts.contingency_pct.label}. ${amounts.contingency_pct.detail}`,
+        `${amounts.contingency_pct.label}. ${amounts.contingency_pct.detail}` +
+          (included ? ` De installatie zit in de aanbieding; de reserve voor meerwerk rekent met de indicatieve pakketprijs van € ${n(package_.amount_eur, 0)}.` : ""),
         base / 100 * amounts.contingency_pct.amount_pct / 100);
     } else {
       assume("installation", "Stekkerbatterij: zelf aan te sluiten in een gewoon stopcontact.");
-      assume("cabling_protection", "Geen eigen groep nodig bij 800 W via een stopcontact.");
-      assume("meter_cabinet", "Geen aanpassing van de meterkast nodig bij 800 W via een stopcontact.");
+      assume("cabling_protection",
+        "Aanname: geen installatiewerk. Een stopcontact op een groep waarop ook andere zware apparaten draaien kan overbelast raken; laat bij twijfel een installateur kijken of een eigen groep nodig is (dat kost extra) en controleer de voorwaarden van je verzekering.");
+      assume("meter_cabinet", "Aanname: geen aanpassing van de meterkast; geldt alleen als de groep van het stopcontact het extra vermogen veilig aankan.");
       assume("survey_permits", "Geen schouw of keuring nodig voor een stekkerbatterij tot 800 W.");
       assume("backup", "Een stekkerbatterij levert geen noodstroom aan de woning.");
       assume("grid_connection", "Geen wijziging van de netaansluiting nodig.");

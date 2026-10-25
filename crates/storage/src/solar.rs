@@ -9,6 +9,9 @@ pub struct SolarInterval {
     pub end_unix_s: i64,
     pub production_wh: f64,
     pub consumption_wh: Option<f64>,
+    /// Deel van het verbruik dat binnen het interval gelijkmatig loopt; alleen bij geschatte profielen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steady_consumption_wh: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +34,10 @@ pub struct SolarSummary {
     pub interval_deficit_kwh: Option<f64>,
     pub months: Vec<SolarPeriod>,
     pub warnings: Vec<String>,
+    /// Negatief afgeleid bruto verbruik dat als meetafwijking op nul is gezet; alleen bij
+    /// afleiding uit netafname en teruglevering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clipped_consumption_kwh: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,8 +71,17 @@ impl Catalog {
         for (index, item) in intervals.iter().enumerate() {
             if !item.production_wh.is_finite()
                 || item.consumption_wh.is_some_and(|v| !v.is_finite())
+                || item.steady_consumption_wh.is_some_and(|v| !v.is_finite())
             {
                 return Err(StorageError::NonFiniteNumber);
+            }
+            if item
+                .steady_consumption_wh
+                .is_some_and(|v| v < 0.0 || item.consumption_wh.is_none_or(|total| v > total))
+            {
+                return Err(StorageError::InvalidInput(
+                    "Steady consumption must be between zero and the gross consumption".into(),
+                ));
             }
             if index > 0 && intervals[index - 1].end_unix_s > item.start_unix_s {
                 return Err(StorageError::InvalidInput(
@@ -85,14 +101,15 @@ impl Catalog {
             )?);
         };
         {
-            let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh) VALUES (?, ?, ?, ?, ?)")?;
+            let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh) VALUES (?, ?, ?, ?, ?, ?)")?;
             for item in intervals {
                 insert.execute(params![
                     id,
                     item.start_unix_s,
                     item.end_unix_s,
                     item.production_wh,
-                    item.consumption_wh
+                    item.consumption_wh,
+                    item.steady_consumption_wh
                 ])?;
             }
         }

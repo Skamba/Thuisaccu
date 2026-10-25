@@ -16,7 +16,7 @@ De volgende routes bestaan:
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |
 | `GET /api/v1/solar/imports` | `200`, JSON | Bewaarde overzichten in een `imports`-array |
-| `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens |
+| `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens, met de verdeling `households` |
 | `POST /api/v1/solar/typical` | `201`, JSON met `id`, `filename`, `summary` | Geschat uurjaar uit jaartotalen opslaan als gemodelleerde import |
 | `GET /api/v1/solar/typical` | `200`, JSON | Bronnen van de ingebakken profielvormen en PV-opbrengst per kWp per ligging |
 | `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen, gedateerde bronlinks en `estimates` (bronnen en bedragen voor kostenindicaties) |
@@ -73,7 +73,7 @@ Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfd
 | `candidates` | 1–50 kandidaten met unieke `key`, `name`, optioneel `configuration_id`, `battery`, `costs`, `financing` en `assumptions` |
 | `costs_confirmed`, `technical_assumptions_confirmed`, `consumption_is_gross`, `production_is_ac` | Alle `true` voor een schatting met bevestigde kosten en meetgrenzen |
 
-`objective` is `net_present_value`, `roi`, `payback` of `self_consumption`. `tariff` bevat `import_eur_per_kwh`, `export_eur_per_kwh`, `export_fee_eur_per_kwh`, `export_fee_bands`, `fixed_annual_eur` en `annual_price_change_pct`. Een staffel is `{ "up_to_kwh": 1000, "annual_eur": 120 }`; de laatste bovengrens moet `null` zijn. Optioneel is `export_variant`: `{ "label": "Geen vergoeding vanaf 2030", "from_calendar_year": 2030, "export_eur_per_kwh": 0, "export_fee_eur_per_kwh": 0.05 }`, met een beginjaar op of na `start_year`. Bedragen zijn all-in EUR zoals van toepassing op het scenario.
+`objective` is `net_present_value`, `roi`, `payback` of `self_consumption`. `tariff` bevat `import_eur_per_kwh`, `export_eur_per_kwh`, `export_fee_eur_per_kwh`, `export_fee_bands`, `fixed_annual_eur` en `annual_price_change_pct`. Een staffel is `{ "up_to_kwh": 1000, "annual_eur": 120 }`; de laatste bovengrens moet `null` zijn. Optioneel is `export_variant`: `{ "label": "Geen vergoeding vanaf 2030", "from_calendar_year": 2030, "export_eur_per_kwh": 0, "export_fee_eur_per_kwh": 0.05 }`, met een beginjaar op of na `start_year`. Optioneel is `load_variation`: `uniform` (standaard, zoals modelversie 1) of `households` (verbruik binnen iedere periode van 5 tot 60 minuten verdeeld volgens gemeten huishoudens, zie de [rekenmethode](roi-model.md#verbruik-binnen-een-meetperiode)); de interface stuurt `households`. Bedragen zijn all-in EUR zoals van toepassing op het scenario.
 
 `battery` bevat `usable_capacity_kwh`, `charge_power_kw`, `discharge_power_kw`, `ac_round_trip_efficiency_pct`, `standby_w`, `annual_capacity_loss_pct` en `operating_life_years`. Capaciteit is intern bruikbaar, vermogens zijn werkelijk AC-vermogen. Technische invoer en herkomst worden per kandidaat vastgelegd; een catalogus-ID is een verwijzing en bewijst geen geschiktheid.
 
