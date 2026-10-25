@@ -52,6 +52,8 @@ pub struct SavedSolar {
     pub imported_at_unix_s: i64,
     pub options: serde_json::Value,
     pub summary: serde_json::Value,
+    /// Bewaarde berekeningen op dit profiel; die verdwijnen mee als het profiel wordt verwijderd.
+    pub analysis_runs: i64,
 }
 
 pub(crate) fn json(text: &str) -> Result<serde_json::Value> {
@@ -158,7 +160,7 @@ impl Catalog {
     pub async fn list_solar(&self) -> Result<Vec<SavedSolar>> {
         let connection = self.connection();
         let rows = connection
-            .prepare("SELECT id, filename, imported_at_unix_s, options_json, summary_json FROM solar_imports ORDER BY id DESC")?
+            .prepare("SELECT id, filename, imported_at_unix_s, options_json, summary_json, (SELECT count(*) FROM analysis_runs WHERE solar_import_id = solar_imports.id) AS analysis_runs FROM solar_imports ORDER BY id DESC")?
             .query_map([], |r| {
                 Ok((
                     r.get("id")?,
@@ -166,19 +168,37 @@ impl Catalog {
                     r.get("imported_at_unix_s")?,
                     r.get::<_, String>("options_json")?,
                     r.get::<_, String>("summary_json")?,
+                    r.get("analysis_runs")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|(id, filename, imported_at_unix_s, options, summary)| {
-                Ok(SavedSolar {
-                    id,
-                    filename,
-                    imported_at_unix_s,
-                    options: json(&options)?,
-                    summary: json(&summary)?,
-                })
-            })
+            .map(
+                |(id, filename, imported_at_unix_s, options, summary, analysis_runs)| {
+                    Ok(SavedSolar {
+                        id,
+                        filename,
+                        imported_at_unix_s,
+                        options: json(&options)?,
+                        summary: json(&summary)?,
+                        analysis_runs,
+                    })
+                },
+            )
             .collect()
+    }
+
+    /// Verwijdert een profiel met zijn intervallen en de berekeningen erop, in één transactie.
+    /// Geeft het aantal verwijderde berekeningen, of `None` als het profiel niet bestaat.
+    pub async fn delete_solar(&self, id: i64) -> Result<Option<usize>> {
+        let mut connection = self.connection();
+        let tx = connection.transaction()?;
+        let runs = tx.execute("DELETE FROM analysis_runs WHERE solar_import_id = ?", [id])?;
+        tx.execute("DELETE FROM solar_intervals WHERE import_id = ?", [id])?;
+        if tx.execute("DELETE FROM solar_imports WHERE id = ?", [id])? == 0 {
+            return Ok(None);
+        }
+        tx.commit()?;
+        Ok(Some(runs))
     }
 }

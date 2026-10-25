@@ -60,6 +60,14 @@ impl Catalog {
         )?)
     }
 
+    /// Verwijdert één bewaarde berekening; het profiel blijft staan. `false` als ze niet bestaat.
+    pub async fn delete_analysis(&self, id: i64) -> Result<bool> {
+        Ok(self
+            .connection()
+            .execute("DELETE FROM analysis_runs WHERE id = ?", [id])?
+            > 0)
+    }
+
     pub async fn list_analyses(&self) -> Result<Vec<SavedAnalysis>> {
         let connection = self.connection();
         let rows = connection

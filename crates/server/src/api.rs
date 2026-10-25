@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Multipart, State},
+    extract::{Multipart, Path, State},
     http::StatusCode,
 };
 use chrono::Utc;
@@ -332,6 +332,26 @@ pub async fn save_solar(
 pub async fn list_solar(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let imports = catalog.list_solar().await.map_err(database_error)?;
     Ok(Json(json!({"imports":imports})))
+}
+
+pub(crate) fn missing(message: &str) -> ApiError {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({"error":"not_found", "message":message})),
+    )
+}
+
+/// Verwijdert een profiel en de berekeningen die erop zijn gemaakt; dat vraagt de interface eerst.
+pub async fn delete_solar(
+    State(catalog): State<Catalog>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    let runs = catalog
+        .delete_solar(id)
+        .await
+        .map_err(database_error)?
+        .ok_or_else(|| missing("Dit energieprofiel bestaat niet (meer)."))?;
+    Ok(Json(json!({"deleted_analysis_runs":runs})))
 }
 
 /// Maakt een geschat jaarprofiel uit jaartotalen en bewaart het als gemodelleerde import.

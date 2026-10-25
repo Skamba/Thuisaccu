@@ -212,6 +212,19 @@ window.UI = (() => {
   }
 
   // CSV met puntkomma en BOM voor Excel; voorkomt formule-injectie.
+  // Bevestiging voor iets wat niet terug te draaien is; `work` draait pas na de rode knop.
+  // De focus staat op Annuleren, zodat Enter niets verwijdert.
+  function confirm(title, paragraphs, label, work) {
+    const cancel = button("Annuleren", () => ref.close(), "secondary");
+    const ok = button(label, () => busy(ok, async () => { await work(); ref.close(); }), "danger");
+    const ref = dialog(title, paragraphs.map(text => h("p", {}, text)), h("div", { class: "actions" }, ok, cancel));
+    cancel.focus();
+    return ref;
+  }
+
+  // Bouwt het huidige scherm opnieuw op, bijvoorbeeld na het verwijderen van een rij.
+  const reload = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
+
   function downloadCsv(filename, rows) {
     const cell = value => {
       let text = String(value ?? "Onbekend");
@@ -366,6 +379,6 @@ window.UI = (() => {
   return {
     h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, api, store, toast, busy,
     button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, table, stats, empty,
-    tabs, wizard, dialog, downloadCsv, downloadBlob, chart, palette, pages, page
+    tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

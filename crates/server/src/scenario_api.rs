@@ -208,6 +208,16 @@ pub async fn capacity_curve(
     })))
 }
 
+pub async fn delete_run(
+    State(catalog): State<Catalog>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    if !catalog.delete_analysis(id).await.map_err(database_error)? {
+        return Err(crate::api::missing("Deze berekening bestaat niet (meer)."));
+    }
+    Ok(Json(json!({})))
+}
+
 pub async fn history(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     Ok(Json(
         json!({"runs":catalog.list_analyses().await.map_err(database_error)?}),

@@ -16,13 +16,15 @@ De volgende routes bestaan:
 | `POST /api/v1/solar/inspect` | `200`, JSON | Kolommen, eerste acht rijen, werkbladen, aantal rijen, eventuele metadata |
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |
-| `GET /api/v1/solar/imports` | `200`, JSON | Bewaarde overzichten in een `imports`-array |
+| `GET /api/v1/solar/imports` | `200`, JSON | Bewaarde overzichten in een `imports`-array, elk met `analysis_runs` (aantal berekeningen op dat profiel) |
+| `DELETE /api/v1/solar/imports/{id}` | `200`, JSON met `deleted_analysis_runs`; `404` als het profiel niet bestaat | Profiel met intervallen en alle berekeningen erop verwijderen, in één transactie |
 | `GET /api/v1/solar/imports/{id}/capacity` | `200`, JSON met `points`, `periods`, `measured_periods` en `assumptions` | Bovengrens van via de accu zelf gebruikte zonnestroom per capaciteit (0–20 kWh), verliesvrij en zonder vermogensgrens, met de verdeling `households` |
 | `POST /api/v1/solar/typical` | `201`, JSON met `id`, `filename`, `summary` | Geschat uurjaar uit jaartotalen opslaan als gemodelleerde import |
 | `GET /api/v1/solar/typical` | `200`, JSON | Bronnen van de ingebakken profielvormen en PV-opbrengst per kWp per ligging |
 | `GET /api/v1/analysis/costs` | `200`, JSON | 26 kostencategorieën, toelichtingen, gedateerde bronlinks en `estimates` (bronnen en bedragen voor kostenindicaties) |
 | `POST /api/v1/analysis/runs` | `201`, JSON met `id` en `result` | Valideren, simuleren, vergelijken en met invoer opslaan |
 | `GET /api/v1/analysis/runs` | `200`, JSON met `runs` | Laatste 100 analyses met oorspronkelijke `input` en `result` |
+| `DELETE /api/v1/analysis/runs/{id}` | `200`, JSON; `404` als de berekening niet bestaat | Eén berekening verwijderen; het profiel blijft staan |
 | `POST /api/v1/locations/search` | `200`, JSON met `results` en `source` | Expliciet een Nederlands adres opzoeken bij PDOK |
 
 De healthresponse is:

@@ -27,6 +27,18 @@
     location.hash = "#/zelf";
   }
 
+  function remove(run) {
+    UI.confirm("Berekening verwijderen?", [
+      `‘${run.title}’ van ${UI.dateTime(run.created_at_unix_s)} wordt met de vastgelegde invoer en uitkomst verwijderd. ` +
+        "Dit kan niet ongedaan worden gemaakt. Het energieprofiel blijft staan.",
+      "Gedeelde links naar deze berekening blijven werken; die bevatten de uitkomst zelf."
+    ], "Verwijder berekening", async () => {
+      await UI.api(`/api/v1/analysis/runs/${run.id}`, { method: "DELETE" });
+      toast("Berekening verwijderd.");
+      UI.reload();
+    });
+  }
+
   UI.page("berekeningen", {
     nav: "Mijn berekeningen", icon: "list", title: "Mijn berekeningen",
       subtitle: "Bewaarde uitkomsten, elk met de oorspronkelijke invoer.",
@@ -41,7 +53,8 @@
         return [h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
           Data.objectives[run.input.request.parameters.objective],
             rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
-          money(rec ? rec.npv_eur : 0, { decimals: 0 }), button("Pas aan", () => duplicate(run), "ghost")];
+          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", () => duplicate(run), "ghost"),
+            button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title}` }))];
       }), { caption: "Laatste 100 berekeningen" }));
     }
   });
@@ -183,6 +196,8 @@
     if (!path) { location.replace("#/keuzehulp"); return; }
     const found = match(path);
     if (!found) { location.replace("#/keuzehulp"); return; }
+    // Een dialoog hoort bij het vorige scherm, ook na Terug of een link.
+    document.querySelectorAll("dialog[open]").forEach(d => d.close());
     const run = ++generation, section = found.page.parent || found.key;
     document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.page === section) a.setAttribute("aria-current",
       "page");

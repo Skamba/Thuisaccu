@@ -176,6 +176,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   for (const box of await page.$$("fieldset .check input")) await box.check();
   await page.click("button:has-text('Bereken mijn advies')");
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 30000 });
+  const runHash = await page.evaluate(() => location.hash);
   const summary = await page.textContent(".plain");
   assert.match(summary, /Als teruglevering vanaf 2030 niets meer oplevert/);
   assert.match(summary, /geschat uit jaartotalen/);
@@ -206,6 +207,21 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await other.page.waitForSelector("text=Deze link werkt niet");
   assert.deepEqual(other.problems, []);
   await other.close();
+
+  // Verwijderen vanuit het overzicht vraagt eerst bevestiging; Annuleren heeft de focus.
+  await page.goto(`${base}/#/berekeningen`);
+  const runRow = page.locator("tr", { has: page.locator(`a[href="${runHash}"]`) });
+  await runRow.locator("button:has-text('Verwijder')").click();
+  const ask = page.locator("dialog[open]");
+  assert.match(await ask.textContent(), /kan niet ongedaan worden gemaakt.*Het energieprofiel blijft staan/);
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "Annuleren");
+  await ask.locator("button:has-text('Annuleren')").click();
+  assert.equal(await runRow.count(), 1);
+  await runRow.locator("button:has-text('Verwijder')").click();
+  await page.locator("dialog[open] button:has-text('Verwijder berekening')").click();
+  await runRow.waitFor({ state: "detached" });
+  await page.goto(`${base}/${runHash}`);
+  await page.waitForSelector("text=Berekening niet gevonden");
   assert.deepEqual(problems, []);
   await close();
 });
@@ -282,6 +298,17 @@ test("omvormer- en meterbestand worden één bruikbaar jaarprofiel", async () =>
   await page.goto(`${base}/#/energie`);
   const row = page.locator("tr", { hasText: "omvormer.csv + p1.csv" });
   assert.match(await row.textContent(), /Bruikbaar/);
+  // Gemeten netafname en teruglevering zijn bewaard: de capaciteitscurve rekent met de meter.
+  await row.locator("a").click();
+  await page.waitForSelector("figure.chart >> nth=1", { timeout: 30000 });
+  assert.match(await page.textContent("#view"), /volgens de gemeten netafname en teruglevering/);
+  assert.equal(await page.locator(".callout", { hasText: "Importeer dit bestand opnieuw" }).count(), 0);
+  // Verwijderen uit het overzicht; zonder berekeningen zegt de vraag dat ook.
+  await page.goto(`${base}/#/energie`);
+  await row.locator("button:has-text('Verwijder')").click();
+  assert.match(await page.textContent("dialog[open]"), /Er zijn geen berekeningen op dit profiel/);
+  await page.click("dialog[open] button:has-text('Verwijder profiel')");
+  await row.waitFor({ state: "detached" });
   assert.deepEqual(problems, []);
   await close();
 });

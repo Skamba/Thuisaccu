@@ -325,3 +325,58 @@ async fn capacity_curve_uses_measured_simultaneity_instead_of_the_estimated_spre
     assert!(delivered[0] > 100.0, "{delivered:?}");
     assert!(delivered[1].abs() < 1e-6, "{delivered:?}");
 }
+
+#[tokio::test]
+async fn deleting_a_run_keeps_the_profile_and_deleting_a_profile_removes_its_runs() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut runs = vec![];
+    for _ in 0..2 {
+        let response = app
+            .clone()
+            .oneshot(post("/api/v1/analysis/runs", input(id)))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        runs.push(body(response).await["id"].as_i64().unwrap());
+    }
+    let delete = |path: String| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(Request::delete(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            (response.status(), body(response).await)
+        }
+    };
+    let list = || async {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/solar/imports")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        body(response).await["imports"].clone()
+    };
+    assert_eq!(list().await[0]["analysis_runs"], 2);
+    let (status, _) = delete(format!("/api/v1/analysis/runs/{}", runs[0])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(catalog.list_analyses().await.unwrap().len(), 1);
+    assert_eq!(list().await[0]["analysis_runs"], 1);
+    let (status, error) = delete(format!("/api/v1/analysis/runs/{}", runs[0])).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["error"], "not_found");
+    let (status, deleted) = delete(format!("/api/v1/solar/imports/{id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["deleted_analysis_runs"], 1);
+    assert!(catalog.list_analyses().await.unwrap().is_empty());
+    assert!(catalog.solar_intervals(id).await.unwrap().is_empty());
+    assert_eq!(list().await, json!([]));
+    let (status, _) = delete(format!("/api/v1/solar/imports/{id}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

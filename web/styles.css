@@ -67,6 +67,11 @@ button, .button { font: inherit; display: inline-flex; align-items: center; just
 .ghost { background: transparent; color: var(--accent); border-color: transparent; padding: .45rem .6rem; }
 .secondary:hover, .ghost:hover { background: var(--accent-soft); }
 .primary:hover, .button:hover { filter: brightness(1.08); }
+.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+.danger:hover { filter: brightness(1.08); }
+.ghost.remove { color: var(--danger); }
+.row-buttons { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+.ghost.remove:hover { background: var(--soft); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .actions, .toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; margin: .75rem 0; }
 .toolbar .field { min-width: 12rem; flex: 1 1 12rem; margin: 0; }

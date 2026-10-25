@@ -630,3 +630,59 @@ async fn measured_grid_values_are_stored_in_pairs_and_filled_in_for_older_import
         .is_err()
     );
 }
+
+#[tokio::test]
+async fn deleting_a_profile_removes_intervals_and_runs_and_leaves_other_profiles() {
+    use thuisaccu_storage::{analysis::NewAnalysis, solar::SolarInterval};
+    let catalog = Catalog::in_memory().await.unwrap();
+    let interval = SolarInterval {
+        start_unix_s: 0,
+        end_unix_s: 3600,
+        production_wh: 1000.0,
+        consumption_wh: Some(500.0),
+        steady_consumption_wh: None,
+        measured_import_wh: None,
+        measured_export_wh: None,
+    };
+    let mut ids = vec![];
+    for sha in ["a", "b"] {
+        ids.push(
+            catalog
+                .save_solar(
+                    "fixture",
+                    &sha.repeat(64),
+                    "{}",
+                    "{}",
+                    std::slice::from_ref(&interval),
+                    0,
+                )
+                .await
+                .unwrap(),
+        );
+    }
+    for &import_id in &ids {
+        catalog
+            .save_analysis(&NewAnalysis {
+                import_id,
+                title: "Fixture run",
+                model_version: "fixture",
+                profile_sha256: &"c".repeat(64),
+                input_json: "{}",
+                result_json: "{}",
+                now: 0,
+            })
+            .await
+            .unwrap();
+    }
+    assert_eq!(catalog.delete_solar(ids[0]).await.unwrap(), Some(1));
+    assert_eq!(catalog.delete_solar(ids[0]).await.unwrap(), None);
+    let left = catalog.list_solar().await.unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].analysis_runs, 1);
+    let total: i64 = scalar(&catalog, "SELECT count(*) FROM solar_intervals");
+    assert_eq!(total, 1);
+    let run = catalog.list_analyses().await.unwrap()[0].id;
+    assert!(catalog.delete_analysis(run).await.unwrap());
+    assert!(!catalog.delete_analysis(run).await.unwrap());
+    assert_eq!(catalog.list_solar().await.unwrap()[0].analysis_runs, 0);
+}

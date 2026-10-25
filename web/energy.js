@@ -42,14 +42,40 @@
           link("Importeer een bestand", "#/energie/import", "button"), link("Naar de keuzehulp", "#/keuzehulp", "button secondary")));
         return;
       }
-      view.append(table(["Profiel", "Periode", "Resolutie", "Opwek", "Verbruik", "Bruikbaar voor een berekening"], items.map(item => [
+      view.append(table(["Profiel", "Periode", "Resolutie", "Opwek", "Verbruik", "Bruikbaar voor een berekening", ""], items.map(item => [
         link(title(item), `#/energie/${item.id}`),
           `${UI.dateOnly(item.summary.from_unix_s)} – ${UI.dateOnly(item.summary.to_unix_s)}`,
         PERIODS[item.options.combined_period || item.options.period] || (Data.isDemo(item) ? "1 uur" : "Onbekend"),
           kwh(item.summary.production_kwh),
-        item.summary.consumption_kwh == null ? "Nee" : kwh(item.summary.consumption_kwh), fitBadge(item)]), { caption: "Bewaarde energieprofielen" }));
+        item.summary.consumption_kwh == null ? "Nee" : kwh(item.summary.consumption_kwh), fitBadge(item),
+        button("Verwijder", () => remove(item), "ghost remove", { "aria-label": `Verwijder ${item.filename}` })]),
+        { caption: "Bewaarde energieprofielen" }));
     }
   });
+
+  // Een profiel gaat samen met de berekeningen erop; de vraag noemt hoeveel dat er zijn.
+  function remove(item) {
+    const runs = item.analysis_runs || 0;
+    UI.confirm("Energieprofiel verwijderen?", [
+      `‘${item.filename}’ wordt met alle meetperioden verwijderd. Dit kan niet ongedaan worden gemaakt.`,
+      runs ? `Ook ${runs === 1 ? "de berekening" : `de ${runs} berekeningen`} op dit profiel ${runs === 1 ? "wordt" : "worden"} verwijderd. ` +
+        "Gedeelde links naar een berekening blijven werken; die bevatten de uitkomst zelf."
+        : "Er zijn geen berekeningen op dit profiel."
+    ], "Verwijder profiel", async () => {
+      const result = await UI.api(`/api/v1/solar/imports/${item.id}`, { method: "DELETE" });
+      forget(String(item.id));
+      toast(result.deleted_analysis_runs ? `Profiel en ${result.deleted_analysis_runs} berekening(en) verwijderd.` : "Profiel verwijderd.");
+      UI.reload();
+    });
+  }
+
+  // Concepten in de browser die naar het verwijderde profiel wezen, kiezen opnieuw.
+  function forget(id) {
+    const wizard = UI.store.get("thuisaccu-keuzehulp", null);
+    if (wizard?.importId === id) UI.store.set("thuisaccu-keuzehulp", { ...wizard, importId: "" });
+    const own = UI.store.get("thuisaccu-scenario", null);
+    if (own?.profile === id) UI.store.set("thuisaccu-scenario", { ...own, profile: "" });
+  }
 
   UI.page("energie/:id", {
     title: "Energieprofiel", subtitle: "Opwek, verbruik en datakwaliteit.", parent: "energie",
