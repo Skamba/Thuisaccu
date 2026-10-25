@@ -7,10 +7,11 @@ window.Data = (() => {
   let catalogCache = null, costsCache = null, typicalCache = null, referencesLoaded = null;
 
   // Ontbrekende ingebouwde referentiesets worden één keer per bezoek bijgeladen, zodat de catalogus
-  // altijd de nieuwste set bevat. Eerder geladen sets en eigen claims blijven ongewijzigd.
-  const loadReferences = () => (referencesLoaded ||= (async () => {
-    if ((await api("/api/v1/references")).pending > 0) await api("/api/v1/references", { method: "POST" });
-  })().catch(error => { referencesLoaded = null; throw error; }));
+  // altijd de nieuwste set bevat. Het laden is per set idempotent: eerder geladen sets en eigen
+  // claims blijven ongewijzigd. Bewust zonder voorafgaande statusvraag, zodat dit ook werkt met een
+  // oudere, nog in de browsercache staande WebAssembly-module.
+  const loadReferences = () => (referencesLoaded ||= api("/api/v1/references", { method: "POST" })
+    .catch(error => { referencesLoaded = null; throw error; }));
   const catalog = async (fresh = false) => {
     await loadReferences();
     return (catalogCache = (!fresh && catalogCache) || await api("/api/v1/comparison"));
