@@ -22,4 +22,21 @@ wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" \
 cp web/*.js web/styles.css "$out/"
 sed 's/data-backend="server"/data-backend="browser"/' web/index.html > "$out/index.html"
 grep -q 'data-backend="browser"' "$out/index.html"
-echo "Statische site in $out/"
+
+# GitHub Pages laat de browser bestanden tien minuten uit de cache gebruiken. Zonder versie
+# kan een nieuwe pagina dan met een oude worker of WebAssembly-module praten (bijvoorbeeld 404
+# op een nieuwe route). Iedere build krijgt daarom een versie in alle onderlinge verwijzingen.
+version=$(cat "$out"/*.js "$out/styles.css" "$out"/pkg/* | sha256sum | cut -c1-12)
+stamp() { # bestand, oude tekst, nieuwe tekst
+    grep -qF "$2" "$1" || { echo "Verwijzing $2 niet gevonden in $1." >&2; exit 1; }
+    sed "s|$2|$3|g" "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+for script in "$out"/*.js; do
+    name=$(basename "$script")
+    [ "$name" = worker.js ] || stamp "$out/index.html" "src=\"$name\"" "src=\"$name?v=$version\""
+done
+stamp "$out/index.html" 'href="styles.css"' "href=\"styles.css?v=$version\""
+stamp "$out/local.js" '"worker.js"' "\"worker.js?v=$version\""
+stamp "$out/worker.js" '"./pkg/thuisaccu_browser.js"' "\"./pkg/thuisaccu_browser.js?v=$version\""
+stamp "$out/pkg/thuisaccu_browser.js" "'thuisaccu_browser_bg.wasm'" "'thuisaccu_browser_bg.wasm?v=$version'"
+echo "Statische site in $out/ (versie $version)"
