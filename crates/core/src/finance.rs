@@ -122,23 +122,41 @@ pub struct Financing {
     pub years: u32,
 }
 
-/// Alleen rente wordt toegevoegd: hoofdsom zit al in de investering op t=0.
-pub fn annual_interest(financing: &Financing, analysis_year: u32) -> f64 {
-    if financing.loan_amount_eur == 0.0 || analysis_year > financing.years {
+/// Openstaande hoofdsom na `analysis_years` jaar van een annuïtaire lening; bij 0% rente
+/// gelijke aflossingen. Na de looptijd is alles afgelost.
+fn balance(financing: &Financing, analysis_years: u32) -> f64 {
+    let (amount, years) = (financing.loan_amount_eur, financing.years);
+    if amount == 0.0 || analysis_years >= years {
         return 0.0;
     }
     let r = financing.annual_interest_pct / 100.0;
     if r == 0.0 {
-        return 0.0;
+        return amount * (years - analysis_years) as f64 / years as f64;
     }
     // ln_1p/exp_m1 behouden precisie wanneer een geldige rente zeer klein is.
-    let denominator = -(-(financing.years as f64) * r.ln_1p()).exp_m1();
-    let annuity = financing.loan_amount_eur * r / denominator;
-    let mut balance = financing.loan_amount_eur;
-    for _ in 1..analysis_year {
+    let denominator = -(-(years as f64) * r.ln_1p()).exp_m1();
+    let annuity = amount * r / denominator;
+    let mut balance = amount;
+    for _ in 0..analysis_years {
         balance = (balance * (1.0 + r) - annuity).max(0.0);
     }
-    balance * r
+    balance
+}
+
+/// Rente in een analysejaar (1 = eerste jaar).
+pub fn annual_interest(financing: &Financing, analysis_year: u32) -> f64 {
+    if analysis_year == 0 || analysis_year > financing.years {
+        return 0.0;
+    }
+    balance(financing, analysis_year - 1) * financing.annual_interest_pct / 100.0
+}
+
+/// Aflossing in een analysejaar; over de looptijd samen precies het leenbedrag.
+pub fn annual_principal(financing: &Financing, analysis_year: u32) -> f64 {
+    if analysis_year == 0 || analysis_year > financing.years {
+        return 0.0;
+    }
+    balance(financing, analysis_year - 1) - balance(financing, analysis_year)
 }
 
 /// Eerste jaargrens waarna het cumulatieve saldo niet meer negatief wordt.

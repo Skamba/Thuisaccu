@@ -76,6 +76,10 @@ pub struct YearResult {
     pub energy_saving_eur: f64,
     pub extra_costs_eur: f64,
     pub financing_interest_eur: f64,
+    /// Aflossing van de lening in dit jaar; vanaf modelversie 5 onderdeel van het netto
+    /// voordeel, omdat het geleende deel van de investering niet op tijdstip nul wordt betaald.
+    #[serde(default)]
+    pub financing_principal_eur: f64,
     pub net_cashflow_eur: f64,
     pub cumulative_eur: f64,
 }
@@ -427,7 +431,9 @@ fn project(
         .filter(|l| l.timing == CostTiming::Upfront)
         .map(scaled)
         .sum();
-    let mut cashflows = vec![-upfront];
+    // Het geleende deel betaal je niet op tijdstip nul maar via de aflossingen; zo telt de
+    // discontovoet de lening niet dubbel naast de rente.
+    let mut cashflows = vec![-upfront + c.financing.loan_amount_eur];
     let mut years = Vec::new();
     let mut total_costs = upfront;
     let mut total_savings = 0.0;
@@ -487,9 +493,10 @@ fn project(
             })
             .sum();
         let interest = finance::annual_interest(&c.financing, year);
+        let principal = finance::annual_principal(&c.financing, year);
         total_costs += costs + interest;
         total_savings += saving;
-        cashflows.push(saving - costs - interest);
+        cashflows.push(saving - costs - interest - principal);
         let cumulative = cashflows.iter().sum();
         years.push(YearResult {
             year,
@@ -500,7 +507,8 @@ fn project(
             energy_saving_eur: saving,
             extra_costs_eur: costs,
             financing_interest_eur: interest,
-            net_cashflow_eur: saving - costs - interest,
+            financing_principal_eur: principal,
+            net_cashflow_eur: saving - costs - interest - principal,
             cumulative_eur: cumulative,
         });
         if ages.get(year as usize) == Some(&0) {
@@ -646,7 +654,7 @@ pub fn analyze(
     let mut warnings = vec![
         "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.".into(),
         "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst.".into(),
-        "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Financiering telt rente mee; hoofdsom staat al in de investering. Dit is geen eigenvermogenrendement.".into(),
+        "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Een lening telt als rente en aflossing in het jaar waarin je ze betaalt; alleen het eigen deel van de investering staat op tijdstip nul. ROI deelt door de volledige netto startinvestering. Dit is geen eigenvermogenrendement.".into(),
         "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt.".into(),
         "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde.".into(),
     ];
@@ -731,7 +739,7 @@ pub fn analyze(
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
-        model_version: "nl-self-consumption-v4".into(),
+        model_version: "nl-self-consumption-v5".into(),
         recommended_key: best_key,
         recommendation,
         baseline_first_year: baseline,

@@ -186,12 +186,14 @@ window.Results = (() => {
       const c = all.find(o => o.key === pick.value);
       const yearRows = c.key === "no_battery"
         ? horizon.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.baseline_bill_eur),
-          money(0), money(0), money(0), money(0), "—"])
+          money(0), money(0), money(0), money(0), money(0), "—"])
         : c.years.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.battery_bill_eur),
-          money(y.extra_costs_eur), money(y.financing_interest_eur), money(y.net_cashflow_eur), money(y.cumulative_eur),
+          // Vóór modelversie 5 stond de hele investering op tijdstip nul en was er geen aflossing per jaar.
+          money(y.extra_costs_eur), money(y.financing_interest_eur),
+          finite(y.financing_principal_eur) ? money(y.financing_principal_eur) : "—", money(y.net_cashflow_eur), money(y.cumulative_eur),
           pct(y.energy.self_sufficiency_pct)]);
       target.replaceChildren(
-        table(["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente",
+        table(["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Aflossing",
           "Netto voordeel", "Cumulatief", "Zelfvoorziening"],
           yearRows),
         c.key === "no_battery" ? null : stats([
@@ -260,7 +262,7 @@ window.Results = (() => {
     pick.addEventListener("change", render); render();
     out.append(UI.field("Kostenopbouw van", pick), target,
       h("p", { class: "help" }, "Bedragen zoals vastgelegd bij de berekening; teruggaven tellen negatief. Jaarkosten stijgen met de ingevoerde kostenstijging; " +
-        "de gevoeligheidsvarianten schuiven de kosten nog eens op en de lening telt alleen de rente mee. " +
+        "de gevoeligheidsvarianten schuiven de kosten nog eens op en van de lening telt alleen de rente als kosten; de aflossingen staan in de jaartabel. " +
         "Kosten per kWh uit de accu zijn alle extra kosten gedeeld door de stroom die je over de looptijd uit de accu gebruikt, niet gedisconteerd."));
     return out;
   }

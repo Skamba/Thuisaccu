@@ -270,6 +270,47 @@ fn financing_counts_interest_once_and_payback_must_survive_replacement_costs() {
 }
 
 #[test]
+fn a_loan_at_the_discount_rate_leaves_the_npv_unchanged_and_costs_only_its_interest() {
+    // € 500 lenen tegen 5% in 2 jaar, disconto 5%: de lening is in geld van nu precies € 500
+    // waard. Annuïteit 25 / (1 − 1,05^−2) = € 268,90; rente 25,00 en 12,80; aflossing jaar 1
+    // 268,90 − 25 = € 243,90. Besparing € 1927,20 per jaar (zie de lonend-grens hieronder).
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.discount_pct = 5.0;
+    let cash = candidate("cash", 2.0, 50_000);
+    let mut loan = candidate("loan", 2.0, 50_000);
+    loan.financing = Financing {
+        loan_amount_eur: 500.0,
+        annual_interest_pct: 5.0,
+        years: 2,
+    };
+    let r = analysis::analyze(&profile(), &p, &[cash, loan]).unwrap();
+    let (cash, loan) = (&r.candidates[0], &r.candidates[1]);
+    close(cash.npv_eur, -500.0 + 1927.2 / 1.05 + 1927.2 / 1.1025);
+    close(loan.npv_eur, cash.npv_eur);
+    let annuity = 25.0 / (1.0 - 1.05f64.powi(-2));
+    let interest = 25.0 + (525.0 - annuity) * 0.05;
+    close(loan.net_profit_eur, cash.net_profit_eur - interest);
+    close(loan.lifetime_extra_costs_eur, 500.0 + interest);
+    close(loan.years[0].financing_principal_eur, annuity - 25.0);
+    close(loan.years[0].net_cashflow_eur, 1927.2 - annuity);
+    close(loan.years[1].cumulative_eur, loan.net_profit_eur);
+    // Een renteloze lening is in geld van nu wel voordelig: € 250 per jaar later betalen.
+    let mut free = candidate("free", 2.0, 50_000);
+    free.financing = Financing {
+        loan_amount_eur: 500.0,
+        annual_interest_pct: 0.0,
+        years: 2,
+    };
+    let r = analysis::analyze(&profile(), &p, &[free]).unwrap();
+    close(
+        r.candidates[0].npv_eur - cash.npv_eur,
+        500.0 - 250.0 / 1.05 - 250.0 / 1.1025,
+    );
+    close(r.candidates[0].net_profit_eur, cash.net_profit_eur);
+}
+
+#[test]
 fn break_even_investment_is_the_start_cost_at_which_the_npv_becomes_zero() {
     // Ieder overschotuur laadt 2 kWh en het volgende uur gaat die 2 kWh naar het verbruik:
     // 4380 × 2 kWh × (€ 0,30 − € 0,08) = € 1927,20 per jaar. Twee jaar tegen 10% disconto:
