@@ -17,7 +17,7 @@ pub mod solar;
 pub enum StorageError {
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
-    #[error("Migration failed: {0}")]
+    #[error("Database bijwerken mislukt: {0}")]
     Migration(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),

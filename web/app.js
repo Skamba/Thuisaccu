@@ -124,16 +124,9 @@
         discount_pct: "Discontovoet per jaar (%)", annual_cost_escalation_pct: "Stijging extra jaarkosten (%)",
         annual_pv_loss_pct: "Afname PV-opwek per jaar (%)", annual_load_growth_pct: "Verandering verbruik per jaar (%)",
         annual_price_change_pct: "Prijsverandering energie per jaar (%)",
-        price_uncertainty_pct: "Tariefvariatie gevoeligheid (%)",
-        cost_uncertainty_pct: "Kostenvariatie gevoeligheid (%)" };
-      // Wat elke aanname doet, in gewone taal (docs/roi-model.md).
-      const help = { discount_pct: Data.GLOSSARY.find(([term]) => term === "Discontovoet")[1],
-        annual_cost_escalation_pct: "Hoeveel jaarlijkse kosten zoals een abonnement, onderhoud of verzekering elk jaar duurder worden.",
-        annual_pv_loss_pct: "Hoeveel minder je panelen elk jaar opwekken door veroudering.",
-        annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je bij Zelf doorrekenen apart in.",
-        annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk.",
-        price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
-        cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid." };
+        price_uncertainty_pct: "Onzekerheid tarieven (± %)",
+        cost_uncertainty_pct: "Onzekerheid kosten (± %)" };
+      const help = Data.ASSUMPTION_HELP;
       // Dezelfde grenzen als bij Zelf doorrekenen, zodat een standaardwaarde daar altijd geldig is.
       const ranges = { annual_price_change_pct: ["-20", "30", "0.1"],
         ...Object.fromEntries(Scenario.PARAMS.map(([key, , min, max, step]) => [key, [min, max, step]])) };
@@ -201,8 +194,10 @@
     if (!Local.enabled) return h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
       h("p", {},
         "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). " +
-        "‘Download back-up’ maakt daar een volledige kopie van, ook terwijl de app draait. Terugzetten doe je door de app te stoppen " +
-        "en het databasebestand door de back-up te vervangen; de browserversie kan de back-up ook inlezen."),
+        "‘Download back-up’ maakt daar een volledige kopie van, ook terwijl de app draait. Gebruik die knop en kopieer het bestand " +
+        "niet zelf: wat de app nog niet heeft weggeschreven, staat in research.sqlite3-wal. Terugzetten: stop de app, verwijder " +
+        "research.sqlite3-wal en research.sqlite3-shm als die er staan (anders zet SQLite oude wijzigingen terug over de back-up heen), " +
+        "en vervang research.sqlite3 door de back-up. De browserversie kan de back-up ook inlezen."),
       h("div", { class: "actions" }, h("a", { href: "api/v1/backup", download: "", class: "button secondary" }, "Download back-up")),
       h("p", {},
         "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
@@ -245,7 +240,7 @@
       status, h("div", { class: "actions" }, persist, download),
       h("h3", {}, "Back-up terugzetten"),
       h("p", { class: "help" },
-        "Kies een back-up van deze site, of het databasebestand van de lokale app (data/research.sqlite3; stop die app eerst). Alle gegevens in deze browser worden vervangen."),
+        "Kies een back-up van deze site, of een back-up uit de lokale app (‘Download back-up’ onder Instellingen daar). Alle gegevens in deze browser worden vervangen."),
       field("Back-upbestand", chooser),
       h("div", { class: "actions" }, replace, clear));
   }

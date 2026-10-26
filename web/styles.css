@@ -84,6 +84,8 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 /* Een veld dat nu niet telt (bijvoorbeeld het bedrag van een inbegrepen post) ziet er ook zo uit. */
 input:disabled, select:disabled, textarea:disabled { background: var(--soft); color: var(--muted); border-style: dashed; cursor: not-allowed; }
 .cost-total { font-weight: 600; }
+.problem-group { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .5rem; }
+.problem-group h3 { margin: 0 0 .25rem; font-size: 1rem; }
 .error { color: var(--danger); font-weight: 600; }
 fieldset > .error { display: block; margin-top: .4rem; }
 .check:has(> input[aria-invalid="true"]) > span { color: var(--danger); }
@@ -164,6 +166,8 @@ td strong, th strong { display: block; }
   table.stack td { display: grid; grid-template-columns: minmax(6.5rem, 35%) minmax(0, 1fr); gap: .75rem; border: 0; padding: .3rem .75rem; }
   table.stack td::before { content: attr(data-label); font-weight: 600; font-size: .8rem; color: var(--muted); }
   table.stack td input[type="checkbox"] { justify-self: start; }
+  /* Een badge blijft een label, geen balk over de hele breedte. */
+  table.stack td > .badge { justify-self: start; align-self: start; }
   table.stack td[data-label=""] { display: block; }
   table.stack td[data-label=""]::before { content: none; }
 }

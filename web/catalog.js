@@ -363,11 +363,19 @@
       const draw = () => holder.replaceChildren(comparisonTable(cmp, configs, state));
       const toggle = (text, key) => { const c = UI.checkbox(text);
         c.box.addEventListener("change", () => { state[key] = c.box.checked; draw(); }); return c.element; };
-      actions.append(button("Exporteer CSV", () => exportComparison(holder.querySelector("table")), "secondary"));
+      // Doorrekenen kan alleen binnen een scenario: de gekozen uitvoeringen worden opties in Zelf doorrekenen.
+      const calculate = button("Reken deze accu’s door", () => UI.busy(calculate, async () => {
+        const added = await Scenario.addConfigurations(configs.map(c => c.id));
+        toast(added < configs.length ? `${added} van ${configs.length} accu’s toegevoegd; er passen maximaal twaalf opties in één berekening.`
+          : `${added === 1 ? "De accu staat" : `${added} accu’s staan`} als optie in Zelf doorrekenen, met kostenindicaties. Vervang ze door offertebedragen waar je die hebt.`);
+        location.hash = "#/zelf";
+      }));
+      actions.append(calculate, button("Exporteer CSV", () => exportComparison(holder.querySelector("table")), "secondary"));
       view.append(h("div", { class: "toolbar" }, toggle("Alleen verschillen", "differencesOnly"), toggle("Verberg rijen zonder bekende waarde", "knownOnly")),
         h("p", { class: "callout" },
           "Bruikbare energie, nominale energie en kVA zijn verschillende grootheden, en een rendement hoort bij een meetgrens. Open een bron voor de context; onbekend blijft onbekend."),
-        holder, h("p", { class: "help" }, "Prijs per kWh is een kengetal, geen terugverdientijd. Een aanbeveling bestaat alleen binnen een doorgerekend scenario: gebruik daarvoor de keuzehulp."));
+        holder, h("p", { class: "help" }, "Prijs per kWh is een kengetal, geen terugverdientijd. Een aanbeveling bestaat alleen binnen een doorgerekend scenario: met ‘Reken deze accu’s door’ worden ze opties in Zelf doorrekenen, of gebruik de ",
+          link("keuzehulp", "#/keuzehulp"), "."));
       draw();
     }
   });

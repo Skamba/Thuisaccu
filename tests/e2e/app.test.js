@@ -604,6 +604,15 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
     ["Rendement AC → AC (%)", "88"], ["Sluimerverbruik (W)", "10"], ["Capaciteitsverlies per jaar (%)", "2"],
     ["Levensduur (jaar)", "15"]]) await card.getByLabel(label, { exact: true }).fill(value);
   await card.getByLabel("Bron en aannames van de techniek").fill("Synthetische testinvoer.");
+  // Open kostenposten staan in de controlestap als één punt per optie, met een weg terug.
+  await next(page);
+  const group = page.locator(".problem-group", { hasText: "Eigen optie 1" });
+  assert.match(await group.textContent(), /\d+ van \d+ kostenposten zijn nog onbekend: ‘[^’]+’, ‘[^’]+’, ‘[^’]+’ en \d+ andere\./);
+  await group.locator("button:has-text('Vul open posten met indicaties')").click();
+  await page.waitForSelector("text=posten gevuld met indicaties");
+  await page.locator(".problem-group button:has-text('Ga naar deze optie')").click();
+  await page.waitForFunction(() => document.activeElement?.matches(".cost-row select"));
+  assert.equal(await page.evaluate(() => document.activeElement.value), "unknown");
   await card.locator("button:has-text('Vul open posten met indicaties')").click();
   const row = title => card.locator(".cost-row", { hasText: title });
   await row("Accu of complete pakketprijs").getByLabel("Status").selectOption("priced");
@@ -767,6 +776,13 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
     await hint.locator("button:has-text('Download back-up')").click();
     await hint.waitFor({ state: "detached" });
   }
+  // Een berekening van ruim drie maanden geleden zegt dat haar prijzen van toen zijn.
+  assert.doesNotMatch(await page.textContent("#view"), /maanden oud/);
+  await page.clock.setFixedTime(new Date(Date.now() + 100 * 864e5));
+  await page.goto(`${base}/${firstRun}`);
+  await page.reload();
+  await page.waitForSelector("text=Wat betekent dit voor jou?");
+  assert.match(await page.textContent("#view"), /Deze berekening is 3 maanden oud\. Stroomprijs/);
   assert.deepEqual(problems, []);
   await close();
 });
@@ -894,6 +910,24 @@ test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async ()
   await close();
 });
 
+test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table tbody tr", { timeout: 30000 });
+  const boxes = page.locator("table tbody input[type=checkbox]");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.click("a:has-text('Vergelijk (2)')");
+  await page.click("button:has-text('Reken deze accu’s door')");
+  // Zonder gekozen profiel begint de wizard bij het profiel; de opties staan klaar met kostenindicaties.
+  await page.waitForSelector("text=Profiel en doel");
+  const draft = await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")));
+  assert.equal(draft.options.length, 2);
+  assert.ok(draft.options.every(o => o.configuration_id != null && o.costs.installation?.status !== "unknown"));
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("instellingen: Nederlandse meldingen en de looptijd geldt ook in de keuzehulp", async () => {
   const { page, problems, close } = await open({ locale: "en-US" });
   await page.goto(`${base}/#/instellingen`);
@@ -978,6 +1012,13 @@ test("browserversie bewaart gegevens in deze browser en maakt een back-up", { sk
   await fresh.page.goto(`${base}/#/accus`);
   await fresh.page.waitForSelector("table tbody tr", { timeout: 30000 });
   assert.equal(await fresh.page.locator("table tbody tr").count(), rows);
+  // Een tweede tabblad wacht met een melding tot het eerste sluit; samen zouden ze elkaars wijzigingen overschrijven.
+  const second = await page.context().newPage();
+  await second.goto(`${base}/#/accus`);
+  assert.match(await second.locator("#elsewhere").textContent(), /al open in een ander tabblad/);
+  await page.close();
+  await second.waitForSelector("#elsewhere", { state: "detached" });
+  await second.waitForSelector("table tbody tr", { timeout: 30000 });
   assert.deepEqual([...problems, ...fresh.problems], []);
   await fresh.close();
   await close();

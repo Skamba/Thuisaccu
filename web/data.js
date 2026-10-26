@@ -69,6 +69,52 @@ window.Data = (() => {
     const changes = modelChanges(run.result.model_version, run);
     return changes.length > 0 && changes.every(c => c.affects === false);
   };
+  // Gedateerde indicaties uit openbare bronnen; alleen na een klik of keuze gebruikt
+  // (keuzehulp en Zelf doorrekenen).
+  const INDICATION = {
+    import: 0.2552,
+    importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
+      "plus energiebelasting 2027 (8,80 cent, met btw € 0,1065), beide per kWh inclusief btw. Het model rekent vanaf 2027, " +
+      "dus met de belasting van 2027. Vaste en dynamische contracten wijken af.",
+    importSources: [
+      ["CBS: Verdeling energietarieven 2026 (september 2026)",
+        "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
+      ["Rijksoverheid: fiscale sleuteltabel 2027 (versie september 2026, energiebelasting elektriciteit)",
+        "https://www.rijksfinancien.nl/sites/default/files/bestanden/belastingplan-2027/pakket-belastingplan-2027/Fiscale-sleuteltabel-2027-incl-correctie-tarieven-energiebelasting-zelfstandigenaftrek.pdf"]
+    ],
+    // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
+    export: 0.0615, exportFee: 0.0515,
+    exportText: "Wat telt is het verschil tussen vergoeding en terugleverkosten. Voor een 1-jarig vast contract " +
+      "vanaf 2027 lag dat bij 15 leveranciers tussen −4,3 en +4,4 cent per kWh, met een mediaan van 1,0 cent " +
+      "(overzicht van salderingcheck.nl, peildatum 16 oktober 2026). Eneco rekent in een eigen voorbeeld met " +
+      "€ 0,0506 vergoeding en € 0,0387 kosten: 1,2 cent netto. De indicatie gebruikt € 0,0615 vergoeding " +
+      "(het wettelijke minimum van 50% van het kale leveringstarief volgens de ACM, bij het CBS-gemiddelde) " +
+      "en € 0,0515 terugleverkosten: 1 cent netto.",
+    exportSources: [
+      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)",
+        "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"],
+      ["Salderingcheck.nl: terugleververgoeding 2027 per leverancier",
+        "https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/"],
+      ["Eneco: rekenvoorbeelden met en zonder salderen (peildatum 25 februari 2026)",
+        "https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/"],
+      ["Vattenfall: einde salderingsregeling 2027",
+        "https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/"]
+    ],
+    variantYear: 2030,
+    variantText: "Volgens de ACM krijg je een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief. Voor daarna " +
+      "is geen minimum aangekondigd, en terugleverkosten kunnen nu al hoger zijn dan de vergoeding. Deze variant rekent vanaf 2030 " +
+      "met € 0 vergoeding en dezelfde terugleverkosten. Het is een stresstest, geen voorspelling of aangekondigde regel."
+  };
+  // Wat elke aanname doet, in gewone taal (docs/roi-model.md); bij Instellingen en Zelf doorrekenen.
+  const ASSUMPTION_HELP = {
+    discount_pct: "Hoeveel minder geld in de toekomst waard is dan geld nu. Bij 4% telt een euro over tien jaar als ongeveer 68 cent van nu.",
+    annual_cost_escalation_pct: "Hoeveel jaarlijkse kosten zoals een abonnement, onderhoud of verzekering elk jaar duurder worden.",
+    annual_pv_loss_pct: "Hoeveel minder je panelen elk jaar opwekken door veroudering.",
+    annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je bij Zelf doorrekenen apart in.",
+    annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk.",
+    price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
+    cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid."
+  };
   // Begrippen in gewone taal, voor wie de uitkomst samen met iemand anders leest.
   const GLOSSARY = [
     ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, omgerekend naar geld van nu. Boven nul " +
@@ -152,10 +198,11 @@ window.Data = (() => {
   const RESEARCHED_ON = "24 oktober 2026", RESEARCHED_ISO = "2026-10-24", RESEARCHED_SPAN = "24 tot en met 26 oktober 2026";
   // Prijzen en tarieven veranderen snel. Na drie maanden waarschuwt de interface dat de
   // momentopnamen verouderd kunnen zijn; de gegevens zelf blijven ongewijzigd.
+  // Hele maanden tussen twee datums (kalendermaanden, zoals ‘3 maanden geleden’).
+  const monthsBetween = (from, to) => (to.getFullYear() - from.getFullYear()) * 12 + to.getMonth() - from.getMonth()
+    - (to.getDate() < from.getDate() ? 1 : 0);
   function priceAge(now = new Date()) {
-    const researched = new Date(`${RESEARCHED_ISO}T00:00:00`);
-    const months = (now.getFullYear() - researched.getFullYear()) * 12 + now.getMonth() - researched.getMonth()
-      - (now.getDate() < researched.getDate() ? 1 : 0);
+    const months = monthsBetween(new Date(`${RESEARCHED_ISO}T00:00:00`), now);
     return {
       months, stale: months >= 3,
       text: `Prijzen, tarieven en kostenindicaties zijn onderzocht op ${RESEARCHED_ON}, ${months} maanden geleden. ` +
@@ -359,6 +406,21 @@ window.Data = (() => {
   // `situation`: { place, backup, phases } uit de keuzehulp. Elke regel noemt een bron of aanname.
   // Een stekkeraccu op een eigen groep (`circuit`) krijgt de stekkerposten plus een extra groep,
   // geen installatiepakket.
+  // Kostenopbouw voor een onderzochte uitvoering (`describe`): de gepubliceerde prijs als accupost en voor de
+  // rest bronvermelde indicaties; wat de aanbieding al omvat (installatie, omvormer) telt niet nog eens.
+  // De keuzehulp en Zelf doorrekenen gebruiken allebei deze functie, zodat de startkosten gelijk zijn.
+  function costLinesFor(catalogData, p, situation = {}, kind = p.kind) {
+    const lines = estimateCosts(catalogData, { kind, circuit: p.circuit === true, manufacturer: p.config.manufacturer_name,
+      phases: p.phases ?? null, inverterIncluded: p.inverterIncluded, offer: p.offer }, situation);
+    if (!p.offer) return lines;
+    const installation = p.offer.includes_installation === true ? ", inclusief installatie"
+      : p.offer.includes_installation === false ? ", exclusief installatie" : "";
+    return lines.map(line => line.category !== "battery" ? line : {
+      ...line, status: "priced", amount_minor: p.offer.upfront_amount_minor,
+      source: `${p.offer.seller}: ${p.offer.source_url} (bronmomentopname ${RESEARCHED_SPAN})`,
+      notes: `Gepubliceerde prijs inclusief btw${installation}.`
+    });
+  }
   function estimateCosts(catalogData, item, situation = {}) {
     const { amounts, meters, facts } = catalogData.estimates;
     const circuit = item.circuit === true && item.kind !== "plug", fixed = item.kind !== "plug" && !circuit;
@@ -491,6 +553,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, isAssumption, DEFAULTS, defaults
   };
 })();

@@ -18,7 +18,8 @@ window.Local = (() => {
       worker = new Worker("worker.js", { type: "module" });
       worker.onmessage = ({ data }) => {
         // De worker is na een fout in de module gestopt; het volgende verzoek start een nieuwe.
-        if (data.restart) { fail(data.error); return; }
+        if (data.restart) { banner("unsaved", null); fail(data.error); return; }
+        if (data.notice !== undefined) { banner("elsewhere", data.notice); return; }
         const job = pending.get(data.id);
         if (!job) return;
         pending.delete(data.id);
@@ -40,22 +41,23 @@ window.Local = (() => {
     const body = ["GET", "HEAD"].includes(request.method) ? new ArrayBuffer(0) : await request.arrayBuffer();
     const reply = await call({ type: "request", method: request.method, path: target.pathname + target.search,
       contentType: request.headers.get("content-type"), body }, [body]);
-    if (reply.unsaved !== undefined) unsaved(reply.unsaved);
+    if (reply.unsaved !== undefined) banner("unsaved", reply.unsaved);
     const empty = [204, 205, 304].includes(reply.status);
     return new Response(empty ? null : reply.body,
       { status: reply.status, headers: reply.contentType ? { "content-type": reply.contentType } : {} });
   }
 
-  // Blijvende melding bovenaan zolang een wijziging niet in IndexedDB staat; verdwijnt na een geslaagde opslag.
-  function unsaved(message) {
-    let banner = document.getElementById("unsaved");
-    if (!message) { banner?.remove(); return; }
-    if (!banner) {
-      banner = Object.assign(document.createElement("p"), { id: "unsaved", className: "banner" });
-      banner.setAttribute("role", "alert");
-      document.getElementById("main")?.prepend(banner);
+  // Blijvende melding bovenaan: een wijziging die niet in IndexedDB staat (`unsaved`, weg na een geslaagde
+  // opslag) of de database die in een ander tabblad open is (`elsewhere`). Zonder tekst verdwijnt hij.
+  function banner(id, message) {
+    let element = document.getElementById(id);
+    if (!message) { element?.remove(); return; }
+    if (!element) {
+      element = Object.assign(document.createElement("p"), { id, className: "banner" });
+      element.setAttribute("role", "alert");
+      document.getElementById("main")?.prepend(element);
     }
-    banner.textContent = message;
+    element.textContent = message;
   }
 
   // Een kopie van de database als SQLite-bestand, hetzelfde formaat als data/research.sqlite3.

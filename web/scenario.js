@@ -23,8 +23,8 @@ window.Scenario = (() => {
     ["annual_cost_escalation_pct", "Stijging extra jaarkosten (%)", "-20", "30", "0.1"],
       ["annual_pv_loss_pct", "Afname PV-opwek per jaar (%)", "0", "10", "0.1"],
     ["annual_load_growth_pct", "Verandering verbruik per jaar (%)", "-20", "30", "0.1"],
-      ["price_uncertainty_pct", "Tariefvariatie gevoeligheid (%)", "0", "80", "1"],
-    ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", "0", "80", "1"]
+      ["price_uncertainty_pct", "Onzekerheid tarieven (± %)", "0", "80", "1"],
+    ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", "0", "80", "1"]
   ];
   // Extra verbruik vanaf een later jaar, met dezelfde vormen als het geschatte profiel (crates/server/src/typical_profile.rs).
   const CHANGES = {
@@ -51,7 +51,7 @@ window.Scenario = (() => {
         changes: [], basis: null, options: []
     };
   }
-  let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null;
+  let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null, focusOption = null;
   const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.set(STORE, state), 300); };
   const bindValue = (control, read, write) => { control.value = read() ?? "";
     control.addEventListener("input", () => { write(control.value); persist(); }); return control; };
@@ -116,10 +116,13 @@ window.Scenario = (() => {
       return { up_to_kwh: up, annual_eur: annual };
     });
   }
-  // Bouwt het API-verzoek en verzamelt alle problemen tegelijk, zodat de controlestap ze kan tonen.
+  // Bouwt het API-verzoek en verzamelt alle problemen tegelijk, zodat de controlestap ze kan tonen:
+  // `problems` voor de berekening als geheel, `optionProblems` per accu-optie (zelfde volgorde).
+  const few = labels => labels.length <= 3 ? labels.map(l => `‘${l}’`).join(", ")
+    : `${labels.slice(0, 3).map(l => `‘${l}’`).join(", ")} en ${labels.length - 3} andere`;
   function build(categories) {
-    const problems = [],
-      number = (raw, what) => { const v = parse(raw); if (v == null) problems.push(`${what} ontbreekt.`);
+    const problems = [], optionProblems = state.options.map(() => []),
+      number = (raw, what, list = problems) => { const v = parse(raw); if (v == null) list.push(`${what} ontbreekt.`);
         return v ?? 0; };
     if (!state.title.trim()) problems.push("Geef de berekening een naam.");
     if (!state.profile) problems.push("Kies een energieprofiel.");
@@ -156,33 +159,44 @@ window.Scenario = (() => {
       return { kind: change.kind, from_calendar_year: year ?? 0, annual_kwh: kwh ?? 0,
         ...(change.kind === "ev" ? { charging: change.charging } : {}) };
     });
-    const candidates = state.options.map(option => {
-      const battery = Object.fromEntries(TECH.map(([key, label]) => [key,
-        number(option.battery[key], `${option.name}: ${label}`)]));
-      if (!option.assumptions.trim()) problems.push(`${option.name}: beschrijf bron en aannames van de techniek.`);
+    const candidates = state.options.map((option, index) => {
+      const mine = optionProblems[index], unknown = [], unsourced = [];
+      // Leeg is geen lening; iets wat geen getal is, wordt niet stil een lening van nul.
+      const loanValue = (raw, what, options) => {
+        if (!String(raw ?? "").trim()) return 0;
+        const value = parse(raw, options);
+        if (value == null) mine.push(`${what}: ${UI.parseProblem(raw, options)}`);
+        return value ?? 0;
+      };
+      const battery = Object.fromEntries(TECH.map(([key, label]) => [key, number(option.battery[key], label, mine)]));
+      if (!option.assumptions.trim()) mine.push("Beschrijf bron en aannames van de techniek.");
       const costs = categories.map(c => {
         const line = option.costs[c.key] || { status: "unknown", amount: "", year: "", source: "", notes: "" };
-        if (line.status === "unknown") problems.push(`${option.name}: kostenpost ‘${c.label}’ is nog onbekend.`);
+        if (line.status === "unknown") unknown.push(c.label);
         let amount = 0;
         if (line.status === "priced") {
           // Nederlandse notatie mag (6.500,00); hele centen, zoals de kostenposten.
           const euro = parse(line.amount, { money: true });
-          if (euro == null || euro < 0 || Math.abs(euro * 100 - Math.round(euro * 100)) > 1e-6) problems.push(`${option.name}: bedrag voor ‘${c.label}’ in euro met hoogstens twee decimalen.`);
+          if (euro == null || euro < 0 || Math.abs(euro * 100 - Math.round(euro * 100)) > 1e-6) mine.push(`Bedrag voor ‘${c.label}’ in euro met hoogstens twee decimalen.`);
           else amount = Math.round(euro * 100);
-          if (c.timing === "event" && !(parse(line.year) >= 1 && parse(line.year) <= horizon)) problems.push(`${option.name}: jaar voor ‘${c.label}’ moet binnen de looptijd vallen.`);
+          if (c.timing === "event" && !(parse(line.year) >= 1 && parse(line.year) <= horizon)) mine.push(`Jaar voor ‘${c.label}’ moet binnen de looptijd vallen.`);
         }
-        if (line.status !== "unknown" && !String(line.source || "").trim()) problems.push(`${option.name}: geef een bron of aanname voor ‘${c.label}’.`);
+        if (line.status !== "unknown" && !String(line.source || "").trim()) unsourced.push(c.label);
         return { category: c.key, status: line.status, amount_minor: amount, timing: c.timing,
           year: line.status === "priced" && c.timing === "event" ? parse(line.year) : null,
           source: String(line.source || "").trim(), notes: line.notes || "Invoer in Zelf doorrekenen" };
       });
+      if (unknown.length) mine.unshift(`${unknown.length} van ${categories.length} kostenposten ${unknown.length === 1 ? "is" : "zijn"} nog onbekend: ${few(unknown)}.`);
+      if (unsourced.length) mine.push(`Geef een bron of aanname bij ${few(unsourced)}.`);
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
-        financing: { loan_amount_eur: parse(option.loan.amount) ?? 0, annual_interest_pct: parse(option.loan.interest) ?? 0, years: parse(option.loan.years) ?? 0 }, assumptions: option.assumptions };
+        financing: { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
+          annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") },
+        assumptions: option.assumptions };
     });
     // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
     const site = state.site && state.site.address === state.address ? state.site
       : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
-    return { problems,
+    return { problems, optionProblems, count: problems.length + optionProblems.flat().length,
       request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates,
         ...(load_changes.length ? { load_changes } : {}), ...(basis(candidates) ? { quote_basis: basis(candidates) } : {}) } };
   }
@@ -321,13 +335,30 @@ window.Scenario = (() => {
         tariff("Terugleververgoeding (€/kWh)", "export", { min: "-10", max: "10" }, "Vóór aparte terugleverkosten."),
         tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" },
           "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger."),
-        tariff("Prijsverandering per jaar (%)", "change", { min: "-20", max: "30", step: "0.1" })),
+        tariff("Prijsverandering per jaar (%)", "change", { min: "-20", max: "30", step: "0.1" }, Data.ASSUMPTION_HELP.annual_price_change_pct)),
+        indications(),
         h("details", {}, h("summary", {}, "Terugleverkosten via vaste staffels"),
           field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; }),
             "Per regel: maximale teruglevering in kWh, puntkomma, jaarkosten in euro. Laat de laatste grens leeg. Alleen aanvullende staffelkosten."))),
       variantFields(),
       h("fieldset", {}, h("legend", {}, "Looptijd en aannames"), h("div", { class: "grid" },
-        PARAMS.map(([key, label, min, max, step]) => field(label, bindValue(numberInput({ min, max, step, required: true }), () => state.params[key], v => { state.params[key] = v; }))))));
+        PARAMS.map(([key, label, min, max, step]) => field(label, bindValue(numberInput({ min, max, step, required: true }), () => state.params[key], v => { state.params[key] = v; }),
+          Data.ASSUMPTION_HELP[key])))));
+  }
+  // Dezelfde gedateerde indicaties als in de keuzehulp, alleen na een klik; een eigen contract gaat voor.
+  function indications() {
+    const i = Data.INDICATION;
+    const use = button("Gebruik de indicaties", () => {
+      Object.assign(state.tariff, { import: plain(i.import), export: plain(i.export), fee: plain(i.exportFee) });
+      persist(); flow.rerender();
+    }, "secondary");
+    return h("div", {}, h("p", { class: "help" },
+      `Geen contract bij de hand? Indicatie: stroom ${money(i.import, { decimals: 4 })} per kWh, terugleververgoeding ` +
+      `${money(i.export, { decimals: 4 })} en terugleverkosten ${money(i.exportFee, { decimals: 4 })} per kWh. Vervang ze door je eigen contract.`),
+      h("p", { class: "actions" }, use),
+      h("details", { class: "sources" }, h("summary", {}, "Waar komen de indicaties vandaan?"),
+        h("p", { class: "help" }, i.importText), h("p", { class: "help" }, i.exportText),
+        h("ul", {}, [...i.importSources, ...i.exportSources].map(([title, url]) => h("li", {}, UI.external(title, url))))));
   }
 
   // Vult een optie vanuit de catalogus: techniek met benoemde aannames en kostenindicaties.
@@ -352,14 +383,9 @@ window.Scenario = (() => {
   }
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   function fillEstimates(option, costCatalog, described) {
-    const lines = Data.estimateCosts(costCatalog,
-      { kind: option.kind, circuit: described?.circuit === true, manufacturer: described?.config.manufacturer_name ?? "",
-        phases: described?.phases ?? null,
-        inverterIncluded: described ? described.inverterIncluded : option.kind === "plug" },
-      {});
-    if (described?.offer) Object.assign(lines.find(l => l.category === "battery"),
-      { status: "priced", amount_minor: described.offer.upfront_amount_minor, source: described.offer.source_url,
-        notes: `Gepubliceerde prijs van ${described.offer.seller}.` });
+    const lines = described ? Data.costLinesFor(costCatalog, described, {}, option.kind)
+      : Data.estimateCosts(costCatalog, { kind: option.kind, circuit: false, manufacturer: "", phases: null,
+        inverterIncluded: option.kind === "plug" }, {});
     let filled = 0;
     for (const line of lines) {
       const current = option.costs[line.category];
@@ -438,7 +464,7 @@ window.Scenario = (() => {
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
         h("div", { class: "cost-rows" }, rows),
       h("details", {}, h("summary", {}, "Financiering (optioneel)"), h("p", { class: "help" }, "Een annuïtaire lening voegt alleen de rente toe; de aanschaf telt al als investering. Looptijd binnen de analysehorizon."),
-        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01" }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))));
+        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))));
   }
 
   function stepOptions(body) {
@@ -467,21 +493,50 @@ window.Scenario = (() => {
           { class: "empty" }, "Nog geen opties. Neem een accu over uit de catalogus of voeg een eigen optie toe."),
         h("details", { class: "sources" }, h("summary", {}, "Kostenonderzoek en bronnen"), h("p", {}, costCatalog.notes),
           h("ul", {}, costCatalog.sources.map(s => h("li", {}, UI.external(s.title, s.url), h("small", {}, s.note)))))]);
+      // Vanuit de controlestap: naar de eerste onbekende kostenpost van die optie, of de optie zelf.
+      const card = focusOption == null ? null : host.querySelectorAll(".option-editor")[focusOption];
+      focusOption = null;
+      if (card) {
+        const target = [...card.querySelectorAll(".cost-row select")].find(s => s.value === "unknown") || card.querySelector("summary");
+        target.scrollIntoView({ block: "center" }); target.focus();
+      }
     }).catch(error => host.replaceChildren(h("p", { class: "warning" }, error.message)));
+  }
+
+  // Wat er nog mist, per accu-optie gegroepeerd, met een weg terug: open posten vullen of naar de optie.
+  function reviewProblems(problems, optionProblems, costCatalog) {
+    const total = problems.length + optionProblems.flat().length;
+    const groups = state.options.map((option, index) => [option, index, optionProblems[index]]).filter(([, , list]) => list.length);
+    return h("div", { class: "callout review-problems", tabindex: "-1" },
+      h("p", {}, `${total} ${total === 1 ? "punt vraagt" : "punten vragen"} nog aandacht:`),
+      problems.length ? h("ul", {}, problems.map(p => h("li", {}, p))) : null,
+      groups.map(([option, index, list]) => {
+        const open = costCatalog.categories.some(c => (option.costs[c.key]?.status || "unknown") === "unknown");
+        const fill = open ? button("Vul open posten met indicaties", () => UI.busy(fill, async () => {
+          const cmp = await Data.catalog(), config = cmp.configurations.find(c => c.id === option.configuration_id);
+          const filled = fillEstimates(option, costCatalog, config ? Data.describe(cmp, config) : null);
+          persist();
+          toast(`${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.`);
+          flow.rerender();
+        }), "secondary") : null;
+        const go = button("Ga naar deze optie", () => { focusOption = index; flow.show(2); }, "ghost");
+        return h("div", { class: "problem-group" }, h("h3", {}, option.name || `Optie ${index + 1}`),
+          h("ul", {}, list.map(p => h("li", {}, p))), h("div", { class: "actions" }, fill, go));
+      }));
   }
 
   function stepReview(body) {
     body.append(h("h2", {}, "Controle en berekenen"));
     const host = h("div"), step = flow.current; body.append(host);
     Data.costs().then(costCatalog => {
-      const { problems, request } = build(costCatalog.categories);
+      const { problems, optionProblems, count, request } = build(costCatalog.categories);
       const confirmations = [
         "Het profiel bevat bruto huishoudelijk verbruik en AC-zonneproductie, geen netafname of teruglevering als vervanging daarvan.",
         "De technische invoer is gecontroleerd of expliciet als aanname beschreven; geschiktheid voor de installatie is daarmee nog niet gegarandeerd.",
         "Alle kostenposten zijn beoordeeld; bedragen, inbegrepen of niet-toepasselijke posten en aftrekposten zijn offertegegevens of expliciete aannames."
       ].map(text => checkbox(text, { required: true }));
       const run = button("Bereken en bewaar", () => UI.busy(run, async () => {
-        if (problems.length) throw new Error("Los eerst de punten hierboven op.");
+        if (count) { host.querySelector(".review-problems")?.focus(); throw new Error("Los eerst de punten hierboven op."); }
         if (!UI.validate(host)) return;
         const response = await UI.api("/api/v1/analysis/runs",
           { method: "POST",
@@ -499,10 +554,7 @@ window.Scenario = (() => {
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
         ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"],
         ...(request.quote_basis ? [["Uit de offerte", request.quote_basis.changes.map(Data.quoteChange).join("; ")]] : [])]),
-        problems.length ? h("div", { class: "callout" },
-          h("p", {}, `${problems.length} ${problems.length === 1 ? "punt vraagt" : "punten vragen"} nog aandacht:`),
-          h("ul", {}, problems.slice(0, 40).map(p => h("li", {}, p)))) : h("p", { class: "derived" },
-          "De invoer is compleet."),
+        count ? reviewProblems(problems, optionProblems, costCatalog) : h("p", { class: "derived" }, "De invoer is compleet."),
         h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),
         request.quote_basis ? h("p", { class: "help" }, "Je vinkt de bevestigingen bewust opnieuw aan: zo bevestig je dat de " +
           "waarden uit de offerte kloppen.") : null]);
@@ -531,8 +583,21 @@ window.Scenario = (() => {
     }
   });
 
+  // Uitvoeringen uit de catalogusvergelijking als extra opties in het concept; het concept opent bij de
+  // opties, of bij het profiel als dat nog niet gekozen is. Geeft het aantal toegevoegde opties.
+  async function addConfigurations(ids) {
+    state = { ...blank(), ...store.get(STORE, {}) };
+    let added = 0;
+    for (const id of ids) {
+      if (state.options.length >= 12) break;
+      await addFromCatalog(String(id)); added++;
+    }
+    clearTimeout(saveTimer);
+    store.set(STORE, { ...state, step: state.profile ? 2 : 0 });
+    return added;
+  }
   // Een concept met minstens één accu-optie; dat gooi je niet zonder te vragen weg.
   const hasDraft = () => (store.get(STORE, {})?.options || []).length > 0;
 
-  return { load, hasDraft, PARAMS };
+  return { load, hasDraft, addConfigurations, PARAMS };
 })();

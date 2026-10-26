@@ -37,6 +37,15 @@
   }
   const fitBadge = item => { const fit = Data.suitability(item);
     return badge(fit.reason, fit.ok === true ? "success" : fit.ok === false ? "warning" : ""); };
+  // De les van de capaciteitscurve in één zin: waar een grotere accu weinig meer oplevert (energie, geen geld).
+  function takeaway(points) {
+    const largest = points.at(-1), most = largest?.battery_to_load_kwh ?? 0;
+    if (most < 1) return h("p", {}, "Er is vrijwel geen zonnestroom over om op te slaan; een accu heeft hier weinig om mee te werken.");
+    const enough = points.find(p => p.battery_to_load_kwh >= 0.9 * most);
+    return h("p", {}, `Een accu van ongeveer ${n(enough.usable_capacity_kwh, 1)} kWh haalt al 90% van wat een accu van ` +
+      `${n(largest.usable_capacity_kwh, 0)} kWh zou opleveren (${kwh(most)} per jaar). Daarboven levert elke extra kWh accu weinig ` +
+      "meer eigen zonnestroom op. Dit gaat over energie; wat financieel uitkomt, laat een berekening zien.");
+  }
   const title = item => h("span", {}, item.filename, Data.isDemo(item) ? [" ", badge("FICTIEF", "demo")] : null);
   // Tijdstippen in Nederlandse tijd met de zone erbij (CET/CEST), ook als het bestand in UTC stond.
   const when = seconds => new Date(seconds * 1000).toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam",
@@ -136,7 +145,7 @@
             rows: curve.points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, x: p.usable_capacity_kwh,
               values: [p.battery_to_load_kwh] })),
             series: [{ label: "Uit de accu zelf gebruikt" }] }),
-          h("p", { class: "help" }, curve.assumptions));
+          takeaway(curve.points), h("p", { class: "help" }, curve.assumptions));
         // Imports van vóór modelversie 3 bewaarden de meterwaarden per periode nog niet.
         if (curve && curve.measured_periods === 0 && (item.options.consumption_source === "net_meter" || item.options.meter))
           view.append(h("p", { class: "callout", role: "note" }, "Importeer dit bestand opnieuw met dezelfde instellingen. " +

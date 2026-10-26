@@ -7,6 +7,7 @@ window.Compare = (() => {
   const { h, link, badge, button, money, kwh, pct, years } = UI;
   const eur0 = value => money(value, { decimals: 0 });
   const MAX = 4;
+  const age = run => Data.monthsBetween(new Date(run.created_at_unix_s * 1000), new Date());
 
   // De invoer in woorden, als [label, tekst]. ‘Wat is anders’ toont per berekening wat bij een andere
   // berekening onder hetzelfde label anders is; een accu vergelijk je zo met de accu met dezelfde naam.
@@ -88,7 +89,8 @@ window.Compare = (() => {
       return { run, rec, option: Results.judged(run) };
     });
     const head = h("tr", {}, h("td", {}), columns.map(({ run }) => h("th", { scope: "col" },
-      link(run.title, `#/berekeningen/${run.id}`), h("br"), h("small", {}, UI.dateTime(run.created_at_unix_s)),
+      link(run.title, `#/berekeningen/${run.id}`), h("br"), h("small", {}, UI.dateTime(run.created_at_unix_s),
+        age(run) >= 3 ? ` · ${age(run)} maanden oud, prijzen van toen` : ""),
       Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null,
       Results.outdated(run) ? h("div", { class: "callout" },
         h("p", {}, "Gemaakt met een ouder rekenmodel. Reken opnieuw om eerlijk te vergelijken" +

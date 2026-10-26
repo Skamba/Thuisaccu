@@ -17,8 +17,8 @@ window.Results = (() => {
     ["annual_cost_escalation_pct", "Stijging extra jaarkosten (%)", 1],
       ["annual_pv_loss_pct", "Afname PV-opwek per jaar (%)", 1],
     ["annual_load_growth_pct", "Verandering verbruik per jaar (%)", 1],
-      ["price_uncertainty_pct", "Tariefvariatie gevoeligheid (%)", 0],
-    ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", 0]
+      ["price_uncertainty_pct", "Onzekerheid tarieven (± %)", 0],
+    ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", 0]
   ];
   const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
   // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs.
@@ -977,6 +977,11 @@ window.Results = (() => {
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
     if (outdated(run)) view.append(await outdatedNote(run, shared));
+    // Een oude berekening rekent met de prijzen van toen; het model mag nog zo nieuw zijn.
+    const age = Data.monthsBetween(new Date(run.created_at_unix_s * 1000), new Date());
+    if (age >= 3) view.append(h("p", { class: "callout", role: "note" },
+      `Deze berekening is ${age} maanden oud. Stroomprijs, terugleververgoeding en prijzen van accu’s en installatie zijn van toen` +
+      (shared ? "." : ". Kijk ze na met ‘Pas aan en reken opnieuw’, of reken opnieuw in de keuzehulp voor de indicaties van nu.")));
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
     view.append(verdict(run, plugs), summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
       { label: "Overzicht", content: overview(run, all, plugs) },

@@ -7,41 +7,7 @@
     number: n, parse, store } = UI;
   const STORE = "thuisaccu-keuzehulp";
 
-  // Gedateerde indicaties uit openbare bronnen; alleen na een klik of keuze gebruikt.
-  const INDICATION = {
-    import: 0.2552,
-    importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
-      "plus energiebelasting 2027 (8,80 cent, met btw € 0,1065), beide per kWh inclusief btw. Het model rekent vanaf 2027, " +
-      "dus met de belasting van 2027. Vaste en dynamische contracten wijken af.",
-    importSources: [
-      ["CBS: Verdeling energietarieven 2026 (september 2026)",
-        "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
-      ["Rijksoverheid: fiscale sleuteltabel 2027 (versie september 2026, energiebelasting elektriciteit)",
-        "https://www.rijksfinancien.nl/sites/default/files/bestanden/belastingplan-2027/pakket-belastingplan-2027/Fiscale-sleuteltabel-2027-incl-correctie-tarieven-energiebelasting-zelfstandigenaftrek.pdf"]
-    ],
-    // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
-    export: 0.0615, exportFee: 0.0515,
-    exportText: "Wat telt is het verschil tussen vergoeding en terugleverkosten. Voor een 1-jarig vast contract " +
-      "vanaf 2027 lag dat bij 15 leveranciers tussen −4,3 en +4,4 cent per kWh, met een mediaan van 1,0 cent " +
-      "(overzicht van salderingcheck.nl, peildatum 16 oktober 2026). Eneco rekent in een eigen voorbeeld met " +
-      "€ 0,0506 vergoeding en € 0,0387 kosten: 1,2 cent netto. De indicatie gebruikt € 0,0615 vergoeding " +
-      "(het wettelijke minimum van 50% van het kale leveringstarief volgens de ACM, bij het CBS-gemiddelde) " +
-      "en € 0,0515 terugleverkosten: 1 cent netto.",
-    exportSources: [
-      ["ACM: salderen en terugleveren (minimaal 50% tot 2030)",
-        "https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen"],
-      ["Salderingcheck.nl: terugleververgoeding 2027 per leverancier",
-        "https://salderingcheck.nl/terugleverkosten-per-leverancier-2026/"],
-      ["Eneco: rekenvoorbeelden met en zonder salderen (peildatum 25 februari 2026)",
-        "https://www.eneco.nl/klantenservice/einde-salderen/rekenvoorbeelden/"],
-      ["Vattenfall: einde salderingsregeling 2027",
-        "https://www.vattenfall.nl/zonnepanelen/salderen/salderingsregeling-2027/"]
-    ],
-    variantYear: 2030,
-    variantText: "Volgens de ACM krijg je een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief. Voor daarna " +
-      "is geen minimum aangekondigd, en terugleverkosten kunnen nu al hoger zijn dan de vergoeding. Deze variant rekent vanaf 2030 " +
-      "met € 0 vergoeding en dezelfde terugleverkosten. Het is een stresstest, geen voorspelling of aangekondigde regel."
-  };
+  const INDICATION = Data.INDICATION;
   const RULES = Data.RULES;
   // Zinvol bereik op de capaciteitscurve: aandeel van wat een accu van 20 kWh zou opleveren.
   const SIZING = {
@@ -328,18 +294,6 @@
     return { warn: Math.abs(gap) >= 10 || curveMax > ceiling, text: parts.join(" ") };
   }
 
-  // Kostenopbouw met de gepubliceerde prijs als accupost; de overige posten zijn bronvermelde indicaties.
-  function costLines(p, costCatalog) {
-    const installation = p.offer.includes_installation === true ? ", inclusief installatie"
-      : p.offer.includes_installation === false ? ", exclusief installatie" : "";
-    return Data.estimateCosts(costCatalog, { kind: p.kind, circuit: p.circuit, manufacturer: p.config.manufacturer_name, phases: p.phases,
-      inverterIncluded: p.inverterIncluded, offer: p.offer }, answers).map(line => line.category !== "battery" ? line : {
-      ...line, status: "priced", amount_minor: p.offer.upfront_amount_minor,
-      source: `${p.offer.seller}: ${p.offer.source_url} (bronmomentopname ${Data.RESEARCHED_SPAN})`,
-      notes: `Gepubliceerde prijs inclusief btw${installation}.`
-    });
-  }
-
   // Waarom een accu niet meedoet in de berekening; null als hij wel meedoet.
   function exclusion(p, labels) {
     if (!p.fit.ok) return `Past niet: ${p.fit.no.join("; ")}`;
@@ -521,7 +475,7 @@
 
     const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
     const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c))
-      .map(plugLimit).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? costLines(p, costCatalog) : null }))
+      .map(plugLimit).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? Data.costLinesFor(costCatalog, p, answers) : null }))
       .map(p => ({ ...p, reason: exclusion(p, labels) }));
     const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s rekenen we door?"));
     if (!products.length) {

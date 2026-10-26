@@ -144,3 +144,19 @@ test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () =>
   // Beginwaarden in een veld lezen terug als hetzelfde getal.
   for (const value of [2.688, 0.25, 1250, 3.5]) assert.equal(UI.parse(UI.plain(value)), value);
 });
+
+test("costLinesFor(): een aanbieding inclusief installatie telt de installatie niet nog eens", () => {
+  // Keuzehulp en Zelf doorrekenen bouwen hun kosten met deze functie; een eigen offerte met installatie
+  // mag in geen van beide het installatiepakket en de reserve erbij krijgen.
+  const costs = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "crates", "server", "resources", "cost-catalog.json"), "utf8"));
+  const described = included => ({ kind: "fixed", circuit: false, phases: null, inverterIncluded: true, config,
+    offer: { seller: "Fictief", source_url: "https://example.test/offerte", upfront_amount_minor: 500000, includes_installation: included } });
+  const status = lines => Object.fromEntries(lines.map(l => [l.category, l.status]));
+  const withInstallation = status(Data.costLinesFor(costs, described(true)));
+  const without = status(Data.costLinesFor(costs, described(false)));
+  assert.equal(without.installation, "priced");
+  assert.notEqual(withInstallation.installation, "priced");
+  const battery = Data.costLinesFor(costs, described(true)).find(l => l.category === "battery");
+  assert.equal(battery.amount_minor, 500000);
+  assert.match(battery.notes, /inclusief installatie/);
+});
