@@ -8,6 +8,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 use thuisaccu_core::{
     analysis::{self, Candidate, Parameters},
     sizing::{self, EnergyInterval, LoadVariation},
@@ -100,7 +101,7 @@ pub struct QuoteChange {
 /// Wat de offertecheck kan overnemen: de velden van `Battery`, de totaalprijs inclusief btw
 /// (`upfront_eur`) en het abonnement per jaar (`subscription_eur`). Gelijk aan `QUOTE_FIELDS` in
 /// `web/data.js`.
-const QUOTE_FIELDS: [&str; 9] = [
+pub const QUOTE_FIELDS: [&str; 9] = [
     "usable_capacity_kwh",
     "charge_power_kw",
     "discharge_power_kw",
@@ -149,11 +150,17 @@ fn validate_quote_basis(request: &RunRequest) -> Result<(), ApiError> {
     }
 }
 
-pub async fn costs() -> Json<Value> {
-    Json(
+/// Het ingebouwde kostenonderzoek, één keer ingelezen.
+fn cost_catalog() -> &'static Value {
+    static CATALOG: OnceLock<Value> = OnceLock::new();
+    CATALOG.get_or_init(|| {
         serde_json::from_str(include_str!("../resources/cost-catalog.json"))
-            .expect("embedded cost catalog must be valid JSON"),
-    )
+            .expect("embedded cost catalog must be valid JSON")
+    })
+}
+
+pub async fn costs() -> Json<Value> {
+    Json(cost_catalog().clone())
 }
 
 pub async fn run(
@@ -227,9 +234,9 @@ fn validate_request(request: &RunRequest) -> Result<(), ApiError> {
         ));
     }
     if request.title.trim().is_empty()
-        || request.title.len() > 200
+        || request.title.chars().count() > 200
         || request.site.address.trim().is_empty()
-        || request.site.address.len() > 500
+        || request.site.address.chars().count() > 500
     {
         return Err(invalid(
             "Geef een scenarionaam en een Nederlands adres of locatieomschrijving op.",
@@ -285,7 +292,7 @@ async fn save_run(
             "Het energieprofiel van deze berekening is sindsdien veranderd; ongewijzigd opnieuw rekenen kan niet. Gebruik ‘Pas aan en reken opnieuw’.",
         ));
     }
-    let mut input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
+    let mut input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":cost_catalog()["researched_on"]});
     if let Some(origin) = recalculated_from {
         input_snapshot["recalculated_from"] = origin;
     }

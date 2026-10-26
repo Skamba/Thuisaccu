@@ -659,3 +659,32 @@ async fn an_old_run_is_recalculated_with_the_same_input_and_links_back_to_the_or
     let (status, _) = recalculate(broken + 100).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn titles_count_characters_not_bytes_and_the_research_date_comes_from_the_cost_catalog() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut request = input(id);
+    // 200 tekens van twee bytes: past, net als in de interface.
+    request["title"] = json!("é".repeat(200));
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let saved = catalog.list_analyses().await.unwrap();
+    let catalog_json: Value =
+        serde_json::from_str(include_str!("../resources/cost-catalog.json")).unwrap();
+    assert_eq!(
+        saved[0].input["cost_sources_researched_on"],
+        catalog_json["researched_on"]
+    );
+    request["title"] = json!("é".repeat(201));
+    let response = app
+        .oneshot(post("/api/v1/analysis/runs", request))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

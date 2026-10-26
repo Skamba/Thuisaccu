@@ -3,7 +3,7 @@ use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::OnceLock};
 
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -50,17 +50,7 @@ pub fn database_error(error: StorageError) -> ApiError {
 /// wat de gebruiker zelf heeft toegevoegd blijft zichtbaar.
 pub async fn comparison(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let data: Comparison = catalog.comparison().await.map_err(database_error)?;
-    let mut researched = HashSet::new();
-    for (key, json) in REFERENCE_SETS {
-        for d in reference_drafts(key, json)? {
-            researched.insert(identity(
-                &d.manufacturer,
-                &d.product,
-                &d.model_code,
-                &d.configuration,
-            ));
-        }
-    }
+    let researched = researched()?;
     let mut value = serde_json::to_value(data).map_err(|error| {
         tracing::error!(%error, "Comparison serialization failed");
         (
@@ -81,6 +71,27 @@ pub async fn comparison(State(catalog): State<Catalog>) -> Result<Json<Value>, A
         }
     }
     Ok(Json(value))
+}
+
+/// Identiteiten van alle ingebouwde onderzochte uitvoeringen, één keer ingelezen (de sets zijn samen
+/// bijna een megabyte JSON).
+fn researched() -> Result<&'static HashSet<[String; 4]>, ApiError> {
+    static RESEARCHED: OnceLock<HashSet<[String; 4]>> = OnceLock::new();
+    if let Some(set) = RESEARCHED.get() {
+        return Ok(set);
+    }
+    let mut set = HashSet::new();
+    for (key, json) in REFERENCE_SETS {
+        for d in reference_drafts(key, json)? {
+            set.insert(identity(
+                &d.manufacturer,
+                &d.product,
+                &d.model_code,
+                &d.configuration,
+            ));
+        }
+    }
+    Ok(RESEARCHED.get_or_init(|| set))
 }
 
 /// Identiteit van een uitvoering zoals de opslag die vastlegt (getrimd).

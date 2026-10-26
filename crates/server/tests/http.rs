@@ -221,3 +221,25 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
     // De worker van de browserversie levert de server niet, maar hij volgt dezelfde regel.
     assert!(!include_str!("../../../web/worker.js").contains("innerHTML"));
 }
+
+/// Constanten die de interface uit de rekenkern en de API overneemt, blijven daaraan gelijk.
+#[test]
+fn interface_constants_match_the_core_and_the_api() {
+    let data = include_str!("../../../web/data.js");
+    let credits = thuisaccu_core::finance::CREDIT_CATEGORIES
+        .map(|c| format!("\"{c}\""))
+        .join(", ");
+    assert!(data.contains(&format!("const CREDITS = [{credits}];")));
+    let start = data.find("const QUOTE_FIELDS = [").unwrap();
+    let block = &data[start..start + data[start..].find("]];").unwrap()];
+    // De volgorde is die van de interface; alleen de verzameling moet gelijk zijn.
+    let mut fields: Vec<&str> = block
+        .split("[\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap())
+        .collect();
+    let mut api = thuisaccu_server::scenario_api::QUOTE_FIELDS;
+    fields.sort_unstable();
+    api.sort_unstable();
+    assert_eq!(fields, api);
+}

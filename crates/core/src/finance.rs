@@ -102,8 +102,11 @@ pub const COST_CATEGORIES: &[&str] = &[
     "residual_value",
 ];
 
+/// Posten die de kosten verlagen (teruggaven en restwaarde). `CREDITS` in `web/data.js` is gelijk.
+pub const CREDIT_CATEGORIES: [&str; 3] = ["grant", "vat_refund", "residual_value"];
+
 pub fn is_credit(category: &str) -> bool {
-    ["grant", "vat_refund", "residual_value"].contains(&category)
+    CREDIT_CATEGORIES.contains(&category)
 }
 
 pub fn cost_eur(line: &CostLine, scale: f64) -> f64 {
