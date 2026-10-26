@@ -301,8 +301,7 @@ async fn save_run(
     let mut result = crate::blocking(move || {
         analysis::analyze_with(&profile, &parameters, &candidates, &additions)
     })
-    .await
-    .ok_or_else(|| invalid("De scenarioanalyse kon niet worden voltooid."))?
+    .await?
     .map_err(|e| invalid(e.to_string()))?;
     if metadata["options"]["is_demo"] == true {
         result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
@@ -407,8 +406,7 @@ pub async fn capacity_curve(
     let points = crate::blocking(move || {
         sizing::capacity_curve(&profile, &capacities, LoadVariation::Households)
     })
-    .await
-    .ok_or_else(|| invalid("De capaciteitsverkenning kon niet worden voltooid."))?;
+    .await?;
     Ok(Json(json!({
         "points": points,
         "periods": periods,

@@ -10,7 +10,7 @@ pub struct UnknownCode(pub String);
 
 impl fmt::Display for UnknownCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Unknown catalog code: {}", self.0)
+        write!(f, "Onbekende code in de catalogus: {}", self.0)
     }
 }
 

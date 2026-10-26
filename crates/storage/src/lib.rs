@@ -23,11 +23,12 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     UnknownCode(#[from] UnknownCode),
-    #[error("Numeric observations must contain finite values")]
+    #[error("Getallen moeten eindige waarden zijn.")]
     NonFiniteNumber,
     #[error("Database path must not be empty")]
     EmptyPath,
-    #[error("Invalid research input: {0}")]
+    /// Ongeldige invoer; de tekst is Nederlands en gaat ongewijzigd naar de gebruiker.
+    #[error("{0}")]
     InvalidInput(String),
     /// Opgeslagen JSON die niet meer te lezen is: een serverfout, geen invoerfout.
     #[error("Stored data could not be read: {0}")]
@@ -81,7 +82,7 @@ impl Catalog {
     pub async fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if !bytes.starts_with(b"SQLite format 3\0") || bytes.len() < 100 {
             return Err(StorageError::InvalidInput(
-                "Dit is geen SQLite-database".into(),
+                "Dit is geen SQLite-database.".into(),
             ));
         }
         let mut copy = bytes.to_vec();

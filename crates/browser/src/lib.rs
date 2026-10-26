@@ -22,6 +22,21 @@ fn js_error(error: impl std::fmt::Display) -> JsError {
     JsError::new(&error.to_string())
 }
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn console_error(message: &str);
+}
+
+/// Een paniek breekt de module af (JavaScript ziet alleen `unreachable`); zet de melding in de
+/// console, zodat de oorzaak terug te vinden is. `web/worker.js` start daarna opnieuw.
+#[wasm_bindgen(start)]
+fn start() {
+    std::panic::set_hook(Box::new(|info| {
+        console_error(&format!("Thuisaccu: {info}"))
+    }));
+}
+
 /// Opent een eerder bewaarde database (ook een kopie van `data/research.sqlite3` van de lokale
 /// server), of een lege database. Ontbrekende migraties worden toegepast.
 #[wasm_bindgen]

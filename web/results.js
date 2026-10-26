@@ -49,6 +49,8 @@ window.Results = (() => {
   const TOP = 5;
   const shown = all => all.slice(0, TOP + 1);
   const more = all => all.length > TOP + 1;
+  // Lange lijsten tonen eerst geen accu en de beste vijf; de rest staat ingeklapt en gaat niet mee op papier.
+  const rest = (title, ...content) => h("details", { class: "fold all-options" }, h("summary", {}, title), ...content);
 
   // Veiligheidsadvies boven de som als een doorgerekende accu een stekkerbatterij is. `plugs`: optie → uitvoering
   // (Data.described), `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
@@ -132,6 +134,24 @@ window.Results = (() => {
   // Het korte antwoord bovenaan: de uitkomst en vier getallen van de besproken accu, met bij een
   // stekkerbatterij één regel veiligheidsadvies en de beste vaste aansluiting uit dezelfde berekening.
   // De uitleg staat eronder in ‘Wat betekent dit voor jou?’.
+  // Bij het doel netto voordeel: de nummer twee als het verschil kleiner is dan wat de aanbevolen accu in de
+  // ongunstige variant verliest. Dan beslist deze berekening niet tussen die twee.
+  function closeCall(run, option) {
+    const result = run.result;
+    if (run.input.request.parameters.objective !== "net_present_value" || option?.key !== result.recommended_key) return null;
+    const spread = option.npv_eur - option.pessimistic?.npv_eur;
+    const second = result.candidates.filter(c => c.key !== option.key && c.within_budget !== false)
+      .sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    if (!second || !finite(spread) || option.npv_eur - second.npv_eur >= spread) return null;
+    const price = second.initial_investment_eur - option.initial_investment_eur;
+    return h("p", { class: "verdict-close" }, h("strong", {}, `Bijna even goed: ${second.name}. `),
+      `Netto ${eur0(Math.abs(option.npv_eur - second.npv_eur))} ${second.npv_eur <= option.npv_eur ? "minder" : "meer"}` +
+      (Math.abs(price) >= 1 ? `, ${eur0(Math.abs(price))} ${price < 0 ? "goedkoper" : "duurder"} in aanschaf` : "") + ". " +
+      (finite(second.pessimistic?.npv_eur) && second.pessimistic.npv_eur > option.pessimistic.npv_eur
+        ? "Bij ongunstiger prijzen en kosten komt die zelfs beter uit. " : "") +
+      "Dat verschil valt binnen de onzekerheid; kies tussen die twee op prijs, veiligheid, aansluiting of garantie.");
+  }
+
   function verdict(run, plugs) {
     const result = run.result, option = judged(run), rec = option?.key === result.recommended_key;
     const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => plugs.get(c.key)?.kind === "plug");
@@ -139,13 +159,14 @@ window.Results = (() => {
       plugs.get(c.key).kind !== "plug").sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
       h("h2", {}, result.recommendation),
-      option ? [h("p", { class: "verdict-for" }, rec ? `Voor ${option.name}:` : `Het dichtst in de buurt komt ${option.name}:`),
+      option ? [h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
+        : result.recommendation.includes(option.name) ? "Voor deze accu:" : `Voor ${option.name}:`),
         stats([
           finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet"] : null,
           ["Startinvestering nu", eur0(option.initial_investment_eur)],
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
-        ].filter(Boolean))] : null,
+        ].filter(Boolean)), closeCall(run, option)] : null,
       plugged ? h("p", { class: "verdict-plug" }, h("strong", {}, "Milieu Centraal raadt stekkerbatterijen af. "),
         fixed ? `De beste vaste aansluiting in deze berekening is ${fixed.name}: netto ${eur0(fixed.npv_eur)} in geld van nu. ` : "",
         toAdvice("Lees waarom en wat veiliger is")) : null);
@@ -300,7 +321,7 @@ window.Results = (() => {
   }
 
   function overview(run, all, plugs) {
-    const result = run.result, out = h("div");
+    const result = run.result, out = h("div", { class: "print-keep" });
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
       { class: "callout" }, warning));
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: "panel option", style: `border-top-color:${c.color}` },
@@ -322,7 +343,7 @@ window.Results = (() => {
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
       plugs.get(c.key)?.kind === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
-      `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; de tabel hieronder toont ze allemaal.`));
+      `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; onder de grafiek staan ze allemaal.`));
     out.append(chart("range", {
       title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP} en geen accu)` : ""}`, unit: "EUR",
       rows: shown(all).map(c => ({ label: c.name, color: c.color,
@@ -331,14 +352,14 @@ window.Results = (() => {
     }));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
-      out.append(table(["Optie", "Startinvestering", "Lonend bij een startinvestering", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
+      out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Startinvestering", "Lonend bij een startinvestering", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
         c.key === result.recommended_key ? h("span", {}, c.name, " ", badge("Aanbevolen", "accent")) : c.name,
         eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
         eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
         ...(variant ? [eur0(c.export_variant?.npv_eur)] : [])]),
-      { caption: `Alle ${all.length} opties, op volgorde van je doel` }));
+      { caption: `Alle ${all.length} opties, op volgorde van je doel` })));
     }
     out.append(h("p", { class: "help" },
       "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend bij een startinvestering’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
@@ -501,26 +522,30 @@ window.Results = (() => {
     const p = run.input.request.parameters, out = h("div");
     out.append(h("p", {},
       `Tarieven ±${n(p.price_uncertainty_pct, 0)}%, kosten ±${n(p.cost_uncertainty_pct, 0)}%. De gunstige variant verhoogt de stroomprijs, verlaagt de terugleververgoeding en verlaagt de kosten; de ongunstige doet het omgekeerde. Bevestigde aftrekposten blijven gelijk. Dit zijn gevoeligheidstests, geen betrouwbaarheidsintervallen.`));
-    const variants = c => [c.pessimistic, c, c.optimistic];
-    out.append(table(["Optie", "NPV ongunstig", "NPV basis", "NPV gunstig", "Nettowinst ongunstig", "Nettowinst basis",
-      "Nettowinst gunstig", "ROI ongunstig", "ROI basis", "ROI gunstig"], all.map(c => [c.name,
-      ...variants(c).map(v => eur0(v?.npv_eur)), ...variants(c).map(v => eur0(v?.net_profit_eur)),
-      ...variants(c).map(v => c.key === "no_battery" ? "—" : pct(v?.roi_pct))])));
-    const variant = p.export_variant;
-    if (variant && run.result.export_variant_recommended_key != null) {
-      out.append(h("h3", {}, `Terugleveringsvariant: ${variant.label}`),
-        h("p", {}, `Vanaf ${variant.from_calendar_year} ${n(variant.export_eur_per_kwh, 4)} €/kWh vergoeding en ` +
-          `${n(variant.export_fee_eur_per_kwh, 4)} €/kWh terugleverkosten; verder de basisaannames. Een aanname, geen voorspelling.`),
-        table(["Optie", "NPV basis", "NPV variant", "Nettowinst variant", "ROI variant", "Terugverdiend na"], all.map(c => [
-          c.name, eur0(c.npv_eur), eur0(c.export_variant?.npv_eur), eur0(c.export_variant?.net_profit_eur),
-          c.key === "no_battery" ? "—" : pct(c.export_variant?.roi_pct), c.key === "no_battery" ? "—" : years(c.export_variant?.payback_years)])));
-    }
+    // Eerst de grafieken van de beste vijf, dan de tabellen; de overige opties staan ingeklapt.
     for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "EUR"], ["roi_pct", "ROI over de looptijd", "%"]]) {
       out.append(chart("range",
         { title: `${title}${more(all) ? ` (beste ${TOP})` : ""}`, unit,
           rows: shown(all).filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color,
             values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })),
           series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }] }));
+    }
+    const split = (headers, row) => [table(headers, shown(all).map(row)),
+      more(all) ? rest(`Toon de overige ${all.length - TOP - 1} opties`, table(headers, all.slice(TOP + 1).map(row))) : null];
+    const variants = c => [c.pessimistic, c, c.optimistic];
+    out.append(...split(["Optie", "NPV ongunstig", "NPV basis", "NPV gunstig", "Nettowinst ongunstig", "Nettowinst basis",
+      "Nettowinst gunstig", "ROI ongunstig", "ROI basis", "ROI gunstig"], c => [c.name,
+      ...variants(c).map(v => eur0(v?.npv_eur)), ...variants(c).map(v => eur0(v?.net_profit_eur)),
+      ...variants(c).map(v => c.key === "no_battery" ? "—" : pct(v?.roi_pct))]).filter(Boolean));
+    const variant = p.export_variant;
+    if (variant && run.result.export_variant_recommended_key != null) {
+      out.append(h("h3", {}, `Terugleveringsvariant: ${variant.label}`),
+        h("p", {}, `Vanaf ${variant.from_calendar_year} ${n(variant.export_eur_per_kwh, 4)} €/kWh vergoeding en ` +
+          `${n(variant.export_fee_eur_per_kwh, 4)} €/kWh terugleverkosten; verder de basisaannames. Een aanname, geen voorspelling.`),
+        ...split(["Optie", "NPV basis", "NPV variant", "Nettowinst variant", "ROI variant", "Terugverdiend na"], c => [
+          c.name, eur0(c.npv_eur), eur0(c.export_variant?.npv_eur), eur0(c.export_variant?.net_profit_eur),
+          c.key === "no_battery" ? "—" : pct(c.export_variant?.roi_pct), c.key === "no_battery" ? "—" : years(c.export_variant?.payback_years)])
+          .filter(Boolean));
     }
     return out;
   }
@@ -710,7 +735,7 @@ window.Results = (() => {
     return out;
   }
 
-  function inputs(run, categories) {
+  function inputs(run, categories, all) {
     const input = run.input, request = input.request, p = request.parameters, tariff = p.tariff, out = h("div");
     const label = key => categories.find(c => c.key === key)?.label || key;
     out.append(h("p", {}, `${request.site.address} · ${input.profile?.filename || `Profiel ${request.solar_import_id}`}`),
@@ -729,8 +754,12 @@ window.Results = (() => {
     if (tariff.export_fee_bands.length) out.append(table(["Teruglevering t/m", "Jaarkosten"],
       tariff.export_fee_bands.map(b => [b.up_to_kwh == null ? "Onbegrensd" : kwh(b.up_to_kwh), money(b.annual_eur)]),
       { caption: "Terugleverstaffel" }));
-    for (const c of request.candidates) {
-      out.append(h("details", { class: "panel" }, h("summary", {}, c.name), h("p", {}, c.assumptions),
+    // De beste vijf eerst, de overige ingeklapt; de volgorde is die van de uitkomst.
+    const order = new Map(all.map((c, i) => [c.key, i]));
+    const candidates = [...request.candidates].sort((a, b) => (order.get(a.key) ?? Infinity) - (order.get(b.key) ?? Infinity));
+    const others = h("div");
+    candidates.forEach((c, i) => {
+      (i < TOP ? out : others).append(h("details", { class: "panel" }, h("summary", {}, c.name), h("p", {}, c.assumptions),
         table(["Techniek", "Waarde"],
           TECHNICAL.map(([key, text, unit]) => [text,
             finite(c.battery[key]) ? `${n(c.battery[key])} ${unit}` : "Onbekend"])),
@@ -740,7 +769,8 @@ window.Results = (() => {
           `${TIMING[cost.timing]}${cost.year != null ? ` · einde jaar ${cost.year}` : ""}`,
           /^https:\/\//.test(cost.source) ? UI.external("bron", cost.source) : cost.source, cost.notes])),
         h("p", {}, `Financiering: ${money(c.financing.loan_amount_eur)} tegen ${pct(c.financing.annual_interest_pct)} rente, ${years(c.financing.years)}.`)));
-    }
+    });
+    if (others.children.length) out.append(rest(`Toon de invoer van de overige ${others.children.length} opties`, others));
     out.append(h("p", { class: "help" }, "Meetgrenzen, technische aannames en kosten zijn vóór deze berekening bevestigd."),
       h("details", {}, h("summary", {}, "Vastgelegde invoer als JSON"), h("pre", {}, JSON.stringify(input, null, 2))));
     return out;
@@ -889,7 +919,13 @@ window.Results = (() => {
     const plugs = await Data.described(request.candidates).catch(() => new Map());
     UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
       shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),
-      button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "secondary")]);
+      button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "secondary"),
+      // Gewoon afdrukken geeft het korte antwoord, het overzicht en de waarschuwingen (styles.css); dit alle tabbladen.
+      button("Alles afdrukken", () => {
+        document.body.classList.add("print-all");
+        addEventListener("afterprint", () => document.body.classList.remove("print-all"), { once: true });
+        window.print();
+      }, "ghost")]);
     if (shared) view.append(h("p", { class: "callout", role: "note" },
       "Gedeelde berekening: geopend uit een link en niet bewaard in je eigen berekeningen. Deze app heeft de uitkomst niet " +
       "opnieuw berekend, dus controleer de aannames en vertrouw alleen links van iemand die je kent." +
@@ -906,9 +942,9 @@ window.Results = (() => {
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
-      { label: "Invoer en aannames", content: inputs(run, categories) },
+      { label: "Invoer en aannames", content: inputs(run, categories, all) },
       { label: `Waarschuwingen (${result.warnings.length})`,
-        content: h("ul", { class: "warnings" }, result.warnings.map(w => h("li", {}, w))) }
+        content: h("ul", { class: "warnings print-keep" }, result.warnings.map(w => h("li", {}, w))) }
     ]));
   }
 

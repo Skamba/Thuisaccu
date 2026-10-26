@@ -10,13 +10,15 @@ window.Local = (() => {
 
   function fail(message) {
     for (const job of pending.values()) job.reject(new Error(message));
-    pending.clear(); worker = null;
+    pending.clear(); worker?.terminate(); worker = null;
   }
 
   function call(message, transfer = []) {
     if (!worker) {
       worker = new Worker("worker.js", { type: "module" });
       worker.onmessage = ({ data }) => {
+        // De worker is na een fout in de module gestopt; het volgende verzoek start een nieuwe.
+        if (data.restart) { fail(data.error); return; }
         const job = pending.get(data.id);
         if (!job) return;
         pending.delete(data.id);

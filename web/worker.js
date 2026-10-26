@@ -53,6 +53,15 @@ self.onmessage = async ({ data }) => {
       self.postMessage({ id });
     }
   } catch (error) {
+    // Een fout in de module zelf (een paniek in Rust) laat haar in een onbruikbare toestand achter:
+    // local.js start een nieuwe worker, die de laatst bewaarde database opnieuw inleest. Een
+    // half uitgevoerde wijziging was nog niet bewaard.
+    if (error instanceof WebAssembly.RuntimeError) {
+      self.postMessage({ id, restart: true,
+        error: "Er ging iets mis in Thuisaccu zelf. De laatst bewaarde gegevens zijn opnieuw geladen; probeer het nog eens." });
+      self.close();
+      return;
+    }
     self.postMessage({ id, error: String(error?.message ?? error) });
   }
 };

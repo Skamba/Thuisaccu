@@ -32,14 +32,14 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 | Script | Verantwoordelijkheid |
 | --- | --- |
 | `local.js` | Kiest de backend; in de browserversie `Local.fetch` (zelfde vorm als `fetch`) naar de worker, back-up, terugzetten en blijvende opslag |
-| `worker.js` | Alleen browserversie: laadt de WebAssembly-module, IndexedDB-opslag na elke wijziging |
+| `worker.js` | Alleen browserversie: laadt de WebAssembly-module, IndexedDB-opslag na elke wijziging. Na een paniek in de module (melding in de console) stopt de worker; `local.js` start bij het volgende verzoek een nieuwe met de laatst bewaarde database |
 | `ui.js` | `h()`-elementbouwer (alleen tekstknopen, geen HTML-tekenreeksen), nl-NL-opmaak, API, browseropslag met `try/catch`, meldingen, formuliervelden, tabbladen, wizard, dialoog, CSV-export en SVG-grafieken met tabel als alternatief |
 | `data.js` | API-cache, vaste labels, geschiktheid van profielen, `describe()` (bronclaims → rekengegevens met benoemde aannames), `estimateCosts()` (alle 26 kostenposten met bron of aanname) en standaardaannames |
 | `keuzehulp.js` | Begeleide keuzehulp; zie [keuzehulp](keuzehulp.md) |
 | `catalog.js` | Catalogus, vergelijking met alle bronclaims en context, CSV, eigen dossier of offerte |
 | `energy.js` | Energieprofielen, detail met capaciteitscurve en de importwizard (inclusief P1) |
 | `scenario.js` | Zelf doorrekenen: alle parameters, tot twaalf opties met techniek, 26 kostenposten en financiering; PDOK-adreszoeken; overnemen van een bewaarde run |
-| `results.js` | Uitkomst: kort antwoord met vier getallen, samenvatting in gewone taal met ingeklapte uitleg, acht tabbladen (waaronder offertecheck en kostenopbouw per kostenpost), CSV en afdrukken |
+| `results.js` | Uitkomst: kort antwoord met vier getallen (en bij het doel netto voordeel de nummer twee als het verschil kleiner is dan wat de aanbevolen accu in de ongunstige variant verliest), samenvatting in gewone taal met ingeklapte uitleg, acht tabbladen (waaronder offertecheck en kostenopbouw per kostenpost; lange lijsten tonen geen accu en de beste vijf, de rest ingeklapt), CSV en afdrukken. Afdrukken geeft het korte antwoord, de uitleg, het overzicht en de waarschuwingen; ‘Alles afdrukken’ alle tabbladen |
 | `compare.js` | Twee tot vier bewaarde berekeningen naast elkaar (`#/vergelijk/3-5`): uitkomst, besproken accu, startinvestering, besparing in jaar 1, grensprijs, NPV, terugverdientijd en wat er aan de invoer anders is, met een melding bij een ouder rekenmodel en de begrippen uit `Data.GLOSSARY` |
 | `app.js` | Router, navigatie, Mijn berekeningen (met de keuze om te vergelijken) en Instellingen |
 

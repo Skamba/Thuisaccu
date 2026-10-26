@@ -91,7 +91,12 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
         saved[0].input["request"]["site"]["address"],
         "Fictitious test site, NL"
     );
-    assert_eq!(saved[0].input["profile_sha256"].as_str().unwrap().len(), 64);
+    // Vastgepind: herberekenen controleert deze hash, dus een andere hashberekening maakt bewaarde
+    // runs in bestaande databases onherberekenbaar.
+    assert_eq!(
+        saved[0].input["profile_sha256"],
+        "e17ed76cd283fbbb44f3f26e6882995b384d7d6eb9ea1dec239093f6ce31af15"
+    );
     let mut invalid = input(id);
     invalid["consumption_is_gross"] = json!(false);
     assert_eq!(

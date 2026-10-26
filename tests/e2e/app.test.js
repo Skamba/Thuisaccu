@@ -218,6 +218,19 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const runHash = await page.evaluate(() => location.hash);
   // De titel zegt waarmee is gerekend, zodat berekeningen van dezelfde dag uit elkaar te houden zijn.
   await page.waitForSelector("#page-title:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek')");
+  // Liggen de beste twee binnen de onzekerheid, dan noemt het korte antwoord de nummer twee (aangepaste kopie van deze run).
+  const closeCall = await page.evaluate(async id => {
+    const run = structuredClone(await Data.run(id)), [a, b, ...others] = run.result.candidates;
+    run.input.request.parameters.objective = "net_present_value";
+    run.result.recommended_key = a.key;
+    Object.assign(a, { npv_eur: 900, initial_investment_eur: 2000, within_budget: true, pessimistic: { ...a.pessimistic, npv_eur: 500 } });
+    Object.assign(b, { npv_eur: 880, initial_investment_eur: 1750, within_budget: true, pessimistic: { ...b.pessimistic, npv_eur: 600 } });
+    for (const c of others) c.npv_eur = Math.min(c.npv_eur, 0);
+    const view = document.createElement("div");
+    await Results.render(run, view, document.createElement("div"), () => {});
+    return view.querySelector(".verdict-close")?.textContent;
+  }, Number(runHash.match(/\d+/)[0]));
+  assert.match(closeCall, /^Bijna even goed: .+\. Netto €\s20 minder, €\s250 goedkoper in aanschaf\. Bij ongunstiger prijzen en kosten komt die zelfs beter uit\. Dat verschil valt binnen de onzekerheid/);
   const summary = await page.textContent(".plain");
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
@@ -263,6 +276,17 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
+  // Lange lijsten: de beste vijf in beeld, de rest ingeklapt.
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Toon de invoer van de overige \d+ opties/);
+  // Gewoon afdrukken geeft het overzicht en de waarschuwingen; ‘Alles afdrukken’ alle tabbladen.
+  const printed = () => page.$$eval("[role=tabpanel]", panels => panels.map(p => getComputedStyle(p).display !== "none"));
+  await page.emulateMedia({ media: "print" });
+  assert.deepEqual(await printed(), [true, false, false, false, false, false, false, true]);
+  assert.equal(await page.locator(".all-options").first().isVisible(), false);
+  await page.evaluate(() => document.body.classList.add("print-all"));
+  assert.ok((await printed()).every(Boolean));
+  await page.evaluate(() => document.body.classList.remove("print-all"));
+  await page.emulateMedia({ media: "screen" });
   // De offertecheck noemt per vraag de waarde waarmee is gerekend; de keuzehulp neemt levensduur en
   // capaciteitsverlies altijd aan. Het afdrukblad bevat geen besparing, grensprijs of energiegegevens.
   await page.click(`[role=tab]:has-text("Offertecheck")`);
@@ -288,6 +312,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await page.waitForSelector(".verdict");
+  // De tabbladen staan op één regel en schuiven zelf zijwaarts.
+  const tops = await page.$$eval("[role=tab]", tabs => new Set(tabs.map(t => t.offsetTop)).size);
+  assert.equal(tops, 1, "tabbladen lopen over meer regels");
   for (const tab of await page.$$eval("[role=tab]", tabs => tabs.map(t => t.textContent))) {
     await page.click(`[role=tab]:has-text("${tab.replace(/ \(\d+\)/, "")}")`);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
@@ -757,6 +784,39 @@ test("eigen accu met een offerte in Nederlandse notatie rekent mee in de keuzehu
   await page.waitForSelector(".product-group", { timeout: 30000 });
   const row = page.locator(".product-group:first-of-type tr", { hasText: "Fictief Merk Voorbeeldaccu 10" });
   assert.match(await row.textContent(), /Vast.*9,6 kWh.*5,0 kW.*€\s6\.500/);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("een onderzochte accu zonder prijs doet met een eigen prijs mee", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table", { timeout: 30000 });
+  const fold = page.locator("details.priceless");
+  assert.match(await fold.locator("summary").textContent(), /^\d+ onderzochte uitvoeringen? miss(en|t) alleen een prijs$/);
+  await fold.locator("summary").click();
+  const first = fold.locator("tbody tr").first();
+  const name = await first.locator("td").first().textContent();
+  await first.locator("button:has-text('Prijs aanvullen')").click();
+  const dialog = page.locator("dialog[open]");
+  // De uitvoering ligt vast en de prijs is verplicht; een prijs zonder btw telt niet.
+  assert.equal(await dialog.getByLabel("Fabrikant").getAttribute("readonly"), "");
+  assert.equal(await dialog.getByLabel("Bruikbare energie (kWh)").count(), 0);
+  await dialog.locator("button:has-text('Bewaar')").click();
+  assert.equal(await dialog.getByLabel("Aanschafbedrag").getAttribute("aria-invalid"), "true");
+  await dialog.getByLabel("Aanschafbedrag").fill("1.234,00");
+  await dialog.getByLabel("Verkoper").fill("Fictieve winkel");
+  await dialog.getByLabel("Belastingbasis").selectOption("excluded");
+  await dialog.locator("button:has-text('Bewaar')").click();
+  assert.match(await dialog.locator(".error").first().textContent(), /inclusief btw/);
+  await dialog.getByLabel("Belastingbasis").selectOption("included");
+  await dialog.locator("button:has-text('Bewaar')").click();
+  await page.waitForSelector("text=De keuzehulp rekent deze accu nu mee");
+  // Nu staat hij in de catalogus met de eigen prijs, niet meer bij de uitvoeringen zonder prijs.
+  const product = name.split(" · ")[0];
+  await page.fill("#view input[type=search]", product);
+  assert.match(await page.textContent("#view .table-wrap"), /€\s1\.234 incl\. btw/);
+  assert.equal(await page.locator("details.priceless tbody tr", { hasText: name }).count(), 0);
   assert.deepEqual(problems, []);
   await close();
 });

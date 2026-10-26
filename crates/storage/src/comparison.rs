@@ -404,12 +404,15 @@ fn insert_candidate(tx: &Transaction<'_>, d: &CandidateDraft, now: i64) -> Resul
     ] {
         if text.trim().is_empty() || text.len() > 2000 {
             return Err(StorageError::InvalidInput(
-                "Required text is empty or too long".into(),
+                "Een verplicht tekstveld is leeg of langer dan 2000 tekens.".into(),
             ));
         }
     }
     if d.numbers.len() > 100 || d.features.len() > 50 || d.texts.len() > 50 {
-        return Err(StorageError::InvalidInput("Too many claims".into()));
+        return Err(StorageError::InvalidInput(
+            "Te veel claims in één dossier (maximaal 100 getallen, 50 kenmerken en 50 teksten)."
+                .into(),
+        ));
     }
     let id = |sql: &str, values: &[&dyn rusqlite::ToSql]| -> rusqlite::Result<i64> {
         tx.query_row(sql, values, |row| row.get(0))
@@ -434,7 +437,7 @@ fn insert_candidate(tx: &Transaction<'_>, d: &CandidateDraft, now: i64) -> Resul
     )?;
     if existing_kind != d.product_kind {
         return Err(StorageError::InvalidInput(
-            "Existing product has a different kind".into(),
+            "Dit product bestaat al met een ander producttype.".into(),
         ));
     }
     let config_id = id(

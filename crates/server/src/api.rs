@@ -299,8 +299,7 @@ pub async fn inspect(multipart: Multipart) -> Result<Json<Value>, ApiError> {
         solar_import::read_table(&input.filename, &input.bytes, &input.options)
             .map(|table| table.inspection())
     })
-    .await
-    .ok_or_else(|| bad_request("Bestand kon niet worden gelezen."))?
+    .await?
     .map_err(bad_request)?;
     Ok(Json(json!(result)))
 }
@@ -335,8 +334,7 @@ async fn process(
         )?;
         Ok((input, intervals, summary))
     })
-    .await
-    .ok_or_else(|| bad_request("Bestand kon niet worden verwerkt."))?
+    .await?
     .map_err(bad_request)
 }
 
@@ -425,8 +423,7 @@ pub async fn save_typical(
     Json(request): Json<TypicalRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let profile = crate::blocking(move || typical_profile::build(&request))
-        .await
-        .ok_or_else(|| bad_request("Het geschatte profiel kon niet worden gemaakt."))?
+        .await?
         .map_err(bad_request)?;
     let serialized =
         serde_json::to_vec(&profile.intervals).map_err(|e| bad_request(e.to_string()))?;

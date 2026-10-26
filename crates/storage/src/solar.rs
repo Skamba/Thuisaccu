@@ -72,7 +72,7 @@ impl Catalog {
     ) -> Result<i64> {
         if intervals.is_empty() || intervals.len() > 250_000 {
             return Err(StorageError::InvalidInput(
-                "Solar dataset must contain 1..250000 intervals".into(),
+                "Een profiel moet 1 tot 250.000 meetperioden bevatten.".into(),
             ));
         }
         for (index, item) in intervals.iter().enumerate() {
@@ -93,7 +93,7 @@ impl Catalog {
                 .is_some_and(|v| v < 0.0 || item.consumption_wh.is_none_or(|total| v > total))
             {
                 return Err(StorageError::InvalidInput(
-                    "Steady consumption must be between zero and the gross consumption".into(),
+                    "Gelijkmatig verbruik moet tussen nul en het bruto verbruik liggen.".into(),
                 ));
             }
             let measured = [item.measured_import_wh, item.measured_export_wh];
@@ -102,12 +102,12 @@ impl Catalog {
                 || (item.measured_import_wh.is_some() && item.consumption_wh.is_none())
             {
                 return Err(StorageError::InvalidInput(
-                    "Measured grid import and export must both be non-negative and need gross consumption".into(),
+                    "Gemeten netafname en teruglevering moeten samen voorkomen, niet negatief zijn en bruto verbruik hebben.".into(),
                 ));
             }
             if index > 0 && intervals[index - 1].end_unix_s > item.start_unix_s {
                 return Err(StorageError::InvalidInput(
-                    "Overlapping solar intervals".into(),
+                    "Meetperioden overlappen elkaar.".into(),
                 ));
             }
         }

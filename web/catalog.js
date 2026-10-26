@@ -164,7 +164,10 @@
     return minor;
   }
 
-  function openCandidateDialog(onSaved) {
+  // Zonder `known` een nieuwe uitvoering of bron. Met `known` (een onderzochte uitvoering zonder prijs, uit
+  // Data.catalog().priceless) alleen een prijs: de uitvoering ligt vast, zodat de prijs bij dezelfde uitvoering
+  // komt als een extra bron, en de techniek komt uit de bestaande bronnen.
+  function openCandidateDialog(onSaved, known = null) {
     const f = {
       manufacturer: input({ required: true, maxlength: "200" }),
         product: input({ required: true, maxlength: "200" }), model_code: input({ maxlength: "200" }),
@@ -199,6 +202,15 @@
       tax_basis: select([["unknown", "Niet bekend"], ["included", "Inclusief btw"], ["excluded", "Exclusief btw"]]),
       includes_installation: select([["", "Niet bekend"], ["true", "Ja"], ["false", "Nee"]])
     };
+    if (known) {
+      const c = known.config;
+      for (const [key, value] of [["manufacturer", c.manufacturer_name], ["product", c.product_name], ["model_code", c.model_code],
+        ["configuration", c.name], ["source_title", "Eigen prijs of offerte"]]) f[key].value = value ?? "";
+      for (const key of ["manufacturer", "product", "model_code", "configuration"]) f[key].readOnly = true;
+      f.product_kind.value = c.product_kind; f.product_kind.disabled = true;
+      f.tax_basis.value = "included";
+      f.price.required = true; f.seller.required = true;
+    }
     const grid = (...pairs) => h("div", { class: "grid" }, pairs.map(([label, key]) => field(label, f[key])));
     const save = button("Bewaar", async () => {
       if (!UI.validate(form)) return;
@@ -211,6 +223,8 @@
         const featuresOut = [["backup", "backup"], ["inverter_included", "inverter"]].filter(([, key]) => get(key) !== "unknown")
           .map(([metric, key]) => ({ metric, status: get(key), conditions: metric === "backup" ? get("conditions") : "" }));
         if (featuresOut.some(v => v.status === "conditional" && !v.conditions)) throw new Error("Beschrijf de voorwaarden voor noodstroom onder voorwaarden.");
+        if (known && get("tax_basis") !== "included") return UI.reject(f.tax_basis,
+          "De keuzehulp rekent met een prijs inclusief btw; reken een prijs zonder btw om of vraag de prijs inclusief btw.", form);
         let price = null;
         if (get("price")) {
           if (!get("seller")) throw new Error("Vul bij een prijs ook de verkoper in.");
@@ -231,30 +245,47 @@
         const result = await UI.api("/api/v1/candidates", { method: "POST", json: payload });
         if (selected.size < 4) { selected.add(result.configuration_id); remember(); }
         Data.invalidateCatalog(); dialogRef.close();
-          toast("Opgeslagen als nieuwe bron. Bestaande gegevens zijn niet overschreven."); onSaved();
+          toast(known ? `Prijs opgeslagen bij ${known.name}. De keuzehulp rekent deze accu nu mee.`
+            : "Opgeslagen als nieuwe bron. Bestaande gegevens zijn niet overschreven."); onSaved();
       });
     });
     const form = h("form", { novalidate: true, onsubmit: event => event.preventDefault() },
-      h("p", {},
-        "Leg de gegevens van één uitvoering en één bron vast. Lege velden blijven onbekend. Gebruik hetzelfde product en dezelfde uitvoering om een extra bron of offerte toe te voegen."),
+      h("p", {}, known
+        ? "De techniek komt uit de onderzochte bronnen. Vul de prijs in die je zelf zag, in een winkel of een offerte, met de verkoper; " +
+          "hij wordt bewaard als je eigen bron, naast de bestaande gegevens."
+        : "Leg de gegevens van één uitvoering en één bron vast. Lege velden blijven onbekend. Gebruik hetzelfde product en dezelfde uitvoering om een extra bron of offerte toe te voegen."),
       h("fieldset", {}, h("legend", {}, "Uitvoering en bron"),
         grid(["Fabrikant", "manufacturer"], ["Productnaam", "product"], ["Modelcode (optioneel)", "model_code"],
           ["Type", "product_kind"], ["Concrete uitvoering", "configuration"], ["Markt of regio", "market"],
           ["Brontitel", "source_title"], ["Bronlink (optioneel)", "source_url"], ["Vindplaats", "locator"],
           ["Documentrevisie (optioneel)", "document_revision"]),
         field("Context en voorwaarden", f.conditions)),
-      h("fieldset", {}, h("legend", {}, "Techniek (optioneel)"),
+      known ? null : h("fieldset", {}, h("legend", {}, "Techniek (optioneel)"),
         grid(["Bruikbare energie (kWh)", "usable_kwh"], ["Meetgrens energie", "energy_boundary"],
           ["Continu laden (kW)", "charge_kw"], ["Continu ontladen (kW)", "discharge_kw"],
           ["Meetgrens vermogen", "power_boundary"], ["Round-trip-rendement (%)", "efficiency_pct"],
           ["Meetgrens rendement", "efficiency_boundary"], ["Productgarantie (jaren)", "warranty_years"],
           ["Aansluiting", "coupling"], ["Omvormer", "inverter"], ["Noodstroom", "backup"])),
-      h("fieldset", {}, h("legend", {}, "Prijs (optioneel)"),
+      h("fieldset", {}, h("legend", {}, known ? "Prijs" : "Prijs (optioneel)"),
         grid(["Aanschafbedrag", "price"], ["Valuta", "currency"], ["Decimalen van de valuta", "exponent"],
           ["Verkoper", "seller"], ["Belastingbasis", "tax_basis"],
           ["Installatie inbegrepen", "includes_installation"])),
       h("p", { class: "help" }, "Nieuwe gegevens krijgen de status ‘nog niet nagekeken’."), h("div", { class: "actions" }, save));
-    const dialogRef = UI.dialog("Eigen accu of offerte", form);
+    const dialogRef = UI.dialog(known ? `Prijs aanvullen: ${known.name}` : "Eigen accu of offerte", form);
+    if (known) f.price.focus();
+  }
+
+  // Onderzochte uitvoeringen die alleen een prijs missen: met een eigen prijs doen ze mee in de keuzehulp.
+  function priceless(cmp, rerender) {
+    if (!cmp.priceless?.length) return null;
+    const count = cmp.priceless.length;
+    return h("details", { class: "fold priceless" },
+      h("summary", {}, `${count} onderzochte ${count === 1 ? "uitvoering mist" : "uitvoeringen missen"} alleen een prijs`),
+      h("p", { class: "help" }, "Capaciteit, vermogen en omvormer staan in de bronnen, maar er is geen prijs inclusief btw gevonden. " +
+        "Zag je zelf een prijs, in een winkel of een offerte? Vul hem aan; dan rekent de keuzehulp de accu mee."),
+      table(["Accu", "Bruikbaar", "Ontladen (AC)", ""], cmp.priceless.map(p => [p.name, `${n(p.capacity)} kWh`, `${n(p.dischargeKw)} kW`,
+        button("Prijs aanvullen", () => openCandidateDialog(rerender, p), "secondary", { "aria-label": `Prijs aanvullen voor ${p.name}` })]),
+        { caption: "Onderzocht, zonder prijs", stack: true }));
   }
 
   UI.page("accus", {
@@ -284,7 +315,8 @@
         ...(Data.priceAge().stale ? [h("p", { class: "callout", role: "note" }, Data.priceAge().text)] : []),
         h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}. ` +
           "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
-          (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")), list, tray);
+          (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")),
+        list, priceless(cmp, rerender), tray);
       function drawTray() {
         tray.hidden = selected.size === 0;
         tray.replaceChildren(...cmp.configurations.filter(c => selected.has(c.id)).map(c => h("span", { class: "chip" }, `${c.product_name} · ${c.name}`,

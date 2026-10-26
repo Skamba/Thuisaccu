@@ -89,6 +89,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 
 - Schrijf gedragstests bij nieuwe berekeningen en API-contracten: `crates/core/tests/analysis.rs` (rekenkern), `crates/storage/tests/catalog.rs` (opslag, migraties, transacties), `crates/server/tests/*.rs` (HTTP, import, scenario).
 - Referentiegevallen voor de rekenkern controleren energiebehoud, vermogensgrenzen, verliezen, NPV/ROI, financiering en vervanging. Een nieuwe rekenregel krijgt een handmatig narekenbaar referentiegeval met de aanname in de testnaam of een comment.
+- `crates/core/tests/golden.rs` legt twee volledige analyses (uur- en kwartierjaar) vast in `crates/core/tests/golden/`. Verandert een getal bewust, draai dan `UPDATE_GOLDEN=1 cargo test -p thuisaccu-core --test golden`, bekijk het verschil en verhoog zo nodig `model_version`. Een refactoring hoort ze ongewijzigd te laten.
 - Testdata is synthetisch en klein. Voorbeeldbestanden voor import staan in `crates/server/resources/`.
 - `tests/e2e/data.test.js` test `web/data.js` zonder browser (ui.js en data.js in een `vm`-context), bijvoorbeeld dat elke aannamezin herkend wordt; `npm test` draait hem mee.
 - `tests/e2e/app.test.js` (node:test + Playwright) dekt de keuzehulp (ook zonder zonnepanelen), import met meterbestand, een Nederlandse export in lokale tijd, Zelf doorrekenen met een eigen offerte, een eigen accu in de catalogus, de prijswaarschuwing, instellingen en het smalle scherm. Gebruik daar ook alleen synthetische, in de test gegenereerde gegevens.

@@ -65,13 +65,22 @@ pub fn app(catalog: Catalog) -> Router {
 
 /// Rekenwerk en bestandsparsing buiten de async-runtime. In de browser is er geen thread-pool;
 /// daar draait het werk direct (in een webworker, dus zonder de pagina te blokkeren).
+/// Een paniek in het werk is een fout in Thuisaccu, geen invoerfout: HTTP 500 zonder details.
+/// In de browser breekt een paniek de module af; `web/worker.js` start dan opnieuw.
 pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
-) -> Option<T> {
+) -> Result<T, api::ApiError> {
     #[cfg(not(target_family = "wasm"))]
-    return tokio::task::spawn_blocking(work).await.ok();
+    return tokio::task::spawn_blocking(work).await.map_err(|error| {
+        tracing::error!(%error, "Background work failed");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":"internal_error",
+                "message":"Er ging iets mis in Thuisaccu zelf; probeer het opnieuw."})),
+        )
+    });
     #[cfg(target_family = "wasm")]
-    return Some(work());
+    return Ok(work());
 }
 
 #[cfg(not(target_family = "wasm"))]

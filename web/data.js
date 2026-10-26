@@ -14,13 +14,16 @@ window.Data = (() => {
     .catch(error => { referencesLoaded = null; throw error; }));
   // Een onderzochte uitvoering die niet zonder eigen invoer door te rekenen is (capaciteit,
   // AC-ontlaadvermogen, prijs inclusief btw en de omvormer), voegt weinig toe en wordt niet getoond;
-  // `hidden` telt ze. Zelf toegevoegde uitvoeringen blijven altijd zichtbaar.
+  // `hidden` telt ze. Zelf toegevoegde uitvoeringen blijven altijd zichtbaar. `priceless`: de verborgen
+  // uitvoeringen die alleen een prijs inclusief btw missen; met een eigen prijs rekent de keuzehulp ze door.
   const catalog = async (fresh = false) => {
     await loadReferences();
     if (fresh || !catalogCache) {
       const cmp = await api("/api/v1/comparison");
       const shown = cmp.configurations.filter(c => !c.researched || complete(describe(cmp, c)));
-      catalogCache = { ...cmp, configurations: shown, hidden: cmp.configurations.length - shown.length };
+      const priceless = cmp.configurations.filter(c => !shown.includes(c)).map(c => describe(cmp, c))
+        .filter(p => p.battery != null && p.offer == null && p.inverterIncluded);
+      catalogCache = { ...cmp, configurations: shown, hidden: cmp.configurations.length - shown.length, priceless };
     }
     return catalogCache;
   };
