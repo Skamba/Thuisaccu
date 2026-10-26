@@ -112,7 +112,7 @@ impl<'a> Profiles<'a> {
 /// Versie van het rekenmodel in elke uitkomst. Verhoog hem als de betekenis van uitkomsten
 /// verandert en documenteer dat in `docs/roi-model.md`; de interface (`MODEL_VERSION` in
 /// `web/data.js`) noemt oudere runs bij het vergelijken.
-pub const MODEL_VERSION: &str = "nl-self-consumption-v5";
+pub const MODEL_VERSION: &str = "nl-self-consumption-v6";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -586,15 +586,22 @@ fn project(
             finance::cost_eur(l, cost_factor)
         }
     };
+    // Teruggaven en subsidie schalen niet mee met de kosten; in de gunstige variant kunnen ze zo
+    // boven de kosten uitkomen. Meer dan de kosten krijg je niet terug.
     let upfront: f64 = c
         .costs
         .iter()
         .filter(|l| l.timing == CostTiming::Upfront)
         .map(scaled)
-        .sum();
+        .sum::<f64>()
+        .max(0.0);
     // Het geleende deel betaal je niet op tijdstip nul maar via de aflossingen; zo telt de
     // discontovoet de lening niet dubbel naast de rente.
     let mut cashflows = vec![-upfront + c.financing.loan_amount_eur];
+    // De terugverdientijd gaat over de investering zelf: de hele startinvestering op tijdstip nul,
+    // de leningrente als kosten en de aflossingen niet. Anders is een volledig geleende accu
+    // ‘direct terugverdiend’ zodra de besparing de aflossing dekt.
+    let mut payback_flows = vec![-upfront];
     let mut years = Vec::new();
     let mut total_costs = upfront;
     let mut total_savings = 0.0;
@@ -636,6 +643,7 @@ fn project(
         total_costs += costs + interest;
         total_savings += saving;
         cashflows.push(saving - costs - interest - principal);
+        payback_flows.push(saving - costs - interest);
         let cumulative = cashflows.iter().sum();
         years.push(YearResult {
             year,
@@ -674,8 +682,8 @@ fn project(
         npv_eur: npv,
         net_profit_eur: profit,
         roi_pct: roi,
-        payback_years: finance::stable_payback(&cashflows, 0.0),
-        discounted_payback_years: finance::stable_payback(&cashflows, p.discount_pct),
+        payback_years: finance::stable_payback(&payback_flows, 0.0),
+        discounted_payback_years: finance::stable_payback(&payback_flows, p.discount_pct),
         // De NPV hangt lineair af van de startinvestering (factor 1 op tijdstip nul); in de
         // kostenvarianten niet, daar schaalt `cost_factor` de investering mee.
         break_even_investment_eur: upfront + npv,
@@ -707,7 +715,13 @@ fn choose<'a>(
         let score = match objective {
             Objective::NetPresentValue => npv,
             // Net als bij de terugverdientijd: geen optie die in geld van nu verlies geeft.
-            Objective::Roi if npv >= 0.0 => roi.unwrap_or(f64::NEG_INFINITY),
+            // Zonder startinvestering (teruggaven dekken alles) is er geen ROI; met winst is dat
+            // het best denkbare rendement.
+            Objective::Roi if npv >= 0.0 => roi.unwrap_or(if npv > 0.0 {
+                f64::INFINITY
+            } else {
+                f64::NEG_INFINITY
+            }),
             Objective::Roi => f64::NEG_INFINITY,
             Objective::Payback => {
                 if npv >= 0.0 {
@@ -900,6 +914,29 @@ pub fn analyze_with(
             } else {
                 ""
             }
+        ));
+    }
+    // Een kortere looptijd dan de levensduur telt de laatste werkende jaren niet mee; de accu heeft
+    // in dit model geen restwaarde.
+    let shorter: Vec<String> = candidates
+        .iter()
+        .filter(|c| {
+            !c.costs
+                .iter()
+                .any(|l| l.category == "battery_replacement" && l.status == CostStatus::Priced)
+                && c.battery.operating_life_years > parameters.horizon_years
+        })
+        .map(|c| c.name.clone())
+        .collect();
+    if !shorter.is_empty() {
+        warnings.push(format!(
+            "Bij {} is de aangenomen levensduur langer dan de looptijd van {} jaar. De jaren na de looptijd tellen niet mee en de accu heeft aan het eind geen restwaarde; met een langere looptijd (als je zo lang in dit huis blijft) komt de uitkomst gunstiger uit.",
+            if shorter.len() > 3 {
+                format!("{} en {} andere accu’s", shorter[..3].join(", "), shorter.len() - 3)
+            } else {
+                shorter.join(", ")
+            },
+            parameters.horizon_years
         ));
     }
     if matches!(parameters.objective, Objective::SelfConsumption) {

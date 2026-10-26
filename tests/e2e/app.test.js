@@ -661,6 +661,14 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.getByLabel("Offerte zegt: totaalprijs inclusief btw (euro)").fill("8750");
   // Een vaste prijs laat de reserve vervallen; wat de offerte niet noemt (de eerste post) blijft apart staan.
   await page.getByLabel("Vaste prijs of onder voorbehoud van schouw?").selectOption("fixed");
+  // Ingevulde waarden en afgevinkte regels blijven in deze browser bewaard, ook na herladen.
+  await page.getByLabel("Klopt: Bruikbare capaciteit").check();
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /1 van \d+ nagekeken/);
+  await page.reload();
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  assert.equal(await page.getByLabel("Offerte zegt: bruikbare capaciteit (kWh)").inputValue(), "9,3");
+  assert.equal(await page.getByLabel("Vaste prijs of onder voorbehoud van schouw?").inputValue(), "fixed");
+  assert.equal(await page.getByLabel("Klopt: Bruikbare capaciteit").isChecked(), true);
   const kept = page.locator(".price-terms .check").first();
   const keptAmount = Number((await kept.textContent()).match(/geschat €\s*([\d.]+)/)[1].replace(/\./g, ""));
   await kept.locator("input").uncheck();
@@ -690,9 +698,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   // Twee bewaarde berekeningen naast elkaar, met het verschil in woorden en de begrippen eronder.
   await page.goto(`${base}/#/berekeningen`);
   const compare = page.locator("button:has-text('Vergelijk')");
-  await page.getByLabel("Vergelijk Synthetische offerte", { exact: true }).check();
+  await page.getByLabel(/^Vergelijk Synthetische offerte van /).check();
   assert.equal(await compare.isDisabled(), true);
-  await page.getByLabel("Vergelijk Synthetische offerte · offerte", { exact: true }).check();
+  await page.getByLabel(/^Vergelijk Synthetische offerte · offerte van /).check();
   await compare.click();
   await page.waitForSelector("table.compare");
   const side = await page.textContent("table.compare");

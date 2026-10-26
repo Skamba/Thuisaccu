@@ -79,7 +79,9 @@ window.UI = (() => {
     const item = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : "status" },
       h("span", {}, text),
       h("button", { type: "button", class: "ghost", "aria-label": "Melding sluiten", onclick: () => item.remove() }, "Sluiten"));
-    host.append(item);
+    // Eén melding tegelijk: een nieuwe vervangt de vorige, zodat meldingen zich niet over de inhoud stapelen.
+    item.dataset.shown = String(Date.now());
+    host.replaceChildren(item);
     if (!error) setTimeout(() => item.remove(), 6000);
   }
 
@@ -94,7 +96,10 @@ window.UI = (() => {
   const button = (text, onclick, variant = "primary", props = {}) =>
     h("button", { type: "button", class: variant, onclick, ...props }, text);
   const link = (text, href, cls) => h("a", { href, class: cls }, text);
-  const external = (text, href) => h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text);
+  // Alleen http(s)-links worden klikbaar; een zelf ingevoerde bron-URL als javascript: blijft tekst.
+  const external = (text, href) => /^https?:\/\//i.test(String(href ?? "").trim())
+    ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text)
+    : h("span", {}, text);
   const badge = (text, tone = "") => h("span", { class: `badge ${tone}` }, text);
 
   // Formulierveld met label, optionele hulptekst en foutmelding.

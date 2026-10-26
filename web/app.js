@@ -60,14 +60,24 @@
       UI.append(view, [backupHint(runs.length), h("div", { class: "toolbar" }, compare, status)]);
       view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
         const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
-        const box = h("input", { type: "checkbox", "aria-label": `Vergelijk ${run.title}`,
+        const when = UI.dateTime(run.created_at_unix_s), p = run.input.request.parameters;
+        // Berekeningen hebben vaak dezelfde titel; deze kenmerken maken ze uit elkaar te houden.
+        const options = run.result.candidates.filter(c => c.key !== "no_battery").length;
+        const facts = [`${options} ${options === 1 ? "accu" : "accu’s"}`, p.horizon_years ? `${p.horizon_years} jaar` : null,
+          p.budget_eur != null ? `budget ${money(p.budget_eur, { decimals: 0 })}` : null,
+          p.tariff?.import_eur_per_kwh != null ? `stroom ${UI.number(p.tariff.import_eur_per_kwh, 2)} €/kWh` : null]
+          .filter(Boolean).join(" · ");
+        const box = h("input", { type: "checkbox", class: "pick", "aria-label": `Vergelijk ${run.title} van ${when}`,
           onchange: () => { if (box.checked) chosen.add(run.id); else chosen.delete(run.id); refresh(); } });
         boxes.push(box);
-        return [box, h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
+        return [h("label", { class: "pick-label", title: "Kies om te vergelijken" }, box),
+          h("span", {}, h("a", { href: `#/berekeningen/${run.id}`, "aria-label": `${run.title} van ${when}` }, run.title),
+            Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null, h("small", { class: "help run-facts" }, facts)), when,
           Data.objectives[run.input.request.parameters.objective],
             rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
-          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost"),
-            button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title}` }))];
+          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost",
+            { "aria-label": `Pas ${run.title} van ${when} aan` }),
+            button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title} van ${when}` }))];
       }), { caption: "Laatste 100 berekeningen", stack: true }));
       refresh();
     }
@@ -241,7 +251,9 @@
     if (!found) { location.replace("#/keuzehulp"); return; }
     // Een dialoog of foutmelding hoort bij het vorige scherm, ook na Terug of een link.
     document.querySelectorAll("dialog[open]").forEach(d => d.close());
-    document.querySelectorAll("#toasts .toast.error").forEach(t => t.remove());
+    // Een bevestiging vlak vóór het wisselen (zoals ‘Opgeslagen’) blijft staan; oudere meldingen niet.
+    document.querySelectorAll("#toasts .toast").forEach(t => {
+      if (t.classList.contains("error") || Date.now() - Number(t.dataset.shown) > 1500) t.remove(); });
     const run = ++generation, section = found.page.parent || found.key;
     document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.page === section) a.setAttribute("aria-current",
       "page");
@@ -249,8 +261,9 @@
     document.body.classList.remove("menu-open"); $("menu").setAttribute("aria-expanded", "false");
     $("page-title").textContent = found.page.title; $("page-subtitle").textContent = found.page.subtitle || "";
     document.title = `${found.page.title} · Thuisaccu`;
-    const view = $("view"), actions = $("page-actions");
-    view.replaceChildren(); actions.replaceChildren();
+    // Elk scherm krijgt verse elementen: een trager vorig scherm schrijft daarna in losgekoppelde elementen.
+    const [view, actions] = ["view", "page-actions"].map(id => { const old = $(id), fresh = old.cloneNode(false);
+      old.replaceWith(fresh); return fresh; });
     try { await found.page.render(view, actions, found.params); }
     catch (error) { if (run === generation) view.replaceChildren(h("p", { class: "warning" },
       `Dit scherm kon niet worden geladen: ${error.message}`)); }

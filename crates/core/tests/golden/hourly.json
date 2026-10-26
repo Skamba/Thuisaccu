@@ -491,7 +491,7 @@
     }
   ],
   "export_variant_recommended_key": "no_battery",
-  "model_version": "nl-self-consumption-v5",
+  "model_version": "nl-self-consumption-v6",
   "recommendation": "Geen accu komt binnen deze aannames en het gekozen doel als beste uit de vergelijking.",
   "recommended_key": "no_battery",
   "warnings": [
@@ -506,6 +506,7 @@
     "Vanaf 2029 meet de slimme meter niet meer het huis waarmee gerekend wordt. In perioden met extra verbruik schat het model daarom weer met de verdeling hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dat jaar minder zeker en kan wat hoger of lager uitvallen.",
     "Terugleveringsvariant ‘Geen vergoeding vanaf 2030’: vanaf 2030 rekent deze variant met € 0,0000 vergoeding en € 0,0400 terugleverkosten per kWh, met verder dezelfde aannames. Het is een stresstest voor toekomstige contracten, geen prognose of aangekondigde regel: volgens de ACM houd je recht op een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief, terwijl terugleverkosten die vergoeding kunnen overtreffen.",
     "Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen.",
-    "fixed: na de aangenomen levensduur van 3 jaar werkt de accu in jaar 4 van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op."
+    "fixed: na de aangenomen levensduur van 3 jaar werkt de accu in jaar 4 van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op.",
+    "Bij plug is de aangenomen levensduur langer dan de looptijd van 6 jaar. De jaren na de looptijd tellen niet mee en de accu heeft aan het eind geen restwaarde; met een langere looptijd (als je zo lang in dit huis blijft) komt de uitkomst gunstiger uit."
   ]
 }

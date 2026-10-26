@@ -806,3 +806,84 @@ fn years_after_the_operating_life_without_replacement_are_named_in_a_warning() {
     c.battery.operating_life_years = 5;
     assert!(warning(&analysis::analyze(&profile(), &p, &[c]).unwrap()).is_none());
 }
+
+#[test]
+fn payback_counts_the_whole_investment_also_when_it_is_borrowed() {
+    // 1 kWh verliesvrij levert € 963,60 per jaar op (zie hierboven). Een volledig geleende accu van
+    // € 600 is pas na jaar 1 terugverdiend, niet ‘direct’ omdat de besparing de aflossing dekt:
+    // −600 + 963,60 − rente ≥ 0 na jaar 1.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.discount_pct = 4.0;
+    p.objective = Objective::Payback;
+    let mut borrowed = candidate("lening", 1.0, 60_000);
+    borrowed.financing = Financing {
+        loan_amount_eur: 600.0,
+        annual_interest_pct: 4.0,
+        years: 2,
+    };
+    let r = analysis::analyze(&profile(), &p, &[borrowed]).unwrap();
+    assert_eq!(r.candidates[0].payback_years, Some(1));
+    assert_eq!(r.candidates[0].discounted_payback_years, Some(1));
+    // Het kasverloop zelf blijft het geld dat je per jaar overhoudt, met de aflossing erin.
+    let first = &r.candidates[0].years[0];
+    close(
+        first.net_cashflow_eur,
+        963.6 - first.financing_interest_eur - first.financing_principal_eur,
+    );
+}
+
+fn with_grant(key: &str, price_minor: i64, grant_minor: i64) -> Candidate {
+    let mut c = candidate(key, 1.0, price_minor);
+    let grant = c.costs.iter_mut().find(|l| l.category == "grant").unwrap();
+    grant.status = CostStatus::Priced;
+    grant.amount_minor = grant_minor;
+    c
+}
+
+#[test]
+fn a_grant_never_makes_the_investment_negative_in_the_favourable_variant() {
+    // € 1.000 min € 900 subsidie. Gunstig met 80% lagere kosten: € 200 − € 900 zou −€ 700 zijn;
+    // meer dan de kosten krijg je niet terug, dus de investering is € 0. De opbrengst is dan
+    // 4380 × (0,30 × 1,2 − 0,08 × 0,8) = 4380 × 0,296.
+    let mut p = parameters();
+    p.cost_uncertainty_pct = 80.0;
+    let r = analysis::analyze(&profile(), &p, &[with_grant("subsidie", 100_000, 90_000)]).unwrap();
+    close(r.candidates[0].initial_investment_eur, 100.0);
+    close(r.candidates[0].optimistic.npv_eur, 4380.0 * 0.296);
+}
+
+#[test]
+fn a_battery_paid_entirely_by_a_grant_can_win_on_roi() {
+    // Zonder startinvestering is er geen ROI-getal, maar met winst is het rendement onbegrensd.
+    let mut p = parameters();
+    p.objective = Objective::Roi;
+    let r = analysis::analyze(
+        &profile(),
+        &p,
+        &[
+            candidate("betaald", 1.0, 50_000),
+            with_grant("gratis", 50_000, 50_000),
+        ],
+    )
+    .unwrap();
+    assert_eq!(r.candidates[1].roi_pct, None);
+    assert_eq!(r.recommended_key, "gratis");
+}
+
+#[test]
+fn a_horizon_shorter_than_the_battery_life_is_named_in_a_warning() {
+    let mut p = parameters();
+    p.horizon_years = 10;
+    let r = analysis::analyze(&profile(), &p, &[candidate("lang", 1.0, 50_000)]).unwrap();
+    assert!(r.warnings.iter().any(|w| {
+        w.starts_with("Bij lang is de aangenomen levensduur langer dan de looptijd van 10 jaar.")
+    }));
+    p.horizon_years = 15;
+    let r = analysis::analyze(&profile(), &p, &[candidate("lang", 1.0, 50_000)]).unwrap();
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|w| w.contains("levensduur langer dan de looptijd"))
+    );
+}

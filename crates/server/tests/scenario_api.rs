@@ -71,7 +71,7 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let result = body(response).await;
-    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v5");
+    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v6");
     assert!(
         result["result"]["warnings"][0]
             .as_str()
@@ -717,7 +717,7 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
             .save_analysis(&thuisaccu_storage::analysis::NewAnalysis {
                 import_id: id,
                 title: "Kopie",
-                model_version: "nl-self-consumption-v5",
+                model_version: "nl-self-consumption-v6",
                 profile_sha256: saved.input["profile_sha256"].as_str().unwrap(),
                 input_json: &saved.input.to_string(),
                 result_json: &result.to_string(),
@@ -746,6 +746,14 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
         newest["input"]["request"]["parameters"]["objective"],
         "net_present_value"
     );
+    // Kenmerken om berekeningen met dezelfde titel uit elkaar te houden.
+    let parameters = &newest["input"]["request"]["parameters"];
+    assert_eq!(
+        parameters["horizon_years"],
+        saved.input["request"]["parameters"]["horizon_years"]
+    );
+    assert!(parameters["tariff"]["import_eur_per_kwh"].is_number());
+    assert!(parameters["tariff"].get("export_eur_per_kwh").is_none());
     assert_eq!(newest["input"]["profile"]["options"]["is_demo"], true);
     assert!(newest["input"]["request"].get("candidates").is_none());
     let candidate = &newest["result"]["candidates"][0];

@@ -47,6 +47,19 @@ pub struct SummaryRequest {
 pub struct SummaryParameters {
     #[serde(default)]
     pub objective: Option<String>,
+    /// Looptijd, budget en stroomprijs maken berekeningen met dezelfde titel uit elkaar te houden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizon_years: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_eur: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tariff: Option<SummaryTariff>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct SummaryTariff {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_eur_per_kwh: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -84,6 +84,80 @@ async fn unknown_analysis_route_is_not_reported_as_success() {
 }
 
 #[tokio::test]
+async fn requests_from_other_websites_are_refused() {
+    let app = test_app().await;
+    let status = |method: &str, path: &str, headers: &[(&str, &str)]| {
+        let mut request = Request::builder().method(method).uri(path);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let app = app.clone();
+        let request = request
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::empty())
+            .unwrap();
+        async move { app.oneshot(request).await.unwrap().status() }
+    };
+    // DNS-rebinding: een eigen domeinnaam die naar 127.0.0.1 wijst.
+    assert_eq!(
+        status(
+            "GET",
+            "/api/v1/solar/imports",
+            &[("host", "attacker.example:3000")]
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+    for host in [
+        "127.0.0.1:3000",
+        "localhost:3000",
+        "[::1]:3000",
+        "192.168.1.20:3000",
+    ] {
+        assert_eq!(
+            status("GET", "/api/v1/health", &[("host", host)]).await,
+            StatusCode::OK,
+            "{host}"
+        );
+    }
+    // Een formulier of fetch van een andere site mag niets wijzigen; van de app zelf wel.
+    let foreign = [
+        ("host", "127.0.0.1:3000"),
+        ("origin", "https://attacker.example"),
+    ];
+    assert_eq!(
+        status("POST", "/api/v1/references", &foreign).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status(
+            "POST",
+            "/api/v1/references",
+            &[("host", "127.0.0.1:3000"), ("origin", "null")]
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status("DELETE", "/api/v1/solar/imports/1", &foreign).await,
+        StatusCode::FORBIDDEN
+    );
+    let own = [
+        ("host", "127.0.0.1:3000"),
+        ("origin", "http://127.0.0.1:3000"),
+    ];
+    assert_eq!(
+        status("POST", "/api/v1/references", &own).await,
+        StatusCode::OK
+    );
+    // Alleen lezen met een vreemde Origin geeft de browser de inhoud niet (geen CORS-kop).
+    assert_eq!(
+        status("GET", "/api/v1/health", &foreign).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
 async fn health_rejects_unsupported_methods() {
     let response = test_app()
         .await

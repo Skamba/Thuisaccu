@@ -584,8 +584,13 @@ window.Results = (() => {
     const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
     const basis = request.quote_basis;
-    // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3).
-    const quoted = {};
+    // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3), en welke regels kloppen.
+    // Bewaard in deze browser per berekening, zodat je de offerte in delen kunt nalopen; een gemak, geen opslag.
+    const memoryKey = run.id != null ? `thuisaccu-offertecheck-${run.id}` : null;
+    const quoted = Object.fromEntries(Object.entries(memoryKey ? UI.store.get(memoryKey, {}) : {})
+      .map(([key, terms]) => [key, { ...terms, separate: new Set(terms.separate || []), ok: new Set(terms.ok || []) }]));
+    const remember = () => { if (memoryKey) UI.store.set(memoryKey, Object.fromEntries(Object.entries(quoted)
+      .map(([key, terms]) => [key, { ...terms, separate: [...(terms.separate || [])], ok: [...(terms.ok || [])] }]))); };
     // Rijen voor één optie: vraag, toelichting, velden, waarde, herkomst en of het een aanname is.
     // Op papier staan bij de prijs geen bedragen: die laten zien hoeveel ruimte je jezelf geeft.
     function rows(c, paper) {
@@ -641,7 +646,7 @@ window.Results = (() => {
         const [, name, unit] = QUOTE_FIELDS.find(([key]) => key === f);
         const control = h("input", { type: "text", inputmode: "decimal", value: answer(c, f), placeholder: unit,
           "aria-label": `Offerte zegt: ${f === "upfront_eur" ? "totaalprijs inclusief btw" : name} (${unit === "€" ? "euro" : unit})`, size: "6" });
-        control.addEventListener("input", () => { quoted[c.key][f] = control.value; });
+        control.addEventListener("input", () => { quoted[c.key][f] = control.value; remember(); });
         return control;
       }));
       return r.fields.includes("upfront_eur") ? h("div", {}, inputs, priceTerms(c)) : inputs;
@@ -654,24 +659,42 @@ window.Results = (() => {
         !CREDITS.includes(l.category) && !["battery", "contingency"].includes(l.category));
       const contingency = input.costs.find(l => l.category === "contingency" && l.status === "priced");
       const kind = UI.select([["", "Weet ik niet"], ["fixed", "Vaste prijs"], ["survey", "Onder voorbehoud van schouw"]], terms.price ?? "",
-        { onchange: event => { terms.price = event.target.value; } });
+        { onchange: event => { terms.price = event.target.value; remember(); } });
       return h("div", { class: "price-terms" },
         lines.length ? h("fieldset", {}, h("legend", {}, "Telt als inbegrepen in je totaalprijs (vink uit wat de offerte niet noemt)"),
           lines.map(l => {
             const { box, element } = UI.checkbox(`${label(l.category)} (geschat ${money(l.amount_minor / 100, { decimals: 0 })})`,
               { checked: !terms.separate.has(l.category) });
-            box.addEventListener("change", () => { if (box.checked) terms.separate.delete(l.category); else terms.separate.add(l.category); });
+            box.addEventListener("change", () => {
+              if (box.checked) terms.separate.delete(l.category); else terms.separate.add(l.category);
+              remember();
+            });
             return element;
           })) : null,
         UI.field("Vaste prijs of onder voorbehoud van schouw?", kind, contingency
           ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}); ` +
             "weet je het niet, dan blijft die reserve staan." : null));
     };
-    const sheet = (c, paper = false) => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
-      rows(c, paper).map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
-        h("span", {}, r.value, " ", r.origin), cell(c, r, paper),
-        h("input", { type: "checkbox", "aria-label": `Klopt: ${r.question}` })]),
-      { className: "quote-check", stack: true });
+    // Op het scherm onthoudt elke ‘Klopt’ zich en telt mee; op papier is het een leeg vakje om af te vinken.
+    const sheet = (c, paper = false) => {
+      const list = rows(c, paper), terms = (quoted[c.key] ||= {});
+      terms.ok ||= new Set();
+      const count = h("p", { class: "help", "aria-live": "polite" });
+      const tally = () => { count.textContent = `${list.filter(r => terms.ok.has(r.question)).length} van ${list.length} nagekeken.`; };
+      const tick = r => {
+        if (paper) return h("input", { type: "checkbox", "aria-label": `Klopt: ${r.question}` });
+        const { box, element } = UI.checkbox("Klopt", { checked: terms.ok.has(r.question), "aria-label": `Klopt: ${r.question}` });
+        box.addEventListener("change", () => { if (box.checked) terms.ok.add(r.question); else terms.ok.delete(r.question); remember(); tally(); });
+        return element;
+      };
+      const grid = table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
+        list.map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
+          h("span", {}, r.value, " ", r.origin), cell(c, r, paper), tick(r)]),
+        { className: "quote-check", stack: true });
+      if (paper) return grid;
+      tally();
+      return h("div", {}, count, grid);
+    };
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       target.replaceChildren(...(c ? [sheet(c)] : []));

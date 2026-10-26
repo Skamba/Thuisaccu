@@ -59,8 +59,61 @@ pub fn app(catalog: Catalog) -> Router {
         )
         .layer(DefaultBodyLimit::max(11 * 1024 * 1024));
     #[cfg(not(target_family = "wasm"))]
-    let router = with_assets(router);
+    let router = with_assets(router).layer(axum::middleware::from_fn(same_site));
     router.fallback(not_found).with_state(catalog)
+}
+
+/// Alleen verzoeken van deze app zelf. Een andere website kan zijn domeinnaam naar 127.0.0.1 laten
+/// wijzen (DNS-rebinding) of formulieren naar de server sturen; daarom moet `Host` een IP-adres of
+/// `localhost` zijn (een IP-adres houdt `LISTEN_ADDR=0.0.0.0:…` in het eigen netwerk bruikbaar), en
+/// moet een wijziging met `Origin` van dezelfde host komen. In de browserversie is er geen netwerk.
+#[cfg(not(target_family = "wasm"))]
+async fn same_site(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::{http::Method, response::IntoResponse};
+    let headers = request.headers();
+    let text = |name| headers.get(name).and_then(|v| v.to_str().ok());
+    let host = text(header::HOST);
+    let host_ok = host.is_none_or(|host| {
+        let name = host
+            .rsplit_once(':')
+            .filter(|(name, port)| !name.ends_with(':') && port.parse::<u16>().is_ok())
+            .map_or(host, |(name, _)| name);
+        name.eq_ignore_ascii_case("localhost")
+            || name
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok()
+    });
+    let safe = matches!(
+        *request.method(),
+        Method::GET | Method::HEAD | Method::OPTIONS
+    );
+    let origin_ok = safe
+        || text(header::ORIGIN).is_none_or(|origin| {
+            host.is_some_and(|host| {
+                origin
+                    .split_once("://")
+                    .is_some_and(|(_, rest)| rest.eq_ignore_ascii_case(host))
+            })
+        });
+    if host_ok && origin_ok {
+        return next.run(request).await;
+    }
+    tracing::warn!(
+        ?host,
+        origin = text(header::ORIGIN),
+        "Verzoek van een andere website geweigerd"
+    );
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({"error":"forbidden",
+            "message":"Dit verzoek komt niet van Thuisaccu zelf en is geweigerd."})),
+    )
+        .into_response()
 }
 
 /// Rekenwerk en bestandsparsing buiten de async-runtime. In de browser is er geen thread-pool;

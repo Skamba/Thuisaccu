@@ -33,7 +33,7 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 | --- | --- |
 | `local.js` | Kiest de backend; in de browserversie `Local.fetch` (zelfde vorm als `fetch`) naar de worker, back-up, terugzetten en blijvende opslag |
 | `worker.js` | Alleen browserversie: laadt de WebAssembly-module, IndexedDB-opslag na elke wijziging. Na een paniek in de module (melding in de console) stopt de worker; `local.js` start bij het volgende verzoek een nieuwe met de laatst bewaarde database |
-| `ui.js` | `h()`-elementbouwer (alleen tekstknopen, geen HTML-tekenreeksen), nl-NL-opmaak, API, browseropslag met `try/catch`, meldingen, formuliervelden, tabbladen, wizard, dialoog, CSV-export en SVG-grafieken met tabel als alternatief |
+| `ui.js` | `h()`-elementbouwer (alleen tekstknopen, geen HTML-tekenreeksen), nl-NL-opmaak, API, browseropslag met `try/catch`, meldingen (één tegelijk; bij een ander scherm verdwijnen ze, behalve een bevestiging van zojuist), externe links (alleen http(s) wordt klikbaar), formuliervelden, tabbladen, wizard, dialoog, CSV-export en SVG-grafieken met tabel als alternatief |
 | `data.js` | API-cache, vaste labels, geschiktheid van profielen, `describe()` (bronclaims → rekengegevens met benoemde aannames), `estimateCosts()` (alle 26 kostenposten met bron of aanname) en standaardaannames |
 | `keuzehulp.js` | Begeleide keuzehulp; zie [keuzehulp](keuzehulp.md) |
 | `catalog.js` | Catalogus, vergelijking met alle bronclaims en context, CSV, eigen dossier of offerte |
@@ -43,7 +43,7 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 | `compare.js` | Twee tot vier bewaarde berekeningen naast elkaar (`#/vergelijk/3-5`): uitkomst, besproken accu, startinvestering, besparing in jaar 1, grensprijs, NPV, terugverdientijd en wat er aan de invoer anders is, met een melding bij een ouder rekenmodel en de begrippen uit `Data.GLOSSARY` |
 | `app.js` | Router, navigatie, Mijn berekeningen (met de keuze om te vergelijken) en Instellingen |
 
-Formulieren in de keuzehulp en Zelf doorrekenen houden hun toestand in één object en bouwen het scherm daaruit op; ze lezen geen waarden terug uit de DOM. Concepten (`thuisaccu-keuzehulp`, `thuisaccu-scenario`), de vergelijkingskeuze, standaardaannames (`thuisaccu-standaard`), thema en dichtheid staan alleen in `localStorage`. Zonder browseropslag werkt alles met de oorspronkelijke waarden. Bevestigingen worden nooit uit een concept of een overgenomen run gehaald. Fictieve gegevens uit een oudere database (`is_demo`) blijven overal herkenbaar als FICTIEF.
+Formulieren in de keuzehulp en Zelf doorrekenen houden hun toestand in één object en bouwen het scherm daaruit op; ze lezen geen waarden terug uit de DOM. Concepten (`thuisaccu-keuzehulp`, `thuisaccu-scenario`), de ingevulde offertecheck per berekening (`thuisaccu-offertecheck-<id>`), de vergelijkingskeuze, standaardaannames (`thuisaccu-standaard`), thema en dichtheid staan alleen in `localStorage`. Zonder browseropslag werkt alles met de oorspronkelijke waarden. Bevestigingen worden nooit uit een concept of een overgenomen run gehaald. Fictieve gegevens uit een oudere database (`is_demo`) blijven overal herkenbaar als FICTIEF.
 
 Alle scripts en het stijlblad staan in de tabel `ASSETS` in `crates/server/src/lib.rs` en worden met `include_str!` uit de binary geserveerd; `crates/server/tests/http.rs` controleert voor elk script de route, het content-type, het laden door de shell en de afwezigheid van `innerHTML`. Ze gaan met `Cache-Control: no-cache` de deur uit, zodat de browser na een nieuwe build geen oude scripts gebruikt. Na een wijziging in `web/` moet de server opnieuw worden gebouwd. Er zijn geen externe fonts, scripts of grafiekdiensten.
 
@@ -69,7 +69,7 @@ Ingevoerde kosten en offertes gebruiken gehele minor units. Simulatie en geproje
 
 De server migreert SQLite vóór het openen van de HTTP-poort en luistert standaard op loopback. Logging verloopt via tracing. Ctrl+C laat verzoeken afronden en sluit de databasepool. De interface heeft geen externe fonts of scripts nodig. Alleen een expliciete adreszoekactie gebruikt PDOK via HTTPS, met vaste host, geen redirects, een timeout en antwoordlimiet. Handmatige adresinvoer en alle lokale berekeningen werken zonder deze dienst.
 
-De healthcheck bevestigt alleen dat de HTTP-service reageert. De database moet bij startup beschikbaar zijn; fouten na startup geven HTTP 500 zonder interne foutdetails. Er is nog geen afzonderlijke readinesscheck. Productiehosting, TLS, authenticatie en SIGTERM-afhandeling volgen bij concrete deployment-eisen.
+De server weigert verzoeken van andere websites: `Host` moet een IP-adres of `localhost` zijn (tegen DNS-rebinding) en een wijziging met `Origin` moet van dezelfde host komen (`same_site` in `crates/server/src/lib.rs`, zie [API](api.md)). De healthcheck bevestigt alleen dat de HTTP-service reageert. De database moet bij startup beschikbaar zijn; fouten na startup geven HTTP 500 zonder interne foutdetails. Er is nog geen afzonderlijke readinesscheck. Productiehosting, TLS, authenticatie en SIGTERM-afhandeling volgen bij concrete deployment-eisen.
 
 ## Technische referenties
 

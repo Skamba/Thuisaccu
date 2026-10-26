@@ -255,7 +255,8 @@
         amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" },
           "Alle startkosten samen: accu, installatie en eventuele extra’s."),
         field("Hoe ver wil je vooruitkijken?", select([...new Set(["10", "15", "20", horizon()])].sort((a, b) => a - b)
-          .map(years => [years, `${years} jaar`]), horizon(), { onchange: event => { answers.horizon = event.target.value; save(); } }))));
+          .map(years => [years, `${years} jaar`]), horizon(), { onchange: event => { answers.horizon = event.target.value; save(); } }),
+          "Kies hoe lang je verwacht in dit huis te blijven. Jaren daarna tellen niet mee en de accu heeft dan geen restwaarde; een kortere looptijd valt dus ongunstiger uit.")));
   }
 
   // Past een uitvoering bij de antwoorden? Harde bezwaren blokkeren, opmerkingen informeren.
