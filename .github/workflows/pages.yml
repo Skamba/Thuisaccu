@@ -1,0 +1,53 @@
+name: GitHub Pages
+
+# Bouwt en publiceert de browserversie bij elke push naar main, zonder op de controles in ci.yml
+# te wachten. Die lopen daarnaast; een fout daar houdt de publicatie niet tegen.
+# Vereist eenmalig: Settings → Pages → Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Een lopende publicatie wordt niet afgebroken; van de pushes die intussen binnenkomen wacht alleen
+# de nieuwste, zodat er geen tussenversies worden gebouwd.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Browserversie bouwen
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install stable Rust with the WebAssembly target
+        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # SQLite wordt voor de browserversie met clang naar WebAssembly gecompileerd.
+      - name: Install clang and llvm-ar
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+      - name: Install wasm-bindgen-cli (versie uit Cargo.lock)
+        run: sh tools/install-wasm-bindgen.sh
+      - name: Build browser version
+        run: sh tools/build-site.sh
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Publiceren
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

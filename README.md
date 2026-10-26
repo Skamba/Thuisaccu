@@ -26,7 +26,7 @@ cargo install wasm-bindgen-cli --locked --version 0.2.129
 sh tools/build-site.sh            # statische site in site/
 ```
 
-Serveer `site/` met een willekeurige statische webserver (de wasm moet als `application/wasm` komen). CI bouwt de site, test hem met Playwright en publiceert hem bij een push naar `main` op GitHub Pages; zet daarvoor eenmalig *Settings → Pages → Source* op *GitHub Actions*.
+Serveer `site/` met een willekeurige statische webserver (de wasm moet als `application/wasm` komen). CI test de site met Playwright (`ci.yml`); los daarvan bouwt en publiceert `pages.yml` hem bij elke push naar `main` op GitHub Pages, zonder op de tests te wachten; zet daarvoor eenmalig *Settings → Pages → Source* op *GitHub Actions*.
 
 ## Gebruik
 

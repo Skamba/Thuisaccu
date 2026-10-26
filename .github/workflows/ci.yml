@@ -8,11 +8,11 @@ on:
 permissions:
   contents: read
 
-# Een nieuwere push op dezelfde branch maakt een lopende controle overbodig; op main loopt alles af,
-# omdat daar de publicatie op GitHub Pages aan hangt.
+# Een nieuwere push op dezelfde branch maakt een lopende controle overbodig. De publicatie op
+# GitHub Pages staat los hiervan in pages.yml.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   checks:
@@ -51,7 +51,7 @@ jobs:
       - name: Install clang and llvm-ar
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
       - name: Install wasm-bindgen-cli (versie uit Cargo.lock)
-        run: cargo install wasm-bindgen-cli --locked --version "$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | tail -1 | cut -d'"' -f2)"
+        run: sh tools/install-wasm-bindgen.sh
       - name: Build server
         run: cargo build --locked -p thuisaccu-server
       - name: Lint WebAssembly build
@@ -76,28 +76,3 @@ jobs:
         env:
           E2E_MODE: browser
         run: npm test
-      - name: Upload site for GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-  # Publiceert de browserversie pas als alle controles op main geslaagd zijn.
-  # Vereist eenmalig: Settings → Pages → Source: GitHub Actions.
-  pages:
-    name: GitHub Pages
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [checks, e2e]
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
