@@ -208,9 +208,14 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
   const saving = summary.match(/bespaart in het eerste jaar ongeveer (€\s*[\d.]+)/)[1];
-  const [, gain, sign, lost, total] = summary.match(/minder van het net × €\s*[\d,]+ = (€\s*[\d.]+), (min|plus) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ .+? = (€\s*[\d.]+)\. Samen (−?⁠?€\s*[\d.]+) per jaar/);
+  const receipt = await page.locator(".plain .receipt li").allTextContents();
+  const [, gain] = receipt[0].match(/^\+ [\d.]+ kWh minder van het net × €\s*[\d,]+ = (€\s*[\d.]+)$/);
+  const [, sign, lost] = receipt[1].match(/^([+−]) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ \(.+\) = (€\s*[\d.]+)$/);
+  const [, total] = receipt[2].match(/^= (−?⁠?€\s*[\d.]+) per jaar$/);
   assert.ok(Math.abs(euro(total) - euro(saving)) <= 1, `${total} ≠ ${saving}`);
-  assert.ok(Math.abs(euro(gain) + (sign === "min" ? -1 : 1) * euro(lost) - euro(total)) <= 1);
+  assert.ok(Math.abs(euro(gain) + (sign === "−" ? -1 : 1) * euro(lost) - euro(total)) <= 1);
+  // Zonder vergoeding scheelt elke niet teruggeleverde kWh de terugleverkosten.
+  assert.match(summary, /wordt de tweede regel vanaf 2030: \+ [\d.]+ kWh minder teruggeleverd × €\s*0,0515 \(vergoeding €\s*0,0000 − terugleverkosten €\s*0,0515: terugleveren kost je geld\) = €\s*[\d.]+, samen €\s*[\d.]+ per jaar/);
   assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
   assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert)?|is hij zelfs gratis niet lonend)\./);
@@ -436,6 +441,8 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await page.click("button:has-text('Bewaar energieprofiel')");
   await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
   // De periode staat in Nederlandse tijd, met het einde van de laatste meetperiode als ‘tot’.
+  // #view bestaat al voordat het profiel geladen is; wacht op de tekst, niet alleen op de nieuwe hash.
+  await page.waitForSelector("text=bestand gelezen in tijdzone");
   assert.match(await page.textContent("#view"),
     /Van 1-1-2025, 00:00 CET tot 1-1-2026, 00:00 CET · bestand gelezen in tijdzone Europe\/Amsterdam/);
   // Het profiel opent de keuzehulp met dit bestand gekozen, ook zonder de pagina te herladen.
