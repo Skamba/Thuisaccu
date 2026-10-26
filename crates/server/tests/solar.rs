@@ -126,6 +126,30 @@ fn daylight_saving_ambiguities_require_offsets_and_calendar_days_keep_actual_dur
         .unwrap_err()
         .contains("vaker dan twee keer")
     );
+    // Met de nieuwste meting bovenaan staat het dubbele uur eerst in wintertijd; cumulatieve
+    // standen lopen dan in de tijd gezien gewoon op.
+    let cumulative = ImportOptions {
+        mode: "cumulative".into(),
+        ..options.clone()
+    };
+    let newest_first = analyze(
+        "time,energy
+2026-10-25 03:00,10
+2026-10-25 02:00,7
+2026-10-25 02:00,5
+2026-10-25 01:00,2
+",
+        &cumulative,
+    )
+    .unwrap();
+    assert_eq!(newest_first.production_kwh, 8.0);
+    assert_eq!(newest_first.gaps, 0);
+    assert!(
+        newest_first
+            .warnings
+            .iter()
+            .any(|w| w.contains("terug in de tijd"))
+    );
     let daily = ImportOptions {
         period: "day".into(),
         ..options

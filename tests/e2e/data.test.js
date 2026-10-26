@@ -145,6 +145,13 @@ test("describe(): de garantiestresstest volgt de productgarantie, hoogstens de a
   assert.match(warranty(120).basis, /productgarantie van 10 jaar volgens de bron; 3,5% capaciteitsverlies per jaar is een aanname/);
   assert.equal(warranty(300).operating_life_years, Data.FALLBACK.life);
   assert.equal(warranty(24).operating_life_years, 2);
+  assert.equal(warranty(30).operating_life_years, 2);
+  // De kortste geldige claim telt; betwiste en vervangen claims niet.
+  const claims = list => Data.describe({ ...catalog([]), warranties: list.map(([months, review_status]) =>
+    ({ configuration_id: 1, product_months: months, review_status })) }, config).warrantyStress.operating_life_years;
+  assert.equal(claims([[60, "reviewed"], [120, "disputed"]]), 5);
+  assert.equal(claims([[60, "unreviewed"], [120, "superseded"]]), 5);
+  assert.equal(claims([[120, "unreviewed"], [96, "unreviewed"]]), 8);
   // Onbekende garantie: geen stresstest, geen verzonnen getal.
   assert.equal(Data.describe(catalog([]), config).warrantyStress, null);
 });

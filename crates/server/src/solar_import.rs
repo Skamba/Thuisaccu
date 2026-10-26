@@ -272,7 +272,8 @@ fn cell(row: &[String], index: usize) -> Result<&str, String> {
 
 /// Leest een tijdstip. `repeated` telt lokale tijdstippen in het dubbele uur bij de overgang
 /// naar wintertijd: een export in lokale tijd noemt dat uur twee keer, het eerste is zomertijd
-/// en het tweede wintertijd. Een derde keer is een fout; één keer controleert de aanroeper.
+/// en het tweede wintertijd. Een derde keer is een fout; één keer controleert de aanroeper, net
+/// als een bestand dat terugloopt in de tijd (daar is het eerste wintertijd).
 fn parse_time(
     value: &str,
     timezone: Tz,
@@ -537,6 +538,21 @@ pub fn normalize(
             time.format("%Y-%m-%d %H:%M")
         ));
     }
+    // Een export met de nieuwste meting bovenaan noemt het dubbele uur eerst in wintertijd.
+    let descending = readings
+        .first()
+        .zip(readings.last())
+        .is_some_and(|(first, last)| first.0 > last.0);
+    if descending && !repeated.is_empty() {
+        for reading in &mut readings {
+            let local = reading.0.naive_local();
+            if repeated.contains_key(&local)
+                && let LocalResult::Ambiguous(summer, winter) = timezone.from_local_datetime(&local)
+            {
+                reading.0 = if reading.0 == summer { winter } else { summer };
+            }
+        }
+    }
     readings.sort_by_key(|r| r.0.timestamp());
     if readings.windows(2).any(|w| w[0].0 == w[1].0) {
         return Err(
@@ -631,7 +647,15 @@ pub fn normalize(
     }
     let mut warnings = vec!["Opwek alleen bepaalt geen geschikte accucapaciteit of terugverdientijd. Combineer met gelijktijdig verbruik, tarieven en systeemgrenzen.".into()];
     if !repeated.is_empty() {
-        warnings.push(format!("{} lokale tijdstip(pen) staan twee keer in het bestand door de overgang naar wintertijd; het eerste is als zomertijd en het tweede als wintertijd gelezen.", repeated.len()));
+        warnings.push(format!(
+            "{} lokale tijdstip(pen) staan twee keer in het bestand door de overgang naar wintertijd; {}",
+            repeated.len(),
+            if descending {
+                "het bestand loopt terug in de tijd, dus het eerste is als wintertijd en het tweede als zomertijd gelezen."
+            } else {
+                "het eerste is als zomertijd en het tweede als wintertijd gelezen."
+            }
+        ));
     }
     if skipped_rows > 0 {
         warnings.push(format!("{skipped_rows} rij(en) met ontbrekende meetwaarden expliciet overgeslagen; dit is geen nulproductie."));

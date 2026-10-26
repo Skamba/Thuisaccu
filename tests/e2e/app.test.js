@@ -248,8 +248,10 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
       .map(c => run.result.candidates.find(r => r.key === c.key).warranty_stress?.break_even_investment_eur != null);
   }, Number(runHash.match(/\d+/)[0]));
   assert.ok(stressed.length > 0 && stressed.every(Boolean));
-  assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Lonend tot als hij stopt na \d+ jaar \(garantie\)/);
+  assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
+  // Bij een lonende accu staan de grensprijzen in een tabel, met de stresstests als eigen regels.
+  if (!/Dat verandert als:/.test(summary)) assert.match(summary, /Grensprijs voor .+Zoals berekend \(alle startposten\).+Geen terugleververgoeding vanaf 2030/);
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
   assert.match(summary, whatIf
@@ -330,9 +332,10 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await page.waitForSelector(".verdict");
-  // De tabbladen staan op één regel en schuiven zelf zijwaarts.
+  // De tabbladen staan compact op hooguit drie regels, allemaal in beeld.
   const tops = await page.$$eval("[role=tab]", tabs => new Set(tabs.map(t => t.offsetTop)).size);
-  assert.equal(tops, 1, "tabbladen lopen over meer regels");
+  assert.ok(tops <= 3, `tabbladen lopen over ${tops} regels`);
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll("[role=tab]")].every(t => t.getBoundingClientRect().right <= innerWidth)));
   for (const tab of await page.$$eval("[role=tab]", tabs => tabs.map(t => t.textContent))) {
     await page.click(`[role=tab]:has-text("${tab.replace(/ \(\d+\)/, "")}")`);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);

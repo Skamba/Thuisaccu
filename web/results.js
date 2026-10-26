@@ -32,13 +32,14 @@ window.Results = (() => {
       : net === 0 ? "niets meer oplevert" : `nog maar ${cents(net)} cent per kWh oplevert`;
   };
   const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
-  // De garantiestresstest van een optie: de invoer (jaren, verlies, herkomst) en de uitkomst; ontbreekt in oudere runs
-  // en bij accu's zonder bekende garantie.
+  // De garantiestresstest van een optie: jaren en verlies zoals gerekend (nooit gunstiger dan de basis, zie
+  // `analysis::stressed_battery`), de herkomst en de uitkomst; ontbreekt in oudere runs en zonder bekende garantie.
   const warranty = (run, c) => {
-    const input = run.input.request.candidates.find(o => o.key === c?.key)?.warranty_stress;
-    return input && c.warranty_stress ? { ...input, result: c.warranty_stress } : null;
+    const input = run.input.request.candidates.find(o => o.key === c?.key), s = input?.warranty_stress;
+    return s && c.warranty_stress ? { ...s, result: c.warranty_stress,
+      operating_life_years: Math.min(s.operating_life_years, input.battery.operating_life_years),
+      annual_capacity_loss_pct: Math.max(s.annual_capacity_loss_pct, input.battery.annual_capacity_loss_pct) } : null;
   };
-  const warrantyLabel = w => `Stopt na ${w.operating_life_years} jaar (garantie)`;
   const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
   const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
@@ -101,12 +102,17 @@ window.Results = (() => {
 
   // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
   // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
-  function batteryLimit(run, option, limit) {
+  // De startposten naast de accuprijs (na teruggaven); null zonder geprijsde accupost of als er niets naast staat.
+  function otherStartCosts(run, option) {
     const input = run.input.request.candidates.find(c => c.key === option.key);
     const battery = input?.costs.find(l => l.category === "battery" && l.status === "priced");
-    if (!battery) return "";
+    if (!battery) return null;
     const rest = option.initial_investment_eur - battery.amount_minor / 100;
-    if (Math.abs(rest) < 1) return "";
+    return Math.abs(rest) < 1 ? null : rest;
+  }
+  function batteryLimit(run, option, limit) {
+    const rest = otherStartCosts(run, option);
+    if (rest == null) return "";
     return limit - rest > 0
       ? ` Voor de accu zelf (de post ‘Accu of complete pakketprijs’) is dat een prijs onder ongeveer ${roundedLimit(limit - rest)}, ` +
         `als de overige startposten samen ${eur0(rest)} blijven.`
@@ -237,8 +243,14 @@ window.Results = (() => {
         (p.export_variant && finite(variantLimit)
           ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
             (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost." : ".")
-          : "") + warrantyText(run, best)));
+          : "")));
     }
+    const limits = !changes.length && best && finite(best.break_even_investment_eur) ? limitTable(run, best) : null;
+    const cent = perCent(run, best);
+    if (cent) change.append(h("li", {}, `Ook je contract telt. Levert teruglevering netto 1 cent per kWh meer op (vergoeding min ` +
+      `terugleverkosten), dan is je rekening zonder accu ongeveer ${eur0(cent.bill)} per jaar lager en is ${best.name} over de looptijd ` +
+      `${eur0(Math.abs(cent.npv))} ${cent.npv <= 0 ? "minder" : "meer"} waard; 1 cent minder werkt andersom. Vergelijk dus ook de ` +
+      "terugleververgoeding en terugleverkosten van leveranciers: overstappen vraagt geen investering."));
     const advice = plugAdvice(run, best, plugs, circuit);
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
     // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
@@ -325,7 +337,7 @@ window.Results = (() => {
     }, "secondary");
     return h("section", { class: "panel plain summary" }, h("h2", {}, "Wat betekent dit voor jou?"), list,
       advice ? fold("Veiligheid van een stekkerbatterij", h("ul", {}, advice)) : null,
-      change.children.length ? fold(changes.length ? "Wat zou de uitkomst veranderen?" : "Tot welke prijs is het lonend, en wat als het tegenzit?", change) : null,
+      change.children.length ? fold(changes.length ? "Wat zou de uitkomst veranderen?" : "Tot welke prijs is het lonend, en wat als het tegenzit?", limits, change) : null,
       sums.children.length ? fold("Zo is de besparing berekend", sums) : null,
       origin.children.length ? fold(quotedOption ? `Uit je offerte, op basis van ‘${quote.title}’`
         : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin) : null,
@@ -333,13 +345,34 @@ window.Results = (() => {
         "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
   }
 
-  // Zin bij ‘Tot welke prijs is het lonend’: wat de grens wordt als de accu na de garantie stopt.
-  function warrantyText(run, c) {
-    const w = warranty(run, c), limit = w?.result.break_even_investment_eur;
-    if (!w || !finite(limit)) return "";
-    return ` Stopt hij na ${w.operating_life_years} jaar, het einde van de garantie, en verliest hij ${pct(w.annual_capacity_loss_pct)} ` +
-      `capaciteit per jaar, dan ${limit > 0 ? `ligt de grens bij ${roundedLimit(limit)}` : "is hij zelfs gratis niet lonend"}` +
-      ` (netto voordeel ${eur0(w.result.npv_eur)}). Garantie is geen levensduur, maar daarna draai je zelf op voor een defect.`;
+  // Wat 1 cent per kWh meer netto terugleverwaarde (vergoeding min kosten) doet: de rekening zonder accu in jaar 1 en
+  // het netto voordeel van de accu. Vanaf 2027 en zonder staffel is dat lineair (`finance::energy_bill`), dus volgt het
+  // uit de bewaarde teruglevering per jaar zonder opnieuw te rekenen. Runs van vóór 26 oktober 2026 missen die.
+  function perCent(run, c) {
+    const p = run.input.request.parameters, t = p.tariff;
+    if (!c?.years?.length || p.start_year < 2027 || t.export_fee_bands?.length || !c.years.every(y => finite(y.baseline_grid_export_kwh))) return null;
+    const weight = y => (1 + t.annual_price_change_pct / 100) ** (y.year - 1) / (1 + p.discount_pct / 100) ** y.year;
+    return { bill: c.years[0].baseline_grid_export_kwh * 0.01,
+      npv: -c.years.reduce((sum, y) => sum + (y.baseline_grid_export_kwh - y.energy.grid_export_kwh) * 0.01 * weight(y), 0) };
+  }
+
+  // De grensprijzen van de besproken accu onder elkaar: zoals berekend, voor alleen de accu, en in de stresstests.
+  // De uitleg eronder zegt waar de stresstests van uitgaan.
+  function limitTable(run, c) {
+    const p = run.input.request.parameters, limit = c.break_even_investment_eur, rest = otherStartCosts(run, c);
+    const cell = value => finite(value) ? (value > 0 ? roundedLimit(value) : "Zelfs gratis niet") : "—";
+    const w = warranty(run, c), variant = p.export_variant && c.export_variant;
+    const rows = [
+      ["Zoals berekend (alle startposten)", cell(limit), eur0(c.npv_eur)],
+      rest != null && limit - rest > 0 ? ["Alleen de accuprijs, overige startposten gelijk", cell(limit - rest), eur0(c.npv_eur)] : null,
+      variant ? [`Geen terugleververgoeding vanaf ${p.export_variant.from_calendar_year}`, cell(c.export_variant.break_even_investment_eur),
+        eur0(c.export_variant.npv_eur)] : null,
+      w ? [`Stopt na de garantie (${w.operating_life_years} jaar)`, cell(w.result.break_even_investment_eur), eur0(w.result.npv_eur)] : null
+    ].filter(Boolean);
+    return h("div", {}, table(["Situatie", "Lonend tot", "Netto voordeel"], rows, { caption: `Grensprijs voor ${c.name}`, stack: true }),
+      w ? h("p", { class: "help" }, `Stopt na de garantie: dezelfde accu werkt maar ${w.operating_life_years} jaar en verliest ` +
+        `${pct(w.annual_capacity_loss_pct)} capaciteit per jaar (bij 3,5% is na 10 jaar ongeveer 70% over). Garantie is geen levensduur, ` +
+        "maar een defect daarna betaal je zelf. Het advies verandert er niet door.") : null);
   }
 
   function overview(run, all, plugs) {
@@ -363,9 +396,9 @@ window.Results = (() => {
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
         ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
         c.export_variant && run.input.request.parameters.export_variant
-          ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
+          ? [`Netto voordeel zonder terugleververgoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
             eur0(c.export_variant.npv_eur)] : null,
-        warranty(run, c) ? [`Lonend tot als hij ${warrantyLabel(warranty(run, c)).toLowerCase()}`,
+        warranty(run, c) ? [`Stopt na de garantie (${warranty(run, c).operating_life_years} jaar): lonend tot`,
           breakEven(warranty(run, c).result.break_even_investment_eur) ?? "—"] : null
       ].filter(Boolean)))];
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
@@ -990,8 +1023,8 @@ window.Results = (() => {
       "opnieuw berekend, dus controleer de aannames en vertrouw alleen links van iemand die je kent." +
       (run.shared_of > result.candidates.length ? ` De link bevat ${result.candidates.length} van de ${run.shared_of} ` +
         "doorgerekende accu’s: de aanbevolen accu en de beste opties." : "")));
-    view.append(h("p", { class: "help" },
-      `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${UI.dateTime(run.created_at_unix_s)}`));
+    const meta = h("p", { class: "help" },
+      `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${UI.dateTime(run.created_at_unix_s)}`);
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
     if (outdated(run)) view.append(await outdatedNote(run, shared));
@@ -1001,7 +1034,8 @@ window.Results = (() => {
       `Deze berekening is ${age} maanden oud. Stroomprijs, terugleververgoeding en prijzen van accu’s en installatie zijn van toen` +
       (shared ? "." : ". Kijk ze na met ‘Pas aan en reken opnieuw’, of reken opnieuw in de keuzehulp voor de indicaties van nu.")));
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
-    view.append(verdict(run, plugs), summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
+    // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
+    view.append(verdict(run, plugs), meta, summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
       { label: "Overzicht", content: overview(run, all, plugs) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },

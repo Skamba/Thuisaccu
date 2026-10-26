@@ -916,6 +916,23 @@ fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone(
             .any(|w| w
                 .starts_with("Garantiestresstest bij garantie: dezelfde berekening met 2 jaar"))
     );
+    // Nooit gunstiger dan de basis: een langere garantie dan de levensduur of trager verlies telt niet.
+    let mut generous = c.clone();
+    generous.battery.operating_life_years = 3;
+    generous.battery.annual_capacity_loss_pct = 6.0;
+    generous.warranty_stress = Some(analysis::BatteryStress {
+        operating_life_years: 10,
+        annual_capacity_loss_pct: 3.5,
+        basis: "Synthetische garantie langer dan de levensduur".into(),
+    });
+    let r = analysis::analyze(&profile(), &p, &[generous]).unwrap();
+    let g = &r.candidates[0];
+    close(g.warranty_stress.as_ref().unwrap().npv_eur, g.npv_eur);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("met 3 jaar levensduur en 6% capaciteitsverlies"))
+    );
     // Zonder stresstest geen uitkomst; een ongeldige stresstest wordt geweigerd.
     let plain = candidate("plain", 2.0, 50_000);
     let r = analysis::analyze(&profile(), &p, &[plain]).unwrap();
@@ -929,4 +946,31 @@ fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone(
         });
         assert!(analysis::analyze(&profile(), &p, &[bad]).is_err());
     }
+}
+
+#[test]
+fn npv_is_linear_in_the_net_export_value_from_2027_as_the_interface_assumes() {
+    // De interface (`perCent` in web/results.js) leidt het effect van 1 cent netto terugleverwaarde af uit de
+    // bewaarde teruglevering per jaar: Σ (teruglevering zonder − met accu) × 0,01 × prijsfactor / disconto.
+    let mut p = parameters();
+    p.horizon_years = 4;
+    p.discount_pct = 4.0;
+    p.tariff.annual_price_change_pct = 2.0;
+    let c = candidate("lineair", 2.0, 50_000);
+    let base = analysis::analyze(&profile(), &p, std::slice::from_ref(&c)).unwrap();
+    p.tariff.export_eur_per_kwh += 0.01;
+    let higher = analysis::analyze(&profile(), &p, &[c]).unwrap();
+    let r = &base.candidates[0];
+    let predicted: f64 = -r
+        .years
+        .iter()
+        .map(|y| {
+            (y.baseline_grid_export_kwh.unwrap() - y.energy.grid_export_kwh)
+                * 0.01
+                * 1.02_f64.powi(y.year as i32 - 1)
+                / 1.04_f64.powi(y.year as i32)
+        })
+        .sum::<f64>();
+    close(higher.candidates[0].npv_eur - r.npv_eur, predicted);
+    assert!(predicted < 0.0);
 }

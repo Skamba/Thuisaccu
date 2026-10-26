@@ -92,6 +92,7 @@ fieldset > .error { display: block; margin-top: .4rem; }
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--pad); margin: 0 0 1rem; }
 legend { font-weight: 700; padding: 0 .35rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 0 var(--gap); }
+.grid > .wide { grid-column: 1 / -1; max-width: 48rem; }
 .check { display: flex; gap: .6rem; align-items: flex-start; margin: .55rem 0; }
 .check input, .choice-option input { width: 1.15rem; height: 1.15rem; flex: none; margin: .2rem 0 0; accent-color: var(--accent); padding: 0; }
 .choice { display: grid; gap: .5rem; }
@@ -146,15 +147,15 @@ td strong, th strong { display: block; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
 .compare td { min-width: 13rem; }
 .compare thead th:first-child { position: sticky; left: 0; z-index: 1; }
-/* Vóór het smalle scherm: dat zet de tabbladen op één regel. */
+/* Vóór het smalle scherm: dat maakt de tabbladen compacter. */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
 @media (max-width: 40rem) {
   /* De paginaknoppen compact, zodat de uitkomst zelf eerder in beeld komt. */
   #page-actions { gap: .4rem; margin: .5rem 0 0; }
   #page-actions :is(button, .button) { padding: .4rem .7rem; font-size: .9rem; }
-  /* Tabbladen schuiven op één regel zijwaarts in plaats van vijf regels hoog te worden. */
-  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
-  .tabs [role="tab"] { flex: none; }
+  /* Tabbladen compact op hooguit drie regels: alle tabbladen, ook de waarschuwingen, blijven in beeld. */
+  .tabs { gap: 0 .1rem; }
+  .tabs [role="tab"] { padding: .35rem .5rem; font-size: .875rem; }
   /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
   .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
   .compare th[scope="row"], .compare thead th:first-child { min-width: 7.5rem; width: 7.5rem; hyphens: auto; }

@@ -722,6 +722,20 @@ fn project(
     }
 }
 
+/// De accu in de garantiestresstest: nooit gunstiger dan de basis, dus de kortste levensduur en het
+/// snelste capaciteitsverlies van de twee.
+pub fn stressed_battery(battery: &Battery, stress: &BatteryStress) -> Battery {
+    Battery {
+        operating_life_years: stress
+            .operating_life_years
+            .min(battery.operating_life_years),
+        annual_capacity_loss_pct: stress
+            .annual_capacity_loss_pct
+            .max(battery.annual_capacity_loss_pct),
+        ..battery.clone()
+    }
+}
+
 fn outcome(r: &CandidateResult) -> ExportVariantResult {
     ExportVariantResult {
         npv_eur: r.npv_eur,
@@ -808,8 +822,7 @@ pub fn analyze_with(
         // Zelfde accu met een kortere levensduur en sneller verlies; telt niet mee voor de keuze.
         if let Some(s) = &c.warranty_stress {
             let mut stressed = c.clone();
-            stressed.battery.operating_life_years = s.operating_life_years;
-            stressed.battery.annual_capacity_loss_pct = s.annual_capacity_loss_pct;
+            stressed.battery = stressed_battery(&c.battery, s);
             let energies = simulate_battery(&profiles, parameters, &stressed);
             base.warranty_stress = Some(outcome(&project(
                 &baselines, &energies, parameters, c, 0, None,
@@ -979,11 +992,12 @@ pub fn analyze_with(
     }
     for c in candidates {
         if let Some(s) = &c.warranty_stress {
+            let b = stressed_battery(&c.battery, s);
             warnings.push(format!(
-                "Garantiestresstest bij {}: dezelfde berekening met {} jaar levensduur en {}% capaciteitsverlies per jaar ({}). Het is een stresstest, geen voorspelling; de keuze hierboven gebruikt de basisaannames.",
+                "Garantiestresstest bij {}: dezelfde berekening met {} jaar levensduur en {}% capaciteitsverlies per jaar ({}; nooit gunstiger dan de basisaannames). Het is een stresstest, geen voorspelling; de keuze hierboven gebruikt de basisaannames.",
                 c.name,
-                s.operating_life_years,
-                format!("{}", s.annual_capacity_loss_pct).replace('.', ","),
+                b.operating_life_years,
+                format!("{}", b.annual_capacity_loss_pct).replace('.', ","),
                 s.basis.trim()
             ));
         }

@@ -107,11 +107,11 @@ window.Data = (() => {
   };
   // Wat elke aanname doet, in gewone taal (docs/roi-model.md); bij Instellingen en Zelf doorrekenen.
   const ASSUMPTION_HELP = {
-    discount_pct: "Hoeveel minder geld in de toekomst waard is dan geld nu. Bij 4% telt een euro over tien jaar als ongeveer 68 cent van nu.",
+    discount_pct: "Hoeveel minder geld in de toekomst waard is dan geld nu. Bij 4% telt een euro over tien jaar als ongeveer 68 cent van nu. Dit is een gewone rente, met inflatie erin; laat prijzen en kosten daarom ook meestijgen.",
     annual_cost_escalation_pct: "Hoeveel jaarlijkse kosten zoals een abonnement, onderhoud of verzekering elk jaar duurder worden.",
     annual_pv_loss_pct: "Hoeveel minder je panelen elk jaar opwekken door veroudering.",
     annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je bij Zelf doorrekenen apart in.",
-    annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk.",
+    annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk. Standaard 2%, net als de jaarkosten: de energiebelasting wordt in de wet elk jaar voor inflatie gecorrigeerd. Met 0% wordt stroom elk jaar goedkoper ten opzichte van de rest.",
     price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
     cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid."
   };
@@ -263,7 +263,8 @@ window.Data = (() => {
   const WARRANTY_LOSS = 3.5;
   const warrantyNote = basis => `${basis}; ${n(WARRANTY_LOSS, 1)}% capaciteitsverlies per jaar is een aanname (ongeveer 70% na 10 jaar)`;
   const warrantyStress = (years, basis) => years == null || !(years > 0) ? null : {
-    operating_life_years: Math.min(FALLBACK.life, Math.max(1, Math.round(years))), annual_capacity_loss_pct: WARRANTY_LOSS,
+    // Afgerond naar beneden: een accu met 2,5 jaar garantie stopt in de stresstest na 2 jaar, niet na 3.
+    operating_life_years: Math.min(FALLBACK.life, Math.max(1, Math.floor(years))), annual_capacity_loss_pct: WARRANTY_LOSS,
     basis: warrantyNote(basis)
   };
   // Herkent in de vastgelegde aannametekst van een optie welke technische waarde een aanname is; de
@@ -402,8 +403,9 @@ window.Data = (() => {
       sources.set(c.source_title, [...(sources.get(c.source_title) || []), `${label} #${c.id}`]);
     }
     if (sources.size) notes.push(`Gebruikte bronclaims: ${[...sources].map(([title, list]) => `${title} (${list.join(", ")})`).join("; ")}.`);
-    const warranty = cmp.warranties.filter(w => w.configuration_id === config.id && w.product_months != null).map(w => w.product_months);
-    const warrantyYears = warranty.length ? Math.max(...warranty) / 12 : null;
+    // De kortste geldige productgarantie: voor een stresstest de voorzichtigste claim.
+    const warranty = cmp.warranties.filter(w => live(w) && w.product_months != null).map(w => w.product_months);
+    const warrantyYears = warranty.length ? Math.min(...warranty) / 12 : null;
     return {
       config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`,
       capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, circuit,
@@ -558,9 +560,12 @@ window.Data = (() => {
   }
   const isAssumption = line => line.source === "Aanname" || line.notes.startsWith("Aanname");
 
-  // Standaard projectie-aannames, aanpasbaar in Instellingen; nooit voor bewaarde runs.
+  // Standaard projectie-aannames, aanpasbaar in Instellingen; nooit voor bewaarde runs. Alles in lopende euro's:
+  // de discontovoet is een gewone rente (met inflatie), dus energieprijzen en jaarkosten stijgen standaard even hard
+  // mee, 2% per jaar (het inflatiedoel van de ECB). Met 0% prijsverandering zou stroom elk jaar goedkoper worden
+  // ten opzichte van al het andere (docs/roi-model.md).
   const DEFAULTS = { start_year: 2027, horizon_years: 15, discount_pct: 4, annual_cost_escalation_pct: 2,
-    annual_pv_loss_pct: 0, annual_load_growth_pct: 0, annual_price_change_pct: 0, price_uncertainty_pct: 20,
+    annual_pv_loss_pct: 0, annual_load_growth_pct: 0, annual_price_change_pct: 2, price_uncertainty_pct: 20,
     cost_uncertainty_pct: 15 };
   // Oudere versies bewaarden de aannames per formulierveld-id.
   const LEGACY_IDS = { start_year: "analysis-start", horizon_years: "analysis-years",

@@ -420,9 +420,11 @@ window.Scenario = (() => {
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
       TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)),
-      field("Garantie (jaar, optioneel)", bindValue(numberInput({ min: "1", max: "30", step: "1", placeholder: "Geen stresstest" }),
+      h("div", { class: "wide" }, field("Garantietermijn (jaar, optioneel)", bindValue(numberInput({ min: "1", max: "30", step: "1" }),
         () => option.warranty, v => { option.warranty = v; }),
-        `Voor de stresstest ‘stopt na de garantie’: dezelfde berekening als de accu na deze jaren stopt en ${n(Data.WARRANTY_LOSS, 1)}% capaciteit per jaar verliest. De keuze verandert er niet door.`));
+        `Staat in de garantievoorwaarden; leeg is niet doorrekenen. Ingevuld rekenen we ook door wat de accu oplevert als hij direct ` +
+        `na de garantie stopt, met ${n(Data.WARRANTY_LOSS, 1)}% verlies per jaar (ongeveer 70% over na 10 jaar) in plaats van het ` +
+        "capaciteitsverlies hierboven. De rangorde en het advies veranderen niet.")));
     const assumptions = field("Bron en aannames van de techniek", bindValue(h("textarea", { rows: "3", required: true }), () => option.assumptions, v => { option.assumptions = v; }),
       "Controleer bruikbare capaciteit, werkelijk AC-vermogen en AC-systeemrendement; kVA en DC-rendement zijn hiervoor onvoldoende.");
     const progress = h("p", { class: "help" }), total = h("p", { class: "cost-total" });
