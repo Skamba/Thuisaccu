@@ -21,6 +21,8 @@ window.Results = (() => {
     ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", 0]
   ];
   const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
+  // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs.
+  const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${eur0(value)}`;
   // Zelfde lijst als `finance::is_credit` in de rekenkern: deze posten verlagen de kosten.
   const CREDITS = ["grant", "vat_refund", "residual_value"];
 
@@ -78,6 +80,16 @@ window.Results = (() => {
           ? `${same ? "dan blijft" : "dan wordt"} ${alt.name} de beste keuze, met een netto voordeel van ${eur0(alt.export_variant.npv_eur)}.`
           : "dan blijft géén accu de beste keuze.")));
     }
+    const judged = rec || best;
+    if (judged && finite(judged.break_even_investment_eur)) {
+      const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
+      list.append(h("li", {}, (limit > 0
+        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${eur0(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)}. Zo kun je een offerte of aanbieding zelf beoordelen.`
+        : `${judged.name} kost je over de looptijd in geld van nu geld, ook als hij gratis zou zijn: de jaarkosten, verliezen en het sluimerverbruik wegen zwaarder dan de besparing.`) +
+        (p.export_variant && finite(variantLimit)
+          ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${eur0(variantLimit)}` : "is hij zelfs gratis niet lonend"}.`
+          : "")));
+    }
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
@@ -98,6 +110,8 @@ window.Results = (() => {
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)],
           ["ROI over looptijd", c.key === "no_battery" ? "—" : pct(c.roi_pct)],
         ["Terugverdiend na", c.key === "no_battery" ? "—" : years(c.payback_years)],
+        c.key === "no_battery" || !breakEven(c.break_even_investment_eur) ? null
+          : ["Lonend bij een startinvestering", breakEven(c.break_even_investment_eur)],
           ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
         c.export_variant && run.input.request.parameters.export_variant
           ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
@@ -114,16 +128,17 @@ window.Results = (() => {
     }));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
-      out.append(table(["Optie", "Startinvestering", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
+      out.append(table(["Optie", "Startinvestering", "Lonend bij een startinvestering", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
         c.key === result.recommended_key ? h("span", {}, c.name, " ", badge("Aanbevolen", "accent")) : c.name,
-        eur0(c.initial_investment_eur), eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
+        eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
+        eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
         ...(variant ? [eur0(c.export_variant?.npv_eur)] : [])]),
       { caption: `Alle ${all.length} opties, op volgorde van je doel` }));
     }
     out.append(h("p", { class: "help" },
-      "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
+      "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend bij een startinvestering’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
     return out;
   }
 

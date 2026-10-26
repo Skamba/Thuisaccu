@@ -205,6 +205,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const runHash = await page.evaluate(() => location.hash);
   const summary = await page.textContent(".plain");
   assert.match(summary, /Als teruglevering vanaf 2030 niets meer oplevert/);
+  // De grens voor een offerte, ook zonder terugleververgoeding.
+  assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+|is hij zelfs gratis niet lonend)\./);
   assert.match(summary, /geschat uit jaartotalen/);
   // De kostenopbouw telt de startposten op tot de startinvestering van de gekozen accu.
   await page.click(`[role=tab]:has-text("Kostenopbouw")`);
@@ -505,6 +507,15 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(view, /Nederland \(geen adres opgegeven\)/);
   // Een dure offerte verdient zich niet terug; een negatieve ROI krijgt een echt minteken.
   assert.match(view, /ROI over looptijd−\d/);
+  // De grens waarboven de offerte niet meer lonend is: startinvestering plus NPV.
+  const option = await page.locator("article.option").nth(1).textContent();
+  const euros = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
+  const [, investment, npv] = option.match(/Startinvestering(.+?)Netto voordeel \(NPV\)(.+?)Nettowinst/);
+  const limit = option.match(/Lonend bij een startinvestering(Tot .+?|Zelfs gratis niet)Eigen gebruik/)[1];
+  const expected = euros(investment) + euros(npv);
+  if (limit.startsWith("Tot")) assert.ok(Math.abs(euros(limit) - expected) <= 1, `${limit} ≠ ${expected}`);
+  else assert.ok(expected <= 1, `${expected} zou positief zijn`);
+  assert.match(view, /lonend zolang de startinvestering niet boven ongeveer|ook als hij gratis zou zijn/);
   // Een kopie begint met een leeg adresveld, niet met de omschrijving.
   await page.click("text=Pas aan en reken opnieuw");
   await page.waitForSelector("text=Profiel en doel");

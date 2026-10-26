@@ -270,6 +270,40 @@ fn financing_counts_interest_once_and_payback_must_survive_replacement_costs() {
 }
 
 #[test]
+fn break_even_investment_is_the_start_cost_at_which_the_npv_becomes_zero() {
+    // Ieder overschotuur laadt 2 kWh en het volgende uur gaat die 2 kWh naar het verbruik:
+    // 4380 × 2 kWh × (€ 0,30 − € 0,08) = € 1927,20 per jaar. Twee jaar tegen 10% disconto:
+    // 1927,2 / 1,1 + 1927,2 / 1,21 = € 3344,73, ongeacht de prijs die nu is ingevoerd.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.discount_pct = 10.0;
+    p.export_variant = Some(analysis::ExportVariant {
+        label: "Geen vergoeding".into(),
+        from_calendar_year: 2027,
+        export_eur_per_kwh: 0.0,
+        export_fee_eur_per_kwh: 0.0,
+    });
+    let expected = 1927.2 / 1.1 + 1927.2 / 1.21;
+    for price_minor in [50_000, 500_000] {
+        let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, price_minor)]).unwrap();
+        close(r.candidates[0].break_even_investment_eur, expected);
+        // Zonder vergoeding is elke kWh uit de accu € 0,30 waard: 4380 × 2 × 0,30 = € 2628.
+        close(
+            r.candidates[0]
+                .export_variant
+                .as_ref()
+                .unwrap()
+                .break_even_investment_eur,
+            2628.0 / 1.1 + 2628.0 / 1.21,
+        );
+    }
+    // Precies die startinvestering geeft een NPV van nul.
+    let at = (expected * 100.0).round() as i64;
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, at)]).unwrap();
+    assert!(r.candidates[0].npv_eur.abs() < 0.01);
+}
+
+#[test]
 fn replacement_cost_restores_capacity_only_after_the_replacement_year() {
     let mut c = candidate("replace", 2.0, 50_000);
     c.battery.operating_life_years = 1;

@@ -136,6 +136,12 @@ ROI (%) = nettowinst / netto startinvestering × 100
 NPV = −netto startinvestering + som(netto jaarvoordeel / (1 + discontovoet)^t)
 ```
 
+**Lonend bij een startinvestering** (`break_even_investment_eur`) is de hoogste netto startinvestering waarbij de NPV nul is, met alle andere kosten, de lening en de energiestromen gelijk. Omdat de startinvestering met factor 1 op tijdstip nul in de NPV staat, is dat de huidige netto startinvestering plus de NPV. Een negatieve waarde betekent dat de optie zelfs gratis geld kost. De terugleveringsvariant krijgt een eigen grens; de prijs- en kostenvarianten niet, omdat de kostenvariatie de investering zelf meeschaalt. Zo kan een gebruiker een offerte of aanbieding toetsen zonder opnieuw te rekenen. Runs van vóór deze uitkomst tonen hem niet; de betekenis van de bestaande uitkomsten is niet veranderd, dus `model_version` blijft gelijk.
+
+```text
+lonend bij een startinvestering = netto startinvestering + NPV
+```
+
 ROI betreft de hele gekozen looptijd en is geen jaarlijks rendement. Bij nul startinvestering is ROI niet bepaald. Levensduurkosten zijn startinvestering plus extra jaarlijkse/toekomstige kosten en rente, na expliciete aftrekposten. Energiekosten staan afzonderlijk in de vergelijking.
 
 De terugverdientijd is de eerste jaargrens waarna het cumulatieve resultaat tot het einde van de horizon niet meer negatief wordt. Een latere vervanging kan dus een eerdere schijnbare terugverdientijd ongeldig maken. Er wordt geen nauwkeurigheid tot maanden gesuggereerd. De API geeft ook de gedisconteerde terugverdientijd.

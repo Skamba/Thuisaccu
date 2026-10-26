@@ -94,6 +94,9 @@ pub struct ExportVariantResult {
     pub net_profit_eur: f64,
     pub roi_pct: Option<f64>,
     pub payback_years: Option<u32>,
+    /// Zie [`CandidateResult::break_even_investment_eur`], binnen deze variant.
+    #[serde(default)]
+    pub break_even_investment_eur: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +111,11 @@ pub struct CandidateResult {
     pub roi_pct: Option<f64>,
     pub payback_years: Option<u32>,
     pub discounted_payback_years: Option<u32>,
+    /// Hoogste netto startinvestering waarbij de NPV nog niet negatief is, met alle andere
+    /// kosten, de lening en de energiestromen gelijk: de huidige startinvestering plus de NPV.
+    /// Negatief als de optie zelfs gratis geld kost. Ontbreekt in runs van vóór deze uitkomst.
+    #[serde(default)]
+    pub break_even_investment_eur: f64,
     pub first_year: EnergyYear,
     pub years: Vec<YearResult>,
     pub pessimistic: VariantResult,
@@ -523,6 +531,9 @@ fn project(
         roi_pct: roi,
         payback_years: finance::stable_payback(&cashflows, 0.0),
         discounted_payback_years: finance::stable_payback(&cashflows, p.discount_pct),
+        // De NPV hangt lineair af van de startinvestering (factor 1 op tijdstip nul); in de
+        // kostenvarianten niet, daar schaalt `cost_factor` de investering mee.
+        break_even_investment_eur: upfront + npv,
         first_year: years[0].energy.clone(),
         years,
         pessimistic: variant.clone(),
@@ -588,6 +599,7 @@ pub fn analyze(
                 net_profit_eur: varied.net_profit_eur,
                 roi_pct: varied.roi_pct,
                 payback_years: varied.payback_years,
+                break_even_investment_eur: varied.break_even_investment_eur,
             });
         }
         base.pessimistic = VariantResult {
