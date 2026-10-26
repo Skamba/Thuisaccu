@@ -195,11 +195,13 @@ window.Scenario = (() => {
       changes.replaceChildren(...state.changes.map((change, index) => {
         const kind = CHANGES[change.kind], sum = h("p", { class: "help", "aria-live": "polite" });
         sums.push(() => {
-          const base = totals.get(state.profile), year = parse(change.year);
+          const { kwh: base, name } = totals.get(state.profile) || {}, year = parse(change.year);
           const extras = state.changes.map(c => [parse(c.year), parse(c.kwh)])
             .filter(([y, kwh]) => y != null && kwh != null && year != null && y <= year).map(([, kwh]) => kwh);
           sum.textContent = base != null && year != null && parse(change.kwh) != null
-            ? `Je verbruik vanaf 1 januari ${year}: ${[base, ...extras].map(v => n(v, 0)).join(" + ")} = ongeveer ${n(extras.reduce((a, b) => a + b, base), 0)} kWh per jaar.`
+            ? `Je verbruik vanaf 1 januari ${year}: ${[base, ...extras].map(v => n(v, 0)).join(" + ")} = ongeveer ${n(extras.reduce((a, b) => a + b, base), 0)} kWh per jaar. ` +
+              `De ${n(base, 0)} kWh is het bruto verbruik in profiel ‘${name}’: alles wat het huis gebruikt, ook direct van de panelen. ` +
+              "Op je jaarafrekening staat alleen wat van het net kwam, dus daar staat een ander getal."
             : "Telt vanaf 1 januari van het gekozen jaar bovenop het verbruik in je energieprofiel.";
         });
         const own = (label, key, props, help) => field(label,
@@ -225,7 +227,7 @@ window.Scenario = (() => {
       persist(); renderChanges();
     }, "secondary");
     Data.imports().then(items => {
-      for (const item of items) if (item.summary.consumption_kwh != null) totals.set(String(item.id), item.summary.consumption_kwh);
+      for (const item of items) if (item.summary.consumption_kwh != null) totals.set(String(item.id), { kwh: item.summary.consumption_kwh, name: item.filename });
       showSums();
       profile.replaceChildren(h("option", { value: "" }, "Kies een bewaard profiel…"), ...items.map(item => {
         const fit = Data.suitability(item);
@@ -249,12 +251,14 @@ window.Scenario = (() => {
       h("section", { class: "panel" }, h("h3", {}, "Verandering in verbruik (optioneel)"),
         h("p", { class: "help" }, "Komt er later een warmtepomp of elektrische auto bij? Dan telt dat verbruik vanaf 1 januari van het jaar dat je kiest. " +
           "De warmtepomp volgt de buitentemperatuur van 2023 in De Bilt, met een gelijkmatig deel voor warm tapwater; de auto laadt elke dag even veel. " +
-          "Rekent je profiel met gemeten netafname en teruglevering, dan schat het model vanaf dat jaar hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dan wat minder zeker."),
+          "Rekent je profiel met gemeten netafname en teruglevering, dan schat het model vanaf dat jaar hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dan wat minder zeker. " +
+          "De aanschaf van de warmtepomp of auto en het gas of de benzine die je bespaart tellen niet mee: het extra verbruik zit zowel in ‘geen accu’ als in iedere accu-optie, dus de uitkomst gaat alleen over de accu."),
         h("details", {}, h("summary", {}, "Hoeveel kWh gebruikt een warmtepomp?"),
           h("p", {}, "Kijk eerst in de offerte of het advies van je installateur. Staat het er niet in: Milieu Centraal rekent voor een goed geïsoleerd hoekhuis met 2 personen " +
-            "dat met een volledige warmtepomp ongeveer 950 m³ gas vervangt door 3.400 kWh stroom, ongeveer 3.150 kWh meer dan met een cv-ketel; " +
-            "grofweg 3,3 kWh per m³ gas dat je nu verbruikt (onze afleiding). Een hybride warmtepomp halveert in een matig geïsoleerd hoekhuis het gasverbruik van 1.360 naar 680 m³, " +
-            "met ongeveer 1.600 kWh extra stroom: grofweg 1,2 kWh per m³ van je huidige gasverbruik. Je eigen huis, isolatie en warmtepomp kunnen flink afwijken."),
+            "dat een volledige warmtepomp het hele gasverbruik van ongeveer 950 m³ vervangt door 3.400 kWh stroom, ongeveer 3.150 kWh meer dan met een cv-ketel. " +
+            "Een hybride warmtepomp halveert in een matig geïsoleerd hoekhuis het gasverbruik van 1.360 naar 680 m³, met ongeveer 1.600 kWh extra stroom."),
+          h("p", {}, "Daaruit volgt grofweg, per m³ gas dat je nu per jaar verbruikt (onze afleiding): volledige warmtepomp 3,3 kWh extra, hybride warmtepomp 1,2 kWh extra. " +
+            "Bij 1.200 m³ gas is dat ongeveer 4.000 kWh voor een volledige en 1.450 kWh voor een hybride warmtepomp. Je eigen huis, isolatie en warmtepomp kunnen flink afwijken."),
           h("p", {}, UI.external("Milieu Centraal: volledige warmtepomp (gewijzigd 14 oktober 2026)",
             "https://www.milieucentraal.nl/energie-besparen/duurzaam-verwarmen-en-koelen/volledige-warmtepomp/"), " · ",
           UI.external("Milieu Centraal: hybride warmtepomp (gewijzigd 14 oktober 2026)",

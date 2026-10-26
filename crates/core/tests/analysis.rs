@@ -293,6 +293,17 @@ fn extra_load_from_a_later_year_counts_only_from_that_year() {
     close(years[0].energy_saving_eur, 1927.2);
     close(years[1].energy_saving_eur, 963.6);
     close(r.baseline_first_year.consumption_kwh, 8760.0);
+    // De besparing in 2028 is na te rekenen uit netafname en teruglevering zonder en met accu.
+    let y = &years[1];
+    let factor = 1.0 + p.tariff.annual_price_change_pct / 100.0;
+    let fewer_import = y.baseline_grid_import_kwh.unwrap() - y.energy.grid_import_kwh;
+    let fewer_export = y.baseline_grid_export_kwh.unwrap() - y.energy.grid_export_kwh;
+    close(
+        y.energy_saving_eur,
+        (fewer_import * p.tariff.import_eur_per_kwh
+            - fewer_export * (p.tariff.export_eur_per_kwh - p.tariff.export_fee_eur_per_kwh))
+            * factor,
+    );
     assert!(
         r.warnings
             .iter()

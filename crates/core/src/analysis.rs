@@ -126,6 +126,12 @@ pub struct YearResult {
     pub year: u32,
     pub calendar_year: u32,
     pub energy: EnergyYear,
+    /// Netafname en teruglevering zonder accu in dit jaar, zodat de besparing per jaar na te
+    /// rekenen is; ontbreekt in runs van vóór 26 oktober 2026.
+    #[serde(default)]
+    pub baseline_grid_import_kwh: Option<f64>,
+    #[serde(default)]
+    pub baseline_grid_export_kwh: Option<f64>,
     pub baseline_bill_eur: f64,
     pub battery_bill_eur: f64,
     pub energy_saving_eur: f64,
@@ -598,6 +604,8 @@ fn project(
             year,
             calendar_year,
             energy,
+            baseline_grid_import_kwh: Some(baseline.grid_import_kwh),
+            baseline_grid_export_kwh: Some(baseline.grid_export_kwh),
             baseline_bill_eur: baseline_bill,
             battery_bill_eur: battery_bill,
             energy_saving_eur: saving,

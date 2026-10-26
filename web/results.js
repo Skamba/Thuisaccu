@@ -83,30 +83,53 @@ window.Results = (() => {
           : "dan blijft géén accu de beste keuze.")));
     }
     const judged = rec || best;
-    const first = judged?.years?.[0], tariff = p.tariff;
-    // Na te rekenen besparing in jaar 1: vanaf 2027 zonder saldering en zonder staffel is dat precies
+    const first = judged?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
+    // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
     // minder netafname × stroomprijs min minder teruglevering × netto vergoeding (de vaste kosten vallen weg).
-    if (first && p.start_year >= 2027 && !tariff.export_fee_bands?.length) {
-      const fewerImport = base.grid_import_kwh - first.energy.grid_import_kwh;
-      const fewerExport = base.grid_export_kwh - first.energy.grid_export_kwh;
-      const price = v => money(v, { decimals: 4 }), gain = fewerImport * tariff.import_eur_per_kwh;
+    // Alle prijzen veranderen per jaar met dezelfde factor, zoals in `finance::energy_bill`.
+    const receipt = (fewerImport, fewerExport, factor) => {
+      const gain = fewerImport * tariff.import_eur_per_kwh * factor;
       // Minder teruglevering kost de netto vergoeding; zijn de terugleverkosten hoger, dan levert het juist op.
       const exported = (compensation, fee) => {
-        const net = compensation - fee, value = -fewerExport * net;
-        return { value, text: `${value > 0 ? "+" : "−"} ${kwh(fewerExport)} minder teruggeleverd × ${price(Math.abs(net))} ` +
-          `(vergoeding ${price(compensation)} − terugleverkosten ${price(fee)}${net < 0 ? ": terugleveren kost je geld" : ""}) = ${eur0(Math.abs(value))}` };
+        const net = (compensation - fee) * factor, value = -fewerExport * net;
+        return { value, text: `${value > 0 ? "+" : "−"} ${kwh(Math.abs(fewerExport))} ${fewerExport < 0 ? "meer" : "minder"} teruggeleverd × ${price(Math.abs(net))} ` +
+          `(vergoeding ${price(compensation * factor)} − terugleverkosten ${price(fee * factor)}${net < 0 ? ": terugleveren kost je geld" : ""}) = ${eur0(Math.abs(value))}` };
       };
-      const now = exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh), v = p.export_variant;
-      const later = v ? exported(v.export_eur_per_kwh, v.export_fee_eur_per_kwh) : null;
-      list.append(h("li", {}, `Zo reken je de besparing van ${judged.name} in het eerste jaar na:`,
-        h("ul", { class: "receipt" },
-          h("li", {}, `+ ${kwh(fewerImport)} minder van het net × ${price(tariff.import_eur_per_kwh)} = ${eur0(gain)}`),
-          h("li", {}, now.text),
-          h("li", {}, `= ${eur0(gain + now.value)} per jaar`)),
+      // Met veel sluimerverbruik kan de accu de netafname zelfs verhogen; dan is de regel een min.
+      return { gain, exported, line: `${gain < 0 ? "−" : "+"} ${kwh(Math.abs(fewerImport))} ${fewerImport < 0 ? "meer" : "minder"} van het net × ` +
+        `${price(tariff.import_eur_per_kwh * factor)} = ${eur0(Math.abs(gain))}` };
+    };
+    const lines = (r, second) => h("ul", { class: "receipt" }, h("li", {}, r.line), h("li", {}, second.text),
+      h("li", {}, `= ${eur0(r.gain + second.value)} per jaar`));
+    const receipts = first && p.start_year >= 2027 && !tariff.export_fee_bands?.length;
+    if (receipts) {
+      const r = receipt(base.grid_import_kwh - first.energy.grid_import_kwh, base.grid_export_kwh - first.energy.grid_export_kwh, 1);
+      const now = r.exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh), v = p.export_variant;
+      const later = v ? r.exported(v.export_eur_per_kwh, v.export_fee_eur_per_kwh) : null;
+      list.append(h("li", {}, `Zo reken je de besparing van ${judged.name} in het eerste jaar na:`, lines(r, now),
         `Dat de teruglevering meer daalt dan de netafname, komt door ${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en ` +
           `omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.` +
-          (later ? ` In de variant ‘${v.label}’ wordt de tweede regel vanaf ${v.from_calendar_year}: ${later.text}, samen ${eur0(gain + later.value)} per jaar ` +
+          (later ? ` In de variant ‘${v.label}’ wordt de tweede regel vanaf ${v.from_calendar_year}: ${later.text}, samen ${eur0(r.gain + later.value)} per jaar ` +
             "(met de hoeveelheden en prijzen van jaar 1)." : "")));
+    }
+    // Dezelfde som voor het eerste jaar met een warmtepomp of auto erbij; runs van vóór 26 oktober 2026 missen
+    // netafname en teruglevering zonder accu per jaar.
+    const changeYear = Math.min(...(run.input.request.load_changes || []).map(c => c.from_calendar_year));
+    const changed = judged?.years?.find(y => y.calendar_year === changeYear);
+    if (receipts && changed && finite(changed.baseline_grid_import_kwh)) {
+      // De jaartabel en deze som rekenen met de gewone terugleverprijzen, ook als er een variant is.
+      const r = receipt(changed.baseline_grid_import_kwh - changed.energy.grid_import_kwh,
+        changed.baseline_grid_export_kwh - changed.energy.grid_export_kwh, (1 + tariff.annual_price_change_pct / 100) ** (changed.year - 1));
+      const second = r.exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh);
+      const total = r.gain + second.value, diff = total - first.energy_saving_eur;
+      const what = (run.input.request.load_changes || []).filter(c => c.from_calendar_year === changeYear)
+        .map(c => c.kind === "ev" ? "de elektrische auto" : "de warmtepomp").join(" en ");
+      list.append(h("li", {}, `In ${changeYear}, het eerste jaar met ${what}, gebruikt het huis ${kwh(changed.energy.consumption_kwh)} in plaats van ` +
+        `${kwh(first.energy.consumption_kwh)}. De besparing van ${judged.name} wordt dan:`, lines(r, second),
+        `Dat is ${eur0(Math.abs(diff))} ${diff >= 0 ? "meer" : "minder"} dan in het eerste jaar` +
+          (tariff.annual_price_change_pct ? `, deels doordat de prijzen ${pct(tariff.annual_price_change_pct)} per jaar veranderen` : "") +
+          ". Extra verbruik ’s avonds en ’s nachts laat de accu vaker helemaal leeg lopen en levert dus meer op; extra verbruik overdag " +
+          "laat minder zonnestroom over om op te slaan. Ook het capaciteitsverlies van de accu telt mee."));
     }
     if (judged && finite(judged.break_even_investment_eur)) {
       const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
@@ -216,6 +239,8 @@ window.Results = (() => {
     pick.addEventListener("change", render); render();
     // Een warmtepomp of auto vanaf een later jaar verklaart de sprong in het verbruik.
     const changes = run.result.warnings.filter(w => /^Extra verbruik|meet de slimme meter niet meer/.test(w));
+    if (run.input.request.load_changes?.length) changes.push("De aanschaf van de warmtepomp of auto en het gas of de benzine die je bespaart " +
+      "tellen niet mee: het extra verbruik zit zowel in ‘geen accu’ als in iedere accu-optie, dus de uitkomst gaat alleen over de accu.");
     out.append(UI.field("Jaartabel van", pick), target, ...changes.map(w => h("p", { class: "help" }, w)));
     return out;
   }

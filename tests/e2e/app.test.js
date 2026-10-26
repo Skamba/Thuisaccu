@@ -536,8 +536,20 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   if (limit.startsWith("Tot")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
   else assert.ok(expected <= 1, `${expected} zou positief zijn`);
   assert.match(view, /lonend zolang de startinvestering niet boven ongeveer|ook als hij gratis zou zijn/);
+  // De som voor 2028, het eerste warmtepompjaar, klopt en is gelijk aan het verschil in de jaartabel.
+  const amount = text => { const m = text.match(/(−?)[\s\u2060]*€\s*([\d.]+(?:,\d+)?)(?!.*€)/);
+    return (m[1] ? -1 : 1) * Number(m[2].replace(/\./g, "").replace(",", ".")); };
+  assert.match(view, /In 2028, het eerste jaar met de warmtepomp, gebruikt het huis/);
+  const heat = await page.locator(".plain .receipt").nth(1).locator("li").allTextContents();
+  const heatTotal = amount(heat[2]);
+  const signed = line => (line.startsWith("−") ? -1 : 1) * amount(line);
+  assert.ok(Math.abs(signed(heat[0]) + signed(heat[1]) - heatTotal) <= 1, heat.join(" | "));
   // In de jaartabel springt het verbruik in 2028 met de warmtepomp omhoog, met de uitleg eronder.
   await page.click(`[role=tab]:has-text("Kasstromen")`);
+  await page.getByLabel("Jaartabel van").selectOption({ label: "Eigen optie 1" });
+  const bills = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
+    .evaluate(t => [...t.tBodies[0].rows[1].cells].slice(2, 4).map(c => c.textContent));
+  assert.ok(Math.abs(amount(bills[0]) - amount(bills[1]) - heatTotal) <= 1, `${bills} ≠ ${heatTotal}`);
   const yearly = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
     .evaluate(t => [...t.tBodies[0].rows].map(r => Number(r.cells[1].textContent.replace(/\D/g, ""))));
   assert.ok(Math.abs(yearly[1] - yearly[0] - 2500) < 50, JSON.stringify(yearly.slice(0, 2)));
