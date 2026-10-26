@@ -560,7 +560,7 @@
         .slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
       const outside = eligible.filter(p => !included.includes(p)).map(p => ({ ...p, reason: filter && distance(p) > 0
         ? `${position(p)} dan ${rangeText()}.`
-        : `De berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk; deze ligt verder van ${rangeName()}.` }));
+        : `De berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk; ${range ? `deze ligt verder van ${rangeName()}` : "zonder zinvol bereik gaan de kleinste mee"}.` }));
       const excluded = [...products.filter(p => p.reason), ...outside].sort((a, b) => a.name.localeCompare(b.name, "nl"));
       const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast", circuit: "Stekker, eigen groep" };
       const where = filter ? `, binnen ${rangeText()} vallen` : "";
@@ -571,10 +571,10 @@
             ? `Geen accu met een prijs en volledige gegevens valt binnen ${rangeText()}. We rekenen de dichtstbijzijnde ` +
               `${included.length === 1 ? "accu" : "kleinere en grotere accu"} door en vergelijken met geen accu. ` +
               "Verschuif het bereik om andere accu’s mee te nemen."
-            : `We rekenen ${chosen.length > included.length ? `de ${included.length} van de ${chosen.length}` : `alle ${included.length}`} ` +
+            : `We rekenen ${chosen.length > included.length ? `de ${included.length}${range ? "" : " kleinste"} van de ${chosen.length}` : `alle ${included.length}`} ` +
               `accu’s door die bij je antwoorden passen${where}${parse(answers.budget) != null ? " en binnen je budget blijven" : ""} ` +
               "en waarvan prijs, capaciteit en vermogen bekend zijn" +
-              `${chosen.length > included.length ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +
+              `${chosen.length > included.length && range ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +
               "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."),
         age.stale ? h("p", { class: "callout", role: "note" }, age.text) : null,
         h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}; controleer de actuele prijs bij de verkoper. ` +
