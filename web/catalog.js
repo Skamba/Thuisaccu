@@ -150,10 +150,13 @@
     });
   }
 
-  // Exact bedrag in minor units, zonder afronding via drijvende komma.
+  // Exact bedrag in minor units, zonder afronding via drijvende komma. Nederlandse notatie mag: € 6.500,00.
   function minorUnits(raw, exponent) {
-    const text = raw.trim().replace(",", ".");
-    if (!/^\d+(\.\d+)?$/.test(text)) throw new Error("Gebruik een positief bedrag zonder duizendtalscheiding.");
+    let text = raw.trim().replace(/^€/, "").replace(/\s/g, "");
+    // Punten in groepen van drie zijn duizendtallen; bij een valuta met drie decimalen is dat dubbelzinnig.
+    if (exponent < 3 && /^\d{1,3}(\.\d{3})+(,\d+)?$/.test(text)) text = text.replace(/\./g, "");
+    text = text.replace(",", ".");
+    if (!/^\d+(\.\d+)?$/.test(text)) throw new Error("Gebruik een positief bedrag, bijvoorbeeld 6500 of 6.500,00.");
     const [whole, fraction = ""] = text.split(".");
     if (fraction.length > exponent) throw new Error("Het bedrag heeft meer decimalen dan de valuta toestaat.");
     const minor = Number(whole + fraction.padEnd(exponent, "0"));
@@ -167,7 +170,7 @@
         product: input({ required: true, maxlength: "200" }), model_code: input({ maxlength: "200" }),
       product_kind: select([["battery_system", "Accusysteem"], ["battery_module", "Accumodule"]]),
         configuration: input({ required: true, maxlength: "200", placeholder: "Bijv. 2 modules met omvormer X" }),
-      market: input({ required: true, maxlength: "200", value: "unspecified" }),
+      market: input({ required: true, maxlength: "200", value: "Nederland" }),
         source_title: input({ required: true, maxlength: "200", value: "Eigen invoer of offerte" }),
       source_url: input({ type: "url", placeholder: "https://…" }),
         locator: input({ required: true, maxlength: "200", value: "Handmatige invoer" }), document_revision: input(),
@@ -185,7 +188,12 @@
       warranty_years: numberInput({ min: "0.25", step: "0.25" }),
       backup: select([["unknown", "Niet bekend"], ["supported", "Ondersteund"],
         ["unsupported", "Niet ondersteund"], ["conditional", "Onder voorwaarden"]]),
-      price: input({ inputmode: "decimal", placeholder: "Bijv. 6500,00" }),
+      // Zonder deze claim blijft de omvormer een onbekende kostenpost en rekent de keuzehulp de accu niet door.
+      inverter: select([["unknown", "Niet bekend"], ["supported", "Zit in het product"], ["unsupported", "Aparte omvormer nodig"]]),
+      // De keuzehulp leest de soort uit de koppeltekst: ‘stekker’ is een stekkeraccu, iets anders een vaste installatie.
+      coupling: select([["", "Niet bekend"], ["Stekker (stopcontact)", "Stekker in het stopcontact"],
+        ["Vaste aansluiting door een installateur", "Vaste installatie"]]),
+      price: input({ inputmode: "decimal", placeholder: "Bijv. 6.500,00" }),
         currency: input({ value: "EUR", pattern: "[A-Z]{3}", maxlength: "3" }),
       exponent: select([["2", "2 (EUR/USD)"], ["0", "0 (JPY)"], ["3", "3 (KWD)"]]), seller: input(),
       tax_basis: select([["unknown", "Niet bekend"], ["included", "Inclusief btw"], ["excluded", "Exclusief btw"]]),
@@ -200,8 +208,8 @@
           if (get(key)) numbersOut.push({ metric, qualifier: "exact", value: Number(get(key)) * scale,
             boundary: get(boundary), reported_value: `${get(key)} ${unit}` });
         }
-        const featuresOut = get("backup") === "unknown" ? [] : [{ metric: "backup", status: get("backup"),
-          conditions: get("conditions") }];
+        const featuresOut = [["backup", "backup"], ["inverter_included", "inverter"]].filter(([, key]) => get(key) !== "unknown")
+          .map(([metric, key]) => ({ metric, status: get(key), conditions: metric === "backup" ? get("conditions") : "" }));
         if (featuresOut.some(v => v.status === "conditional" && !v.conditions)) throw new Error("Beschrijf de voorwaarden voor noodstroom onder voorwaarden.");
         let price = null;
         if (get("price")) {
@@ -216,7 +224,8 @@
             product_kind: get("product_kind"), configuration: get("configuration"),
           market: get("market"), source_url: get("source_url"), source_title: get("source_title"),
             locator: get("locator"), document_revision: get("document_revision") || null,
-          published_on: null, conditions: get("conditions"), numbers: numbersOut, features: featuresOut, texts: [],
+          published_on: null, conditions: get("conditions"), numbers: numbersOut, features: featuresOut,
+          texts: get("coupling") ? [{ metric: "coupling", value: get("coupling") }] : [],
           product_warranty_months: get("warranty_years") ? Math.round(Number(get("warranty_years")) * 12) : null, price
         };
         const result = await UI.api("/api/v1/candidates", { method: "POST", json: payload });
@@ -239,7 +248,7 @@
           ["Continu laden (kW)", "charge_kw"], ["Continu ontladen (kW)", "discharge_kw"],
           ["Meetgrens vermogen", "power_boundary"], ["Round-trip-rendement (%)", "efficiency_pct"],
           ["Meetgrens rendement", "efficiency_boundary"], ["Productgarantie (jaren)", "warranty_years"],
-          ["Noodstroom", "backup"])),
+          ["Aansluiting", "coupling"], ["Omvormer", "inverter"], ["Noodstroom", "backup"])),
       h("fieldset", {}, h("legend", {}, "Prijs (optioneel)"),
         grid(["Aanschafbedrag", "price"], ["Valuta", "currency"], ["Decimalen van de valuta", "exponent"],
           ["Verkoper", "seller"], ["Belastingbasis", "tax_basis"],

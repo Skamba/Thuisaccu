@@ -510,6 +510,48 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await close();
 });
 
+test("eigen accu met een offerte in Nederlandse notatie rekent mee in de keuzehulp", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table", { timeout: 30000 });
+  await page.click("button:has-text('+ Eigen accu of offerte')");
+  const dialog = page.locator("dialog[open]");
+  assert.equal(await dialog.getByLabel("Markt of regio").inputValue(), "Nederland");
+  await dialog.getByLabel("Fabrikant").fill("Fictief Merk");
+  await dialog.getByLabel("Productnaam").fill("Voorbeeldaccu 10");
+  await dialog.getByLabel("Concrete uitvoering").fill("1 unit · 10 kWh · fictieve offerte");
+  await dialog.getByLabel("Bruikbare energie (kWh)").fill("9.6");
+  await dialog.getByLabel("Continu laden (kW)").fill("5");
+  await dialog.getByLabel("Continu ontladen (kW)").fill("5");
+  await dialog.getByLabel("Meetgrens vermogen").selectOption("system_ac");
+  // Zonder soort en omvormer zou de keuzehulp deze accu overslaan: de omvormer bleef dan een onbekende kostenpost.
+  await dialog.getByLabel("Aansluiting").selectOption({ label: "Vaste installatie" });
+  await dialog.getByLabel("Omvormer").selectOption({ label: "Zit in het product" });
+  await dialog.getByLabel("Aanschafbedrag").fill("€ 6.500,00");
+  await dialog.getByLabel("Verkoper").fill("Fictieve installateur");
+  await dialog.getByLabel("Belastingbasis").selectOption("included");
+  await dialog.getByLabel("Installatie inbegrepen").selectOption("true");
+  await dialog.locator("button:has-text('Bewaar')").click();
+  await page.waitForSelector("text=Opgeslagen als nieuwe bron");
+  await page.fill("#view input[type=search]", "Fictief");
+  assert.match(await page.textContent(".table-wrap"), /€\s6\.500 incl\. btw/);
+
+  await page.goto(`${base}/#/keuzehulp`);
+  await page.getByLabel("Stroom van het net per jaar (kWh)").fill("3500");
+  await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").fill("2500");
+  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("4500");
+  await next(page);
+  await next(page);
+  await page.click("button:has-text('Gebruik de indicatie')");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".product-group", { timeout: 30000 });
+  const row = page.locator(".product-group:first-of-type tr", { hasText: "Fictief Merk Voorbeeldaccu 10" });
+  assert.match(await row.textContent(), /Vast.*9,6 kWh.*5,0 kW.*€\s6\.500/);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async () => {
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
