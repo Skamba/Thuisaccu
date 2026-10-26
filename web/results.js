@@ -22,7 +22,9 @@ window.Results = (() => {
   ];
   const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
   // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs.
-  const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${eur0(value)}`;
+  // Naar beneden afgerond op € 10: de grens is een schatting, geen bedrag op de euro.
+  const roundedLimit = value => eur0(Math.floor(value / 10) * 10);
+  const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
   // Zelfde lijst als `finance::is_credit` in de rekenkern: deze posten verlagen de kosten.
   const CREDITS = ["grant", "vat_refund", "residual_value"];
 
@@ -81,13 +83,32 @@ window.Results = (() => {
           : "dan blijft géén accu de beste keuze.")));
     }
     const judged = rec || best;
+    const first = judged?.years?.[0], tariff = p.tariff;
+    // Na te rekenen besparing in jaar 1: vanaf 2027 zonder saldering en zonder staffel is dat precies
+    // minder netafname × stroomprijs min minder teruglevering × netto vergoeding (de vaste kosten vallen weg).
+    if (first && p.start_year >= 2027 && !tariff.export_fee_bands?.length) {
+      const fewerImport = base.grid_import_kwh - first.energy.grid_import_kwh;
+      const fewerExport = base.grid_export_kwh - first.energy.grid_export_kwh;
+      const net = tariff.export_eur_per_kwh - tariff.export_fee_eur_per_kwh, price = v => money(v, { decimals: 4 });
+      const gain = fewerImport * tariff.import_eur_per_kwh, lost = fewerExport * net;
+      list.append(h("li", {}, `Zo reken je de besparing van ${judged.name} in het eerste jaar na: ` +
+        `${kwh(fewerImport)} minder van het net × ${price(tariff.import_eur_per_kwh)} = ${eur0(gain)}, ` +
+        `${lost >= 0 ? "min" : "plus"} ${kwh(fewerExport)} minder teruggeleverd × ${price(Math.abs(net))} ` +
+        `(vergoeding ${price(tariff.export_eur_per_kwh)} ${net >= 0 ? "min" : "is lager dan"} terugleverkosten ${price(tariff.export_fee_eur_per_kwh)}) = ${eur0(Math.abs(lost))}. ` +
+        `Samen ${eur0(gain - lost)} per jaar. Dat de teruglevering meer daalt dan de netafname, komt door ` +
+        `${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.`));
+    }
     if (judged && finite(judged.break_even_investment_eur)) {
       const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
+      const meaning = p.discount_pct > 0
+        ? ` ‘Lonend’ betekent hier: de besparing verdient de investering binnen ${p.horizon_years} jaar terug en levert daarbovenop ${pct(p.discount_pct)} per jaar op, wat je geld anders zou kunnen opbrengen (de discontovoet).`
+        : ` ‘Lonend’ betekent hier: binnen ${p.horizon_years} jaar verdien je de investering terug.`;
       list.append(h("li", {}, (limit > 0
-        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${eur0(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)}. Zo kun je een offerte of aanbieding zelf beoordelen.`
+        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${roundedLimit(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)} (alle startposten na teruggaven, zie Kostenopbouw). Zo kun je een offerte of aanbieding zelf beoordelen.${meaning}`
         : `${judged.name} kost je over de looptijd in geld van nu geld, ook als hij gratis zou zijn: de jaarkosten, verliezen en het sluimerverbruik wegen zwaarder dan de besparing.`) +
         (p.export_variant && finite(variantLimit)
-          ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${eur0(variantLimit)}` : "is hij zelfs gratis niet lonend"}.`
+          ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
+            (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert." : ".")
           : "")));
     }
     if (isEstimated(run)) list.append(h("li", {},

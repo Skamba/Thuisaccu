@@ -205,8 +205,15 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const runHash = await page.evaluate(() => location.hash);
   const summary = await page.textContent(".plain");
   assert.match(summary, /Als teruglevering vanaf 2030 niets meer oplevert/);
+  // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
+  const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
+  const saving = summary.match(/bespaart in het eerste jaar ongeveer (€\s*[\d.]+)/)[1];
+  const [, gain, sign, lost, total] = summary.match(/minder van het net × €\s*[\d,]+ = (€\s*[\d.]+), (min|plus) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ .+? = (€\s*[\d.]+)\. Samen (−?⁠?€\s*[\d.]+) per jaar/);
+  assert.ok(Math.abs(euro(total) - euro(saving)) <= 1, `${total} ≠ ${saving}`);
+  assert.ok(Math.abs(euro(gain) + (sign === "min" ? -1 : 1) * euro(lost) - euro(total)) <= 1);
+  assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
-  assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+|is hij zelfs gratis niet lonend)\./);
+  assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert)?|is hij zelfs gratis niet lonend)\./);
   assert.match(summary, /geschat uit jaartotalen/);
   // De kostenopbouw telt de startposten op tot de startinvestering van de gekozen accu.
   await page.click(`[role=tab]:has-text("Kostenopbouw")`);
@@ -513,7 +520,8 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const [, investment, npv] = option.match(/Startinvestering(.+?)Netto voordeel \(NPV\)(.+?)Nettowinst/);
   const limit = option.match(/Lonend bij een startinvestering(Tot .+?|Zelfs gratis niet)Eigen gebruik/)[1];
   const expected = euros(investment) + euros(npv);
-  if (limit.startsWith("Tot")) assert.ok(Math.abs(euros(limit) - expected) <= 1, `${limit} ≠ ${expected}`);
+  // De grens is naar beneden afgerond op € 10.
+  if (limit.startsWith("Tot")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
   else assert.ok(expected <= 1, `${expected} zou positief zijn`);
   assert.match(view, /lonend zolang de startinvestering niet boven ongeveer|ook als hij gratis zou zijn/);
   // Een kopie begint met een leeg adresveld, niet met de omschrijving.
