@@ -224,6 +224,9 @@ td strong, th strong { display: block; }
 .quote-check td { vertical-align: top; }
 .quote-inputs { display: flex; flex-wrap: wrap; gap: .3rem; }
 .quote-inputs input { width: 6.5rem; }
+.price-terms { margin-top: .5rem; }
+.price-terms fieldset { padding: .5rem; margin-bottom: .5rem; }
+.price-terms legend { font-size: .9rem; }
 .cost-rows { display: grid; gap: 0; }
 .cost-row { padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .cost-controls { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(7rem, 9rem) minmax(6rem, 8rem) minmax(12rem, 1fr); gap: .6rem; margin-top: .4rem; }

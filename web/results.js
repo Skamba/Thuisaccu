@@ -59,12 +59,14 @@ window.Results = (() => {
     const about = plugged.find(c => c.key === judged?.key) || plugged[0];
     const kw = about.battery.discharge_power_kw, grouped = candidates.find(c => plugs.get(c.key)?.circuit);
     const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
+    const names = plugged.slice(0, 5).map(c => c.name).join(", ") + (plugged.length > 5 ? ` en ${plugged.length - 5} meer` : "");
     return h("li", { id: PLUG_ADVICE, tabindex: "-1", class: "plug-advice" },
-      h("strong", {}, `${about.name} is een stekkerbatterij. `),
-      "Milieu Centraal raadt stekkerbatterijen op dit moment af, onder meer vanwege brandrisico: in één groep kan stroom van twee " +
-        "kanten komen, van het net en van de accu. Kies je er toch voor, gebruik dan een vaste wandcontactdoos op een groep met " +
-        "weinig andere apparaten, geen verlengsnoer of stekkerdoos, en lever ten hoogste 800 W terug (dat advies geeft Milieu Centraal " +
-        `voor stekkerzonnepanelen). Hier is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
+      h("strong", {}, "Milieu Centraal raadt stekkerbatterijen op dit moment af. "),
+      `Dit gaat over: ${names}. ` +
+      "De reden is onder meer brandrisico: in één groep kan stroom van twee kanten komen, van het net en van de accu. Kies je er " +
+        "toch voor, gebruik dan een vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, " +
+        "en laat de accu ten hoogste 800 W in het stopcontact leveren (dat advies geeft Milieu Centraal voor stekkerzonnepanelen). " +
+        `Voor ${about.name} is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
         "dus stel de accu lager in of kies een vaste aansluiting"}. Veiliger is een eigen groep in de meterkast door een installateur` +
         (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
         (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’` : "") +
@@ -78,6 +80,31 @@ window.Results = (() => {
     const advice = document.getElementById(PLUG_ADVICE);
     advice.scrollIntoView({ block: "center" }); advice.focus({ preventScroll: true });
   }, "ghost");
+
+  // Als geen accu wint: wat er zou moeten veranderen, uitsluitend met getallen uit deze berekening.
+  function whatIf(run, best) {
+    const request = run.input.request, p = request.parameters, result = run.result, lines = [];
+    const limit = best.break_even_investment_eur;
+    if (best.npv_eur > 0 && best.within_budget === false) lines.push(`je budget ruimer is: ${best.name} kost ` +
+      `${eur0(best.initial_investment_eur)}, meer dan je budget van ${eur0(p.budget_eur)}, en levert netto ${eur0(best.npv_eur)} op in geld van nu.`);
+    else if (finite(limit)) lines.push(limit > 0
+      ? `${best.name} minder kost dan ongeveer ${roundedLimit(limit)} (nu ${eur0(best.initial_investment_eur)}).`
+      : `de besparing groter wordt: ${best.name} is zelfs gratis niet lonend, omdat de jaarkosten, verliezen en het ` +
+        "sluimerverbruik zwaarder wegen dan de besparing. Een lagere prijs alleen is dus niet genoeg.");
+    const v = p.export_variant;
+    if (v && result.export_variant_recommended_key != null) {
+      const alt = result.candidates.find(c => c.key === result.export_variant_recommended_key);
+      const variantLimit = best.export_variant?.break_even_investment_eur;
+      lines.push(`teruglevering vanaf ${v.from_calendar_year} niets meer oplevert (‘${v.label}’): ` + (alt
+        ? `dan komt ${alt.name} wel het beste uit, met een netto voordeel van ${eur0(alt.export_variant.npv_eur)}.`
+        : finite(variantLimit) && variantLimit > 0 ? `dan is ${best.name} lonend tot ongeveer ${roundedLimit(variantLimit)}.`
+          : `ook dan is ${best.name} zelfs gratis niet lonend.`));
+    }
+    // Een warmtepomp of auto die je opgaf, zit al in deze uitkomst; die regel noemt hem alleen.
+    for (const c of request.load_changes || []) lines.push(`${c.kind === "ev" ? "de elektrische auto" : "de warmtepomp"} vanaf ` +
+      `${c.from_calendar_year} (${kwh(c.annual_kwh)} per jaar erbij) zit al in deze berekening; daarmee alleen verandert het dus niet.`);
+    return lines;
+  }
 
   function summary(run, plugs, circuit) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
@@ -103,7 +130,8 @@ window.Results = (() => {
         `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
     }
     const variant = p.export_variant, variantKey = result.export_variant_recommended_key;
-    if (variant && variantKey != null) {
+    // Zonder aanbeveling staat de terugleveringsvariant in ‘Dat verandert als’.
+    if (rec && variant && variantKey != null) {
       const alt = result.candidates.find(c => c.key === variantKey);
       const same = variantKey === result.recommended_key;
       list.append(h("li", {}, `Als teruglevering vanaf ${variant.from_calendar_year} niets meer oplevert ` +
@@ -112,6 +140,12 @@ window.Results = (() => {
           : "dan blijft géén accu de beste keuze.")));
     }
     const judged = rec || best;
+    const meaning = p.discount_pct > 0
+      ? `‘Lonend’ betekent hier: de besparing verdient de investering binnen ${p.horizon_years} jaar terug en levert daarbovenop ${pct(p.discount_pct)} per jaar op, wat je geld anders zou kunnen opbrengen (de discontovoet).`
+      : `‘Lonend’ betekent hier: binnen ${p.horizon_years} jaar verdien je de investering terug.`;
+    const changes = !rec && best && p.objective !== "self_consumption" ? whatIf(run, best) : [];
+    if (changes.length) list.append(h("li", {}, "Dat verandert als:", h("ul", { class: "what-if" }, changes.map(t => h("li", {}, t))),
+      `Bewaar deze berekening (hij staat onder Berekeningen) en reken opnieuw als je contract, de prijs of je verbruik verandert. ${meaning}`));
     const advice = plugAdvice(run, judged, plugs, circuit);
     if (advice) list.append(advice);
     const first = judged?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
@@ -162,13 +196,10 @@ window.Results = (() => {
           ". Extra verbruik ’s avonds en ’s nachts laat de accu vaker helemaal leeg lopen en levert dus meer op; extra verbruik overdag " +
           "laat minder zonnestroom over om op te slaan. Ook het capaciteitsverlies van de accu telt mee."));
     }
-    if (judged && finite(judged.break_even_investment_eur)) {
+    if (!changes.length && judged && finite(judged.break_even_investment_eur)) {
       const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
-      const meaning = p.discount_pct > 0
-        ? ` ‘Lonend’ betekent hier: de besparing verdient de investering binnen ${p.horizon_years} jaar terug en levert daarbovenop ${pct(p.discount_pct)} per jaar op, wat je geld anders zou kunnen opbrengen (de discontovoet).`
-        : ` ‘Lonend’ betekent hier: binnen ${p.horizon_years} jaar verdien je de investering terug.`;
       list.append(h("li", {}, (limit > 0
-        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${roundedLimit(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)} (alle startposten na teruggaven, zie Kostenopbouw). Zo kun je een offerte of aanbieding zelf beoordelen.${meaning}`
+        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${roundedLimit(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)} (alle startposten na teruggaven, zie Kostenopbouw). Zo kun je een offerte of aanbieding zelf beoordelen. ${meaning}`
         : `${judged.name} kost je over de looptijd in geld van nu geld, ook als hij gratis zou zijn: de jaarkosten, verliezen en het sluimerverbruik wegen zwaarder dan de besparing.`) +
         (p.export_variant && finite(variantLimit)
           ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
@@ -480,7 +511,7 @@ window.Results = (() => {
           return { question, hint, fields, value: value(input.battery), origin: origin(assumed, fields), assumed };
         }),
         cost("Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin? " +
-          "Vul de totaalprijs inclusief btw in; teruggaven en subsidie tellen apart.",
+          "Is het een vaste prijs of onder voorbehoud van een schouw? Vul de totaalprijs inclusief btw in; teruggaven en subsidie tellen apart.",
           [paper ? null : `${money(c.initial_investment_eur, { decimals: 0 })} startinvestering na teruggaven`,
             listed(paper ? "Gerekend met:" : "waarvan", priced, l => paper ? label(l.category) : `${label(l.category)} ${money(l.amount_minor / 100, { decimals: 0 })}`),
             listed("inbegrepen:", included, l => label(l.category)), listed("niet meegeteld:", skipped, l => label(l.category))]
@@ -506,13 +537,34 @@ window.Results = (() => {
       if (paper) return r.fields.some(f => answer(c, f).trim())
         ? h("span", { class: "write-in" }, r.fields.map(f => answer(c, f).trim() ? withUnit(f, UI.parse(answer(c, f)) ?? 0) : null).filter(Boolean).join(", "))
         : h("span", { class: "write-in" });
-      return h("span", { class: "quote-inputs" }, r.fields.map(f => {
+      const inputs = h("span", { class: "quote-inputs" }, r.fields.map(f => {
         const [, name, unit] = QUOTE_FIELDS.find(([key]) => key === f);
         const control = h("input", { type: "text", inputmode: "decimal", value: answer(c, f), placeholder: unit,
-          "aria-label": `Offerte zegt: ${name} (${unit === "€" ? "euro" : unit})`, size: "6" });
+          "aria-label": `Offerte zegt: ${f === "upfront_eur" ? "totaalprijs inclusief btw" : name} (${unit === "€" ? "euro" : unit})`, size: "6" });
         control.addEventListener("input", () => { quoted[c.key][f] = control.value; });
         return control;
       }));
+      return r.fields.includes("upfront_eur") ? h("div", {}, inputs, priceTerms(c)) : inputs;
+    };
+    // Bij een totaalprijs: welke apart geschatte posten erin zitten (standaard alle) en of het een vaste prijs is.
+    const priceTerms = c => {
+      const input = request.candidates.find(v => v.key === c.key), terms = (quoted[c.key] ||= {});
+      terms.separate ||= new Set();
+      const lines = input.costs.filter(l => l.timing === "upfront" && l.status === "priced" &&
+        !CREDITS.includes(l.category) && !["battery", "contingency"].includes(l.category));
+      const contingency = input.costs.find(l => l.category === "contingency" && l.status === "priced");
+      const kind = UI.select([["", "Weet ik niet"], ["fixed", "Vaste prijs"], ["survey", "Onder voorbehoud van schouw"]], terms.price ?? "",
+        { onchange: event => { terms.price = event.target.value; } });
+      return h("div", { class: "price-terms" },
+        lines.length ? h("fieldset", {}, h("legend", {}, "Telt als inbegrepen in je totaalprijs (vink uit wat de offerte niet noemt)"),
+          lines.map(l => {
+            const { box, element } = UI.checkbox(`${label(l.category)} (geschat ${money(l.amount_minor / 100, { decimals: 0 })})`,
+              { checked: !terms.separate.has(l.category) });
+            box.addEventListener("change", () => { if (box.checked) terms.separate.delete(l.category); else terms.separate.add(l.category); });
+            return element;
+          })) : null,
+        UI.field("Vaste prijs of onder voorbehoud van schouw?", kind, contingency
+          ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}).` : null));
     };
     const sheet = (c, paper = false) => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
       rows(c, paper).map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
@@ -543,24 +595,28 @@ window.Results = (() => {
     const again = button("Reken opnieuw met de offerte", () => {
       const c = all.find(o => o.key === pick.value), input = request.candidates.find(v => v.key === c?.key);
       if (!input) return;
-      const changes = [], wrong = [];
+      const changes = [], wrong = [], notes = [], terms = quoted[c.key] || {};
+      const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
       for (const [field, name] of QUOTE_FIELDS) {
         const raw = answer(c, field).trim();
         if (!raw) continue;
         // Bedragen in hele centen, zoals de kostenposten.
-        const parsed = UI.parse(raw), after = parsed != null && Data.isPriceField(field) ? Math.round(parsed * 100) / 100 : parsed;
-        const before = Data.quoteValue(input, field);
-        if (after == null || after < 0) wrong.push(name);
-        else if (after !== before) changes.push({ field, before, after });
+        const parsed = UI.parse(raw), value = parsed != null && Data.isPriceField(field) ? Math.round(parsed * 100) / 100 : parsed;
+        if (value == null || value < 0) { wrong.push(name); continue; }
+        if (field === "upfront_eur") {
+          const separate = [...(terms.separate || [])];
+          Data.applyQuotePrice(candidate, field, value, { separate, fixedPrice: terms.price === "fixed" });
+          notes.push(`totaalprijs ${Data.quoteUnit(field, value)}` +
+            (separate.length ? `, apart gehouden: ${separate.map(label).join(", ")}` : "") +
+            `, ${terms.price === "fixed" ? "vaste prijs" : terms.price === "survey" ? "onder voorbehoud van schouw" : "niet bekend of de prijs vast is"}`);
+        } else if (field === "subscription_eur") Data.applyQuotePrice(candidate, field, value);
+        else candidate.battery[field] = value;
+        const before = Data.quoteValue(input, field), after = Data.quoteValue(candidate, field);
+        if (Math.abs(after - before) > 1e-9) changes.push({ field, before, after });
       }
       if (wrong.length) { UI.toast(`Geen geldig getal bij ${wrong.join(", ")}.`, true); return; }
       if (!changes.length) { UI.toast("Vul eerst minstens één waarde uit de offerte in die afwijkt.", true); return; }
-      const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
-      for (const ch of changes) {
-        if (Data.isPriceField(ch.field)) Data.applyQuotePrice(candidate, ch.field, ch.after);
-        else candidate.battery[ch.field] = ch.after;
-      }
-      candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${changes.map(changeText).join("; ")}.`.slice(0, 2000);
+      candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${[...changes.map(changeText), ...notes].join("; ")}.`.slice(0, 2000);
       delete copy.quote_basis;
       Scenario.load(copy, { title: `${request.title} · offerte`.slice(0, 200), step: 3,
         basis: { run_id: run.id, title: request.title, candidate_key: c.key,

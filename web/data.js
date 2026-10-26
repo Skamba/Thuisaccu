@@ -41,12 +41,12 @@ window.Data = (() => {
   const CREDITS = ["grant", "vat_refund", "residual_value"];
   // Wat de offertecheck uit een offerte kan overnemen: [veld, naam, eenheid], gelijk aan QUOTE_FIELDS in
   // scenario_api.rs. De technische velden staan in `battery`; de totaalprijs is de som van alle betaalde
-  // startposten vóór teruggaven, het abonnement het bedrag per jaar (0 zonder abonnement).
+  // startposten vóór teruggaven (de totaalprijs plus wat je apart hield), het abonnement het bedrag per jaar (0 zonder).
   const QUOTE_FIELDS = [["usable_capacity_kwh", "bruikbare capaciteit", "kWh"], ["charge_power_kw", "laadvermogen AC", "kW"],
     ["discharge_power_kw", "ontlaadvermogen AC", "kW"], ["ac_round_trip_efficiency_pct", "rendement AC → AC", "%"],
     ["standby_w", "sluimerverbruik", "W"], ["operating_life_years", "levensduur", "jaar"],
     ["annual_capacity_loss_pct", "capaciteitsverlies per jaar", "%"],
-    ["upfront_eur", "totaalprijs inclusief btw", "€"], ["subscription_eur", "abonnement per jaar", "€"]];
+    ["upfront_eur", "startkosten vóór teruggaven", "€"], ["subscription_eur", "abonnement per jaar", "€"]];
   const isPriceField = field => field === "upfront_eur" || field === "subscription_eur";
   // De waarde van een offerteveld bij een optie zoals die naar de rekenkern gaat (bedragen in eurocenten).
   function quoteValue(candidate, field) {
@@ -60,9 +60,10 @@ window.Data = (() => {
   const quoteUnit = (field, value) => { const unit = QUOTE_FIELDS.find(([key]) => key === field)[2];
     return unit === "€" ? UI.money(value, { decimals: Number.isInteger(value) ? 0 : 2 }) : `${plain(value)}${unit === "%" ? "%" : ` ${unit}`}`; };
   const quoteChange = c => `${QUOTE_FIELDS.find(([key]) => key === c.field)[1]} ${quoteUnit(c.field, c.before)} → ${quoteUnit(c.field, c.after)}`;
-  // Zet een offerteprijs in de kostenposten: de totaalprijs op de accupost, wat al betaald was als inbegrepen,
-  // en geen reserve voor meerwerk; het abonnement als jaarbedrag. Bedragen in hele eurocenten.
-  function applyQuotePrice(candidate, field, value) {
+  // Zet een offerteprijs in de kostenposten: de totaalprijs op de accupost en de apart geschatte startposten
+  // als inbegrepen, behalve wat je apart houdt (`separate`, categorieën). De reserve voor meerwerk vervalt
+  // alleen bij een vaste prijs. Het abonnement wordt een jaarbedrag. Bedragen in hele eurocenten.
+  function applyQuotePrice(candidate, field, value, { separate = [], fixedPrice = false } = {}) {
     const set = (line, status, amount, source, notes) => Object.assign(line, { status, amount_minor: amount, source, notes });
     if (field === "subscription_eur") {
       const line = candidate.costs.find(l => l.category === "subscription");
@@ -73,9 +74,10 @@ window.Data = (() => {
     for (const line of candidate.costs.filter(l => l.timing === "upfront" && !CREDITS.includes(l.category))) {
       if (line.category === "battery") set(line, "priced", Math.round(value * 100), "Offerte (totaalprijs inclusief btw)",
         "Totaalprijs uit de offerte, inclusief btw.");
-      else if (line.category === "contingency") set(line, "not_applicable", 0, "Aanname",
-        "Aanname: de offerte is een vaste prijs; meerwerk na de schouw is niet meegeteld.");
-      else if (line.status === "priced") set(line, "included", 0, "In de totaalprijs van de offerte",
+      else if (line.category === "contingency") {
+        if (fixedPrice && line.status === "priced") set(line, "not_applicable", 0, "Offerte",
+          "Vaste prijs volgens de offerte; geen reserve voor meerwerk.");
+      } else if (line.status === "priced" && !separate.includes(line.category)) set(line, "included", 0, "In de totaalprijs van de offerte",
         "Was eerder apart geschat; nu inbegrepen in de totaalprijs van de offerte.");
     }
   }
