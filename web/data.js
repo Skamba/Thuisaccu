@@ -93,6 +93,17 @@ window.Data = (() => {
   const AC_BOUNDARY = ["system_ac", "ac_ac", "unspecified", "pv_ac"];
   // Bij meerdere bruikbare claims met dezelfde meetgrens telt de voorzichtigste waarde.
   const HIGHER_IS_CAUTIOUS = new Set(["standby_power_w"]);
+  // Rendementsclaims die niet als AC → AC-rendement voor de simulatie kunnen gelden; ze worden genoemd
+  // maar niet gebruikt. Een bovengrens (‘tot 90%’, piekwaarde) zegt niets over de ondergrens. Een
+  // rendement inclusief het eigen verbruik in rust telt het sluimerverbruik dubbel, want de simulatie
+  // rekent dat apart. En sommige claims zeggen zelf dat ze niet voor de complete AC-installatie gelden.
+  const UNUSABLE_EFFICIENCY = [
+    [c => c.qualifier === "at_most", "is een bovengrens, geen verwachte waarde"],
+    [c => /inclusief (het )?(eigen verbruik|stand-?by|sluimerverbruik)/i.test(c.conditions),
+      "bevat ook het eigen verbruik in rust; dat telt al als sluimerverbruik"],
+    [c => /geen rendement van de complete AC-installatie/i.test(c.conditions), "geldt niet voor de complete AC-installatie"]
+  ];
+  const unusableEfficiency = c => UNUSABLE_EFFICIENCY.find(([test]) => test(c))?.[1];
   const METRIC_LABELS = { usable_energy_wh: "bruikbare capaciteit", nominal_energy_wh: "nominale capaciteit",
     depth_of_discharge_pct: "ontlaaddiepte", continuous_discharge_power_w: "ontlaadvermogen",
     continuous_charge_power_w: "laadvermogen", round_trip_efficiency_pct: "rendement", standby_power_w: "sluimerverbruik" };
@@ -107,8 +118,8 @@ window.Data = (() => {
     const notes = [], missing = [], used = [];
     // Selectieregel: de meest geschikte meetgrens, daarbinnen de voorzichtigste waarde. Andere
     // waarden worden genoemd; claim-ID en bron gaan mee in de aannames van de berekening.
-    const claim = (metric, order = ANY_BOUNDARY) => {
-      const fitting = numbers.filter(c => c.metric_key === metric && order.includes(c.boundary));
+    const claim = (metric, order = ANY_BOUNDARY, skip = () => false) => {
+      const fitting = numbers.filter(c => c.metric_key === metric && order.includes(c.boundary) && !skip(c));
       if (!fitting.length) return undefined;
       const boundary = order.find(b => fitting.some(c => c.boundary === b));
       const same = fitting.filter(c => c.boundary === boundary);
@@ -151,7 +162,10 @@ window.Data = (() => {
     if (chargeKw == null && dischargeKw != null) { chargeKw = dischargeKw;
       notes.push(`Aanname: laadvermogen gelijk aan ontlaadvermogen; de bron noemt geen laadvermogen aan de AC-kant.${dcNote("continuous_charge_power_w", "laadvermogen")}`); }
 
-    const rte = claim("round_trip_efficiency_pct", AC_BOUNDARY);
+    const rte = claim("round_trip_efficiency_pct", AC_BOUNDARY, unusableEfficiency);
+    for (const c of numbers.filter(c => c.metric_key === "round_trip_efficiency_pct" && unusableEfficiency(c))) {
+      notes.push(`Rendement ${n(c.value, Number.isInteger(c.value) ? 0 : 2)}% (claim #${c.id}) ${unusableEfficiency(c)}, en telt daarom niet mee.`);
+    }
     let efficiency = FALLBACK.efficiency;
     if (rte) {
       efficiency = rte.value;

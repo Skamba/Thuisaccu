@@ -555,6 +555,33 @@ test("eigen accu met een offerte in Nederlandse notatie rekent mee in de keuzehu
   await close();
 });
 
+test("rendement: geen bovengrens en geen rustverbruik dubbel meegeteld", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table", { timeout: 30000 });
+  const found = await page.evaluate(async () => {
+    const cmp = await UI.api("/api/v1/comparison");
+    return cmp.configurations.filter(c => c.product_name === "SolarCube Pro")
+      .map(c => Data.describe(cmp, c)).filter(p => p.standby === 9.3)
+      .map(p => ({ efficiency: p.efficiency, standby: p.standby, notes: p.notes.join(" ") }))[0];
+  });
+  // Onderzochte set 3: gesloten cyclus 81,29% aan het stopcontact, apart 9,3 W in rust; de 80,05% over
+  // dezelfde cyclus bevat dat rustverbruik al en zou het met het sluimerverbruik dubbel tellen.
+  assert.equal(found.efficiency, 81.29);
+  assert.equal(found.standby, 9.3);
+  assert.match(found.notes, /Rendement 80,05% \(claim #\d+\) bevat ook het eigen verbruik in rust/);
+  // Een bovengrens (‘tot 90%’) is geen verwachte waarde: dan geldt de voorzichtige aanname.
+  const nexus = await page.evaluate(async () => {
+    const cmp = await UI.api("/api/v1/comparison");
+    const p = Data.describe(cmp, cmp.configurations.find(c => c.product_name === "Nexus thuisbatterij"));
+    return { efficiency: p.efficiency, notes: p.notes.join(" ") };
+  });
+  assert.equal(nexus.efficiency, 77);
+  assert.match(nexus.notes, /Rendement 90% \(claim #\d+\) is een bovengrens/);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async () => {
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
