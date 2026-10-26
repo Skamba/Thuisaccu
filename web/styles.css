@@ -215,10 +215,14 @@ td strong, th strong { display: block; }
   body.print-check #print-sheet { display: block; }
   #print-sheet table { width: 100%; }
   #print-sheet tr { break-inside: avoid; }
-  #print-sheet .write-in { display: block; min-width: 8rem; min-height: 2.2rem; border-bottom: 1px solid #000; }
+  /* Ruimte voor handschrift zoals ‘9,3 kWh bruikbaar, 10 jaar / 6.000 cycli’. */
+  #print-sheet th:nth-child(3), #print-sheet td:nth-child(3) { width: 32%; }
+  #print-sheet .write-in { display: block; min-height: 3.2rem; border-bottom: 1px solid #000; }
 }
 #print-sheet { display: none; }
 .quote-check td { vertical-align: top; }
+.quote-inputs { display: flex; flex-wrap: wrap; gap: .3rem; }
+.quote-inputs input { width: 6.5rem; }
 .cost-rows { display: grid; gap: 0; }
 .cost-row { padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .cost-controls { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(7rem, 9rem) minmax(6rem, 8rem) minmax(12rem, 1fr); gap: .6rem; margin-top: .4rem; }

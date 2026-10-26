@@ -144,6 +144,14 @@ window.Results = (() => {
             (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert." : ".")
           : "")));
     }
+    // Herberekend vanuit de offertecheck: wat er veranderde en wat dat met de grensprijs doet.
+    const quote = run.input.request.quote_basis, quotedOption = quote && result.candidates.find(c => c.key === quote.candidate_key);
+    if (quotedOption) list.append(h("li", {}, `Herberekend met de antwoorden uit je offerte, op basis van `,
+      UI.link(`‘${quote.title}’`, `#/berekeningen/${quote.run_id}`), `: ${quote.changes.map(changeText).join("; ")}. ` +
+      (finite(quotedOption.break_even_investment_eur) && finite(quote.break_even_investment_eur)
+        ? `${quotedOption.name} is nu lonend tot ongeveer ${roundedLimit(Math.max(0, quotedOption.break_even_investment_eur))}; ` +
+          `met de oorspronkelijke waarden was dat ${roundedLimit(Math.max(0, quote.break_even_investment_eur))}.`
+        : "")));
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
@@ -378,76 +386,114 @@ window.Results = (() => {
   }
 
   // Vragen voor de offerte, met de waarde waarmee gerekend is. Of een waarde een aanname is, staat in de
-  // aannametekst van de keuzehulp (`describe` in data.js); in Zelf doorrekenen is alles eigen invoer.
+  // aannametekst van de keuzehulp (`describe` in data.js); in Zelf doorrekenen is de techniek eigen invoer.
   const VAT_URL = "https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw";
-  const plain = value => n(value, Number.isInteger(value) ? 0 : 2);
+  // Hoogstens twee decimalen, zonder nullen aan het eind: 9,3 en 6,03.
+  const plain = value => n(value, 2).replace(/,?0+$/, "");
+  // Technische velden die je uit de offerte kunt overnemen: [veld, naam, eenheid].
+  const QUOTE_FIELDS = [["usable_capacity_kwh", "bruikbare capaciteit", "kWh"], ["charge_power_kw", "laadvermogen AC", "kW"],
+    ["discharge_power_kw", "ontlaadvermogen AC", "kW"], ["ac_round_trip_efficiency_pct", "rendement AC → AC", "%"],
+    ["standby_w", "sluimerverbruik", "W"], ["operating_life_years", "levensduur", "jaar"],
+    ["annual_capacity_loss_pct", "capaciteitsverlies per jaar", "%"]];
+  const withUnit = (field, value) => { const unit = QUOTE_FIELDS.find(([key]) => key === field)[2];
+    return `${plain(value)}${unit === "%" ? "%" : ` ${unit}`}`; };
+  const changeText = c => `${QUOTE_FIELDS.find(([key]) => key === c.field)[1]} ${withUnit(c.field, c.before)} → ${withUnit(c.field, c.after)}`;
+  // [vraag, velden in de offerte, waarde, aannamepatroon, wat geen antwoord is]
   const CHECK = [
-    ["Bruikbare capaciteit", b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`, /Aanname: [\d,]+% van de opgegeven/,
+    ["Bruikbare capaciteit", ["usable_capacity_kwh"], b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`, /Aanname: [\d,]+% van de opgegeven/,
       "Niet de nominale of totale capaciteit: vraag hoeveel kWh je echt kunt gebruiken."],
-    ["Laadvermogen aan de AC-kant", b => `${plain(b.charge_power_kw)} kW`, /Aanname: laadvermogen gelijk/,
+    ["Laadvermogen aan de AC-kant", ["charge_power_kw"], b => `${plain(b.charge_power_kw)} kW`, /Aanname: laadvermogen gelijk/,
       "Hoeveel zonnestroom de accu per uur kan opnemen. Een DC- of PV-ingang telt niet."],
-    ["Ontlaadvermogen aan de AC-kant", b => `${plain(b.discharge_power_kw)} kW`, /ontladen ingesteld op 800 W/,
+    ["Ontlaadvermogen aan de AC-kant", ["discharge_power_kw"], b => `${plain(b.discharge_power_kw)} kW`, /ontladen ingesteld op 800 W/,
       "Wat de accu continu aan je huis levert. kVA is geen kW, en een piek van een paar seconden telt niet."],
-    ["Rendement AC → AC, heen en terug", b => `${plain(b.ac_round_trip_efficiency_pct)}%`, /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
+    ["Rendement AC → AC, heen en terug", ["ac_round_trip_efficiency_pct"], b => `${plain(b.ac_round_trip_efficiency_pct)}%`,
+      /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
       "‘Tot 95%’, een DC-rendement of het rendement van alleen de batterij is niet hetzelfde."],
-    ["Sluimerverbruik van accu, omvormer en regeling samen", b => `${plain(b.standby_w)} W`, /Aanname: [\d,]+ W sluimerverbruik/,
+    ["Sluimerverbruik van accu, omvormer en regeling samen", ["standby_w"], b => `${plain(b.standby_w)} W`, /Aanname: [\d,]+ W sluimerverbruik/,
       "Ook als de accu niets doet. ‘Zit in het rendement’ is geen antwoord."],
-    ["Garantie: jaren, cycli of MWh doorvoer en gegarandeerde restcapaciteit",
+    ["Garantie: jaren, cycli of MWh doorvoer en gegarandeerde restcapaciteit", ["operating_life_years", "annual_capacity_loss_pct"],
       b => `${plain(b.operating_life_years)} jaar levensduur, ${plain(b.annual_capacity_loss_pct)}% capaciteitsverlies per jaar`, /Aanname: [\d,]+% capaciteitsverlies/,
       "Vraag ook wie de garantie geeft, fabrikant of installateur, en wat er gebeurt als de installateur stopt."]
   ];
   function quoteCheck(run, all, categories) {
     const request = run.input.request, result = run.result, out = h("div"), target = h("div");
+    const own = input => !/^Keuzehulp\./.test(input.assumptions);
+    // Standaard je eigen offerte als die er is, anders de aanbevolen accu of die met de hoogste NPV.
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
-    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), result.recommended_key ?? best?.key);
+    const first = request.candidates.find(own)?.key ?? result.recommended_key ?? best?.key;
+    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
-    // Rijen voor één optie: vraag, toelichting, waarde en herkomst.
-    function rows(c) {
-      const input = request.candidates.find(v => v.key === c.key);
-      const own = !/^Keuzehulp\./.test(input.assumptions);
-      const origin = (assumed, mine = own) => assumed && !mine ? badge("aanname: vraag dit eerst", "warning") : badge(mine ? "jouw invoer" : "bron");
+    const basis = request.quote_basis;
+    // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3).
+    const quoted = {};
+    // Rijen voor één optie: vraag, toelichting, velden, waarde, herkomst en of het een aanname is.
+    // Op papier staan bij de prijs geen bedragen: die laten zien hoeveel ruimte je jezelf geeft.
+    function rows(c, paper) {
+      const input = request.candidates.find(v => v.key === c.key), mine = own(input);
+      const fromQuote = fields => basis?.candidate_key === c.key && basis.changes.some(ch => fields.includes(ch.field));
+      const origin = (assumed, fields = []) => fromQuote(fields) ? badge("offerte", "success")
+        : assumed ? badge("aanname: vraag dit eerst", "warning") : badge(mine ? "jouw invoer" : "bron");
       const line = key => input.costs.find(l => l.category === key);
       const status = l => !l || l.status === "not_applicable" ? "niet meegeteld"
-        : l.status === "priced" ? money(l.amount_minor / 100, { decimals: 0 }) : "inbegrepen";
-      // Ook in Zelf doorrekenen kunnen kostenposten aannames zijn, ingevuld met ‘Vul open posten met indicaties’.
-      const costOrigin = (...keys) => { const assumed = keys.map(line).some(l => l && Data.isAssumption(l));
-        return origin(assumed, own && !assumed); };
+        : l.status === "priced" ? (paper ? "meegeteld" : money(l.amount_minor / 100, { decimals: 0 })) : "inbegrepen";
+      const assumedCost = (...keys) => keys.map(line).some(l => l && Data.isAssumption(l));
       const priced = input.costs.filter(l => l.timing === "upfront" && l.status === "priced" && !CREDITS.includes(l.category));
       const included = input.costs.filter(l => l.status === "included");
       const skipped = ["inverter", "ems_metering", "installation", "cabling_protection", "meter_cabinet", "grid_connection"]
         .map(line).filter(l => l && l.status === "not_applicable");
-      const listed = (title, lines, show) => lines.length ? `; ${title} ${lines.map(show).join(", ")}` : "";
+      const listed = (title, lines, show) => lines.length ? `${title} ${lines.map(show).join(", ")}` : null;
       const subscription = line("subscription"), vat = line("vat_refund");
-      return [
-        ...CHECK.map(([question, value, assumption, hint]) => [question, hint, value(input.battery), origin(assumption.test(input.assumptions))]),
-        ["Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin?",
-          `${money(c.initial_investment_eur, { decimals: 0 })} startinvestering na teruggaven` +
-            listed("waarvan", priced, l => `${label(l.category)} ${money(l.amount_minor / 100, { decimals: 0 })}`) +
-            listed("inbegrepen:", included, l => label(l.category)) + listed("niet meegeteld:", skipped, l => label(l.category)),
-          costOrigin("installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering")],
-        ["Aansluiting", "1- of 3-fase, past het op je huidige aansluiting, en is een eigen groep in de meterkast (NEN 1010) inbegrepen?",
-          `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, costOrigin("meter_cabinet", "grid_connection")],
-        ["Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?",
-          status(line("backup")), costOrigin("backup")],
-        ["App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
-          subscription?.status === "priced" ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription), costOrigin("subscription")],
-        ["Btw", h("span", {}, "Prijs inclusief 21% btw? Zegt de installateur dat je de btw terugkrijgt: volgens de ",
+      const cost = (question, hint, value, ...keys) => { const assumed = assumedCost(...keys);
+        return { question, hint, fields: [], value, origin: origin(assumed), assumed }; };
+      const list = [
+        ...CHECK.map(([question, fields, value, pattern, hint]) => {
+          const assumed = !mine && pattern.test(input.assumptions) && !fromQuote(fields);
+          return { question, hint, fields, value: value(input.battery), origin: origin(assumed, fields), assumed };
+        }),
+        cost("Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin?",
+          [paper ? null : `${money(c.initial_investment_eur, { decimals: 0 })} startinvestering na teruggaven`,
+            listed(paper ? "Gerekend met:" : "waarvan", priced, l => paper ? label(l.category) : `${label(l.category)} ${money(l.amount_minor / 100, { decimals: 0 })}`),
+            listed("inbegrepen:", included, l => label(l.category)), listed("niet meegeteld:", skipped, l => label(l.category))]
+            .filter(Boolean).join("; "),
+          "installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering"),
+        cost("Aansluiting", "1- of 3-fase, past het op je huidige aansluiting, en is een eigen groep in de meterkast (NEN 1010) inbegrepen?",
+          `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, "meter_cabinet", "grid_connection"),
+        cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), "backup"),
+        cost("App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
+          subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription), "subscription"),
+        cost("Btw", h("span", {}, "Prijs inclusief 21% btw? Zegt de installateur dat je de btw terugkrijgt: volgens de ",
           UI.external("Belastingdienst", VAT_URL), " kan dat niet als je de accu alleen voor je eigen huis gebruikt."),
-          vat?.status === "priced" ? `Teruggave van ${money(vat.amount_minor / 100, { decimals: 0 })} gerekend` : "Geen btw-teruggave gerekend", costOrigin("vat_refund")]
+          vat?.status === "priced" && !paper ? `Teruggave van ${money(vat.amount_minor / 100, { decimals: 0 })} gerekend`
+            : vat?.status === "priced" ? "Teruggave gerekend" : "Geen btw-teruggave gerekend", "vat_refund")
       ];
+      // Aannames eerst: die vraag je aan de keukentafel het eerst na.
+      return [...list.filter(r => r.assumed), ...list.filter(r => !r.assumed)];
     }
-    // Met een lege kolom voor wat de offerte zegt en een vinkje.
-    const sheet = c => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
-      rows(c).map(([question, hint, value, origin]) => [h("span", {}, h("strong", {}, question), h("br"), h("small", {}, hint)),
-        h("span", {}, value, " ", origin), h("span", { class: "write-in" }),
-        h("input", { type: "checkbox", "aria-label": `Klopt: ${question}` })]),
+    const answer = (c, field) => (quoted[c.key] ||= {})[field] ?? "";
+    // Op het scherm vul je de technische antwoorden in; op papier staat wat je invulde of een lege regel.
+    const cell = (c, r, paper) => {
+      if (paper) return r.fields.some(f => answer(c, f).trim())
+        ? h("span", { class: "write-in" }, r.fields.map(f => answer(c, f).trim() ? withUnit(f, UI.parse(answer(c, f)) ?? 0) : null).filter(Boolean).join(", "))
+        : h("span", { class: "write-in" });
+      return h("span", { class: "quote-inputs" }, r.fields.map(f => {
+        const [, name, unit] = QUOTE_FIELDS.find(([key]) => key === f);
+        const control = h("input", { type: "text", inputmode: "decimal", value: answer(c, f), placeholder: unit,
+          "aria-label": `Offerte zegt: ${name} (${unit})`, size: "6" });
+        control.addEventListener("input", () => { quoted[c.key][f] = control.value; });
+        return control;
+      }));
+    };
+    const sheet = (c, paper = false) => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
+      rows(c, paper).map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
+        h("span", {}, r.value, " ", r.origin), cell(c, r, paper),
+        h("input", { type: "checkbox", "aria-label": `Klopt: ${r.question}` })]),
       { className: "quote-check", stack: true });
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       target.replaceChildren(...(c ? [sheet(c)] : []));
     };
     pick.addEventListener("change", render); render();
-    // Afdrukken: alleen het blad, zonder energiegegevens, besparing of grensprijs.
+    // Afdrukken: alleen het blad, zonder energiegegevens, besparing, grensprijs of kostenbedragen.
     const print = button("Druk af voor de installateur", () => {
       const c = all.find(o => o.key === pick.value);
       if (!c) return;
@@ -456,15 +502,39 @@ window.Results = (() => {
         isFictitious(run) ? h("p", { class: "callout" }, "FICTIEF: berekend met demogegevens.") : null,
         h("h1", {}, `Offertecheck: ${c.name}`),
         h("p", {}, `Gemaakt op ${new Date().toLocaleDateString("nl-NL")}. Vul per regel in wat de offerte zegt en vink af wat klopt. ` +
-          "Begin met de regels gemarkeerd ‘aanname’."),
-        sheet(c)));
+          "De regels gemarkeerd ‘aanname’ staan bovenaan: die zijn niet uit een bron."),
+        sheet(c, true)));
       document.body.classList.add("print-check");
       addEventListener("afterprint", () => document.body.classList.remove("print-check"), { once: true });
       window.print();
     }, "secondary");
-    out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron. " +
-      "Vraag die eerst na. Wijkt de offerte af, pas de waarde dan aan in Zelf doorrekenen en reken opnieuw."),
-      UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, print));
+    // Opnieuw rekenen: een kopie in Zelf doorrekenen met de waarden uit de offerte, geopend bij de controle.
+    const again = button("Reken opnieuw met de offerte", () => {
+      const c = all.find(o => o.key === pick.value), input = request.candidates.find(v => v.key === c?.key);
+      if (!input) return;
+      const changes = [], wrong = [];
+      for (const [field, name] of QUOTE_FIELDS) {
+        const raw = answer(c, field).trim();
+        if (!raw) continue;
+        const after = UI.parse(raw);
+        if (after == null || after < 0) wrong.push(name);
+        else if (after !== input.battery[field]) changes.push({ field, before: input.battery[field], after });
+      }
+      if (wrong.length) { UI.toast(`Geen geldig getal bij ${wrong.join(", ")}.`, true); return; }
+      if (!changes.length) { UI.toast("Vul eerst minstens één waarde uit de offerte in die afwijkt.", true); return; }
+      const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
+      for (const ch of changes) candidate.battery[ch.field] = ch.after;
+      candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${changes.map(changeText).join("; ")}.`.slice(0, 2000);
+      delete copy.quote_basis;
+      Scenario.load(copy, { title: `${request.title} · offerte`.slice(0, 200), step: 3,
+        basis: { run_id: run.id, title: request.title, candidate_key: c.key,
+          break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes } });
+      UI.toast("Offertewaarden overgenomen. Controleer de invoer, bevestig en reken opnieuw; de oude berekening blijft bewaard.");
+      location.hash = "#/zelf";
+    });
+    out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron " +
+      "en staan bovenaan. Vul de technische waarden uit de offerte in (bijvoorbeeld 9,3) en reken opnieuw; de oude berekening blijft bewaard."),
+      UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, run.id == null ? null : again, print));
     return out;
   }
 

@@ -46,6 +46,70 @@ pub struct RunRequest {
     /// Ontbreekt in runs van vóór deze uitbreiding.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_changes: Vec<crate::typical_profile::LoadChange>,
+    /// Herkomst van een herberekening uit de offertecheck: welke run, welke optie en welke
+    /// technische waarden uit de offerte kwamen. Alleen ter vergelijking; rekent niet mee.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_basis: Option<QuoteBasis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuoteBasis {
+    pub run_id: i64,
+    pub title: String,
+    pub candidate_key: String,
+    /// Tot welke startinvestering de optie in die run lonend was; ontbreekt bij runs van vóór
+    /// die uitkomst.
+    #[serde(default)]
+    pub break_even_investment_eur: Option<f64>,
+    pub changes: Vec<QuoteChange>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuoteChange {
+    /// Technisch veld van de accu, zoals `usable_capacity_kwh`.
+    pub field: String,
+    pub before: f64,
+    pub after: f64,
+}
+
+/// De velden van `Battery` die de offertecheck kan overnemen.
+const QUOTE_FIELDS: [&str; 7] = [
+    "usable_capacity_kwh",
+    "charge_power_kw",
+    "discharge_power_kw",
+    "ac_round_trip_efficiency_pct",
+    "standby_w",
+    "annual_capacity_loss_pct",
+    "operating_life_years",
+];
+
+fn validate_quote_basis(request: &RunRequest) -> Result<(), ApiError> {
+    let Some(basis) = &request.quote_basis else {
+        return Ok(());
+    };
+    let valid = basis.run_id > 0
+        && !basis.title.trim().is_empty()
+        && basis.title.chars().count() <= 200
+        && basis
+            .break_even_investment_eur
+            .is_none_or(|v| v.is_finite())
+        && request
+            .candidates
+            .iter()
+            .any(|c| c.key == basis.candidate_key)
+        && (1..=QUOTE_FIELDS.len()).contains(&basis.changes.len())
+        && basis.changes.iter().all(|c| {
+            QUOTE_FIELDS.contains(&c.field.as_str()) && c.before.is_finite() && c.after.is_finite()
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid(
+            "De herkomst uit de offertecheck is onvolledig of verwijst naar een onbekende optie.",
+        ))
+    }
 }
 
 pub async fn costs() -> Json<Value> {
@@ -91,6 +155,7 @@ pub async fn run(
             "Ongeldige coördinaten voor de Nederlandse adresondersteuning.",
         ));
     }
+    validate_quote_basis(&request)?;
     let (profile, periods) = load_profile(&catalog, request.solar_import_id).await?;
     let additions = request
         .load_changes

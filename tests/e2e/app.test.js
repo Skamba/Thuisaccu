@@ -249,7 +249,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.equal(await page.evaluate(() => window.printed && document.body.classList.contains("print-check")), true);
   const sheet = await page.textContent("#print-sheet");
   assert.match(sheet, /Offertecheck: .+Offerte zegt/);
-  assert.doesNotMatch(sheet, /NPV|Lonend|netto voordeel|bespaart|kWh per jaar/i);
+  assert.doesNotMatch(sheet, /NPV|Lonend|netto voordeel|bespaart|kWh per jaar|€/i);
+  // Aannames staan bovenaan, zodat je ze aan tafel niet hoeft te zoeken.
+  assert.match(await page.textContent("#print-sheet tbody tr:first-child"), /aanname: vraag dit eerst/);
   // Afgedrukt is alleen het blad zichtbaar.
   await page.emulateMedia({ media: "print" });
   assert.deepEqual([await page.isVisible("#print-sheet"), await page.isVisible("#view")], [true, false]);
@@ -541,6 +543,7 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.click("button:has-text('Bereken en bewaar')");
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
   await page.waitForSelector("text=Wat betekent dit voor jou?");
+  const firstRun = await page.evaluate(() => location.hash);
   const view = await page.textContent("#view");
   assert.match(view, /Nederland \(geen adres opgegeven\)/);
   // Een dure offerte verdient zich niet terug; een negatieve ROI krijgt een echt minteken.
@@ -585,6 +588,23 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.waitForSelector("text=Profiel en doel");
   assert.equal(await page.getByLabel("Adres in Nederland (optioneel)").inputValue(), "");
   assert.equal(await page.getByLabel("Extra verbruik (kWh per jaar)").inputValue(), "2500");
+  // Antwoorden uit de offerte (Nederlandse notatie) geven een nieuwe berekening; de oude blijft bewaard.
+  await page.goto(`${base}/${firstRun}`);
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  await page.getByLabel("Offerte zegt: bruikbare capaciteit (kWh)").fill("9,3");
+  await page.getByLabel("Offerte zegt: sluimerverbruik (W)").fill("15");
+  await page.click("button:has-text('Reken opnieuw met de offerte')");
+  await page.waitForSelector("text=Controle en berekenen");
+  assert.match(await page.textContent("#view"), /Uit de offerte.*Bruikbare capaciteit \(kWh\): 10 → 9,3; Sluimerverbruik \(W\): 10 → 15/);
+  for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
+  await page.click("button:has-text('Bereken en bewaar')");
+  await page.waitForFunction(old => /berekeningen\/\d+/.test(location.hash) && location.hash !== old, firstRun, { timeout: 120000 });
+  await page.waitForSelector("text=Herberekend met de antwoorden uit je offerte");
+  const quotedView = await page.textContent("#view");
+  assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W/);
+  assert.match(quotedView, /is nu lonend tot ongeveer €\s*[\d.]+; met de oorspronkelijke waarden was dat €\s*[\d.]+/);
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /9,3 kWh bruikbaar\s*offerte/);
   assert.deepEqual(problems, []);
   await close();
 });

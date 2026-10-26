@@ -443,3 +443,72 @@ async fn heat_pump_and_ev_from_a_later_year_are_added_only_from_that_year() {
     }
     assert_eq!(catalog.list_analyses().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn quote_basis_is_saved_as_provenance_and_strictly_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let plain = body(
+        app.clone()
+            .oneshot(post("/api/v1/analysis/runs", input(id)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    // De offerte noemt 4,5 kWh bruikbaar in plaats van 5; de herkomst rekent zelf niet mee.
+    let mut request = input(id);
+    request["candidates"][0]["battery"]["usable_capacity_kwh"] = json!(4.5);
+    request["quote_basis"] = json!({"run_id": 1, "title": "Test projection", "candidate_key": "test",
+        "break_even_investment_eur": 1234.5,
+        "changes": [{"field": "usable_capacity_kwh", "before": 5, "after": 4.5}]});
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let quoted = body(response).await;
+    assert!(
+        quoted["result"]["candidates"][0]["npv_eur"]
+            .as_f64()
+            .unwrap()
+            < plain["result"]["candidates"][0]["npv_eur"]
+                .as_f64()
+                .unwrap()
+    );
+    let saved = catalog.list_analyses().await.unwrap();
+    let newest = saved
+        .iter()
+        .find(|r| r.input["request"].get("quote_basis").is_some())
+        .unwrap();
+    assert_eq!(
+        newest.input["request"]["quote_basis"]["changes"][0]["after"],
+        4.5
+    );
+    assert!(
+        saved
+            .iter()
+            .any(|r| r.input["request"].get("quote_basis").is_none())
+    );
+
+    for (path, value) in [
+        ("candidate_key", json!("elders")),
+        ("changes", json!([])),
+        (
+            "changes",
+            json!([{"field": "price", "before": 1, "after": 2}]),
+        ),
+        ("title", json!(" ")),
+    ] {
+        let mut wrong = request.clone();
+        wrong["quote_basis"][path] = value;
+        let response = app
+            .clone()
+            .oneshot(post("/api/v1/analysis/runs", wrong))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+    assert_eq!(catalog.list_analyses().await.unwrap().len(), 2);
+}

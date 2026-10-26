@@ -46,7 +46,7 @@ window.Scenario = (() => {
       params: Object.fromEntries(PARAMS.map(([key]) => [key, String(d[key])])),
       tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
       variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
-        changes: [], options: []
+        changes: [], basis: null, options: []
     };
   }
   let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null;
@@ -55,7 +55,8 @@ window.Scenario = (() => {
     control.addEventListener("input", () => { write(control.value); persist(); }); return control; };
 
   // Neemt een bewaarde run over als nieuw concept; bevestigingen worden nooit overgenomen.
-  function load(request) {
+  // `extra` komt uit de offertecheck: een andere naam, de herkomst (`quote_basis`) en de stap om te openen.
+  function load(request, extra = {}) {
     const money2 = minor => (minor / 100).toFixed(2);
     state = {
       title: `${request.title} (kopie)`, address: NO_ADDRESS.test(request.site.address) ? "" : request.site.address,
@@ -88,7 +89,16 @@ window.Scenario = (() => {
           index: i
       }))
     };
+    Object.assign(state, extra);
     store.set(STORE, state);
+  }
+  const short = value => n(value, 2).replace(/,?0+$/, "");
+  // De herkomst uit de offertecheck, met de waarden zoals ze nu in de optie staan; zonder verschil vervalt ze.
+  function basis() {
+    const option = state.basis && state.options.find(o => o.key === state.basis.candidate_key);
+    const changes = option ? state.basis.changes.map(c => ({ ...c, after: parse(option.battery[c.field]) }))
+      .filter(c => c.after != null && c.after !== c.before) : [];
+    return changes.length ? { ...state.basis, changes } : null;
   }
 
   function bands() {
@@ -168,7 +178,7 @@ window.Scenario = (() => {
       : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
     return { problems,
       request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates,
-        ...(load_changes.length ? { load_changes } : {}) } };
+        ...(load_changes.length ? { load_changes } : {}), ...(basis() ? { quote_basis: basis() } : {}) } };
   }
 
   function stepProfile(body) {
@@ -464,7 +474,9 @@ window.Scenario = (() => {
         ["Stroomprijs / terugleververgoeding",
           `${state.tariff.import || "?"} / ${state.tariff.export || "?"} €/kWh`],
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
-        ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"]]),
+        ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"],
+        ...(basis() ? [["Uit de offerte", basis().changes.map(c => `${TECH.find(([key]) => key === c.field)[1]}: ` +
+          `${short(c.before)} → ${short(c.after)}`).join("; ")]] : [])]),
         problems.length ? h("div", { class: "callout" },
           h("p", {}, `${problems.length} ${problems.length === 1 ? "punt vraagt" : "punten vragen"} nog aandacht:`),
           h("ul", {}, problems.slice(0, 40).map(p => h("li", {}, p)))) : h("p", { class: "derived" },
@@ -486,7 +498,9 @@ window.Scenario = (() => {
         h("p", {}, "Zonder offertes? De ", link("keuzehulp", "#/keuzehulp"), " vult alles met bronvermelde indicaties.")));
       flow = UI.wizard([{ label: "Profiel en doel", render: stepProfile }, { label: "Tarieven", render: stepTariffs }, { label: "Accu-opties", render: stepOptions }, { label: "Controle", render: stepReview }],
         { validate: (_, body) => UI.validate(body), onShow: () => window.scrollTo(0, 0) });
-      view.append(flow.element); flow.show(0);
+      // Vanuit de offertecheck opent de controlestap direct; daarna begint de wizard weer vooraan.
+      view.append(flow.element); flow.show(state.step ?? 0);
+      if (state.step != null) { delete state.step; persist(); }
     }
   });
 
