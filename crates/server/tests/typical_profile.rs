@@ -240,7 +240,7 @@ fn heat_pump_and_ev_reshape_the_year_but_keep_the_annual_total() {
             .summary
             .warnings
             .iter()
-            .any(|w| w.contains("Elektrische auto"))
+            .any(|w| w.contains("Elektrische auto") && w.contains("geladen met 3,68 kW"))
     );
 
     for invalid in [

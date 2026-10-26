@@ -426,6 +426,9 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await next(page);
   await page.click("button:has-text('Bewaar energieprofiel')");
   await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+  // De periode staat in Nederlandse tijd, met het einde van de laatste meetperiode als ‘tot’.
+  assert.match(await page.textContent("#view"),
+    /Van 1-1-2025, 00:00 CET tot 1-1-2026, 00:00 CET · bestand gelezen in tijdzone Europe\/Amsterdam/);
   // Het profiel opent de keuzehulp met dit bestand gekozen, ook zonder de pagina te herladen.
   await page.click("button:has-text('Gebruik in de keuzehulp')");
   await page.waitForSelector("text=Bewaard energieprofiel");

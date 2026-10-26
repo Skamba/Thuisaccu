@@ -32,17 +32,19 @@
   const fitBadge = item => { const fit = Data.suitability(item);
     return badge(fit.reason, fit.ok === true ? "success" : fit.ok === false ? "warning" : ""); };
   const title = item => h("span", {}, item.filename, Data.isDemo(item) ? [" ", badge("FICTIEF", "demo")] : null);
-  const when = (seconds, timeZone = "UTC") => new Date(seconds * 1000).toLocaleString("nl-NL",
-    { timeZone, timeZoneName: "short" });
+  // Tijdstippen in Nederlandse tijd met de zone erbij (CET/CEST), ook als het bestand in UTC stond.
+  const when = seconds => new Date(seconds * 1000).toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam",
+    day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
 
-  function summaryView(summary, timeZone = "UTC") {
+  // fileZone: de tijdzone waarin het bestand is gelezen; null voor een geschat profiel.
+  function summaryView(summary, fileZone = null) {
     const hasUse = summary.consumption_kwh != null;
     return h("div", {},
       stats([["Zonne-opwek", kwh(summary.production_kwh)],
         ["Verbruik", hasUse ? kwh(summary.consumption_kwh) : "Niet in bestand"], ["Meetperioden", n(summary.rows, 0)],
         ["Dekking", `${n(summary.coverage_hours, 0)} uur`], ["Ontbrekende perioden", n(summary.gaps, 0)]]),
       h("p", { class: "help" },
-        `${when(summary.from_unix_s, timeZone)} t/m ${when(summary.to_unix_s, timeZone)} · tijdzone ${timeZone}`),
+        `Van ${when(summary.from_unix_s)} tot ${when(summary.to_unix_s)}${fileZone ? ` · bestand gelezen in tijdzone ${fileZone}` : ""}`),
       summary.interval_surplus_kwh != null ? h("p", {},
         `Opwek boven verbruik per meetperiode: ${kwh(summary.interval_surplus_kwh)}. Verbruik boven opwek: ${kwh(summary.interval_deficit_kwh)}. Dit zijn optellingen per meetperiode, geen accubesparing.`) : null,
       chart("bar",
@@ -66,7 +68,8 @@
       }
       view.append(table(["Profiel", "Periode", "Resolutie", "Opwek", "Verbruik", "Bruikbaar voor een berekening", ""], items.map(item => [
         link(title(item), `#/energie/${item.id}`),
-          `${UI.dateOnly(item.summary.from_unix_s)} – ${UI.dateOnly(item.summary.to_unix_s)}`,
+          // Het einde is het eind van de laatste meetperiode; toon de laatste dag die erin valt.
+          `${UI.dateOnly(item.summary.from_unix_s)} – ${UI.dateOnly(item.summary.to_unix_s - 1)}`,
         PERIODS[item.options.combined_period || item.options.period] || (Data.isDemo(item) ? "1 uur" : "Onbekend"),
           kwh(item.summary.production_kwh),
         item.summary.consumption_kwh == null ? "Nee" : kwh(item.summary.consumption_kwh), fitBadge(item),
@@ -117,7 +120,7 @@
           button("Zelf doorrekenen", () => { UI.store.set("thuisaccu-scenario", { profile: String(item.id) }); location.hash = "#/zelf"; }, "secondary"));
       }
       view.append(h("p", {}, title(item), " ", fitBadge(item)),
-        summaryView(item.summary, item.options.timezone || "UTC"));
+        summaryView(item.summary, item.options.generator ? null : item.options.timezone || "UTC"));
       if (fit.ok === true) {
         const curve = await UI.api(`/api/v1/solar/imports/${item.id}/capacity`).catch(() => null);
         if (curve) view.append(chart("line",

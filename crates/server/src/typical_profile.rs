@@ -197,8 +197,9 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     }
     if let (Some(start), Some(request_ev)) = (ev_start, &request.ev) {
         warnings.push(format!(
-            "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {EV_CHARGE_KW} kW vanaf {start:02}.00 uur ({}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
+            "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {} kW vanaf {start:02}.00 uur ({}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
             ev.round(),
+            EV_CHARGE_KW.to_string().replace('.', ","),
             match request_ev.charging.as_str() {
                 "evening" => "’s avonds",
                 "night" => "’s nachts",
