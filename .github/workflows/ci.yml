@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# Een nieuwere push op dezelfde branch maakt een lopende controle overbodig; op main loopt alles af,
+# omdat daar de publicatie op GitHub Pages aan hangt.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   checks:
     name: Checks (${{ matrix.os }})
@@ -17,7 +23,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install stable Rust and quality tools
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Check formatting
@@ -35,7 +41,7 @@ jobs:
     name: Browsertests en browserversie (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install stable Rust with the WebAssembly target
         run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
       # SQLite wordt voor de browserversie met clang naar WebAssembly gecompileerd.
@@ -49,7 +55,7 @@ jobs:
         run: cargo clippy --locked --target wasm32-unknown-unknown -p thuisaccu-browser -p thuisaccu-server -p thuisaccu-storage --lib -- -D warnings
       - name: Build browser version
         run: sh tools/build-site.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Check frontend syntax
