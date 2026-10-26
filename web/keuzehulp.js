@@ -168,7 +168,7 @@
         ["3", "3-fase", "Drie hoofdschakelaars of een brede driepolige schakelaar, vaak 3×25 A."],
         ["unknown", "Weet ik niet"]], "Een paar accu’s werken alleen op 3-fase. Stekkerbatterijen werken op beide."),
       pick("place", "Waar kan de accu staan?",
-        [["inside", "Binnen", "Bijvoorbeeld meterkast, berging of zolder (vorstvrij)."],
+        [["inside", "Binnen", "Bijvoorbeeld een berging, zolder of bijkeuken: vorstvrij en goed geventileerd, niet in een kast of de meterkast."],
           ["outside", "Buiten", "Tegen de gevel, in een schuur of garage."], ["any", "Maakt niet uit"]]),
       pick("backup", "Wil je noodstroom bij een stroomstoring?", [["no", "Niet nodig"], ["yes", "Ja, dat is belangrijk", "Veel accu’s schakelen bij een storing uit. Noodstroom vraagt extra onderdelen."]]));
   }
@@ -563,7 +563,7 @@
       h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), status);
     // Het stekkeradvies staat al bij de woningvragen en komt terug op de uitkomst; hier ingeklapt.
     const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht en veiligheid"),
-      h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
+      h("p", {}, RULES.placement), h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
       h("p", { class: "help" },
         "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
       sourceList(RULES.sources));

@@ -74,9 +74,11 @@ window.Results = (() => {
     const plugged = candidates.filter(c => plugs.get(c.key)?.kind === "plug");
     if (!plugged.length) return null;
     const about = plugged.find(c => c.key === judged?.key) || plugged[0];
-    const kw = about.battery.discharge_power_kw, grouped = candidates.find(c => plugs.get(c.key)?.circuit);
+    const kw = about.battery.discharge_power_kw, charge = about.battery.charge_power_kw, grouped = candidates.find(c => plugs.get(c.key)?.circuit);
     const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
-    const names = plugged.slice(0, 5).map(c => c.name).join(", ") + (plugged.length > 5 ? ` en ${plugged.length - 5} meer` : "");
+    // Bij veel stekkerbatterijen een telling in plaats van een lange rij productnamen.
+    const names = plugged.length <= 3 ? plugged.map(c => c.name).join(", ")
+      : `${plugged.length} van de ${candidates.length} doorgerekende accu’s, waaronder ${about.name}`;
     return h("li", { id: PLUG_ADVICE, tabindex: "-1", class: "plug-advice" },
       h("strong", {}, "Milieu Centraal raadt stekkerbatterijen op dit moment af. "),
       `Dit gaat over: ${names}. ` +
@@ -84,7 +86,9 @@ window.Results = (() => {
         "toch voor, gebruik dan een vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, " +
         "en laat de accu ten hoogste 800 W in het stopcontact leveren (dat advies geeft Milieu Centraal voor stekkerzonnepanelen). " +
         `Voor ${about.name} is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
-        "dus stel de accu lager in of kies een vaste aansluiting"}. Veiliger is een eigen groep in de meterkast door een installateur` +
+        "dus stel de accu lager in of kies een vaste aansluiting"}` +
+        (charge <= 0.8 ? `, en met ${n(charge, 2)} kW laden: ook meer laadvermogen hoort bij een eigen groep. ` : `, en met ${n(charge, 2)} kW laden. `) +
+        `Veiliger is een eigen groep in de meterkast door een installateur` +
         (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
         (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’` : "") +
         ". Meld de accu aan op energieleveren.nl, zoals Netbeheer Nederland voorschrijft. Twijfel je of je woonverzekering een " +
@@ -198,6 +202,13 @@ window.Results = (() => {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
     const best = judged(run);
+    // Een stekkerbatterij ‘op een eigen groep’ werkt alleen als een installateur hem vast wil aansluiten: in een
+    // stopcontact steekt hij de stekker volgens de NEN 1010 niet (Milieu Centraal).
+    if (best && plugs.get(best.key)?.circuit) list.append(h("li", {}, `${best.name} is een stekkerbatterij die een elektricien op ` +
+      "een eigen groep aansluit. Een installateur steekt de stekker volgens de NEN 1010 niet in een stopcontact (Milieu Centraal): " +
+      "vraag vooraf of hij dit product vast wil aansluiten en of de fabrikant dat toestaat zonder dat de garantie vervalt." +
+      (circuit ? ` De richtprijs van ${eur0(circuit.amount_eur)} is voor een extra groep met aansluiting in de meterkast; ` +
+        "een volle of verouderde groepenkast komt erbij." : "")));
     // Wat de uitkomst zou veranderen: varianten, de grensprijs en bij geen accu ‘Dat verandert als’.
     const change = h("ul");
     if (!rec) {
@@ -704,6 +715,9 @@ window.Results = (() => {
           ["installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering"], ["upfront_eur"]),
         cost("Aansluiting", "1- of 3-fase, past het op je huidige aansluiting, en is een eigen groep in de meterkast (NEN 1010) inbegrepen?",
           `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, ["meter_cabinet", "grid_connection"]),
+        { question: "Plaats", hint: "Waar komt de accu te staan? Telt niet als antwoord: in een kast of de meterkast, in de gang of " +
+          "een andere loop- of vluchtroute. " + Data.RULES.placement, fields: [], value: "Niet meegerekend",
+          origin: badge("veiligheid", "warning"), assumed: false },
         cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), ["backup"]),
         cost("App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
           subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription),

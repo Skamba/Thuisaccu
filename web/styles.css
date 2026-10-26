@@ -158,7 +158,7 @@ td strong, th strong { display: block; }
   /* Tabbladen in drie kolommen, dus drie regels ongeacht het lettertype: alle tabbladen, ook de waarschuwingen,
      blijven in beeld. Een lange naam loopt binnen zijn vak door op een tweede regel. */
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .1rem; }
-  .tabs [role="tab"] { padding: .35rem .3rem; font-size: .875rem; text-align: center; overflow-wrap: anywhere; }
+  .tabs [role="tab"] { padding: .35rem .3rem; font-size: .875rem; text-align: center; overflow-wrap: anywhere; hyphens: auto; }
   /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
   .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
   .compare th[scope="row"], .compare thead th:first-child { min-width: 7.5rem; width: 7.5rem; hyphens: auto; }

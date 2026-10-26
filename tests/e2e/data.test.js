@@ -49,10 +49,18 @@ test("elke aanname van describe() wordt herkend door Data.isAssumed", () => {
 
 test("de 800 W-begrenzing voor een stekkeraccu wordt herkend", () => {
   // Keuzehulp en Zelf doorrekenen begrenzen met Data.plugLimit; de aannamezin moet herkend worden.
-  const plug = { kind: "plug", name: "FICTIEF stekker", dischargeKw: 2.4, notes: [], battery: { discharge_power_kw: 2.4 } };
+  const plug = { kind: "plug", name: "FICTIEF stekker", dischargeKw: 2.4, chargeKw: 3, notes: [],
+    battery: { discharge_power_kw: 2.4, charge_power_kw: 3 } };
   const limited = Data.plugLimit(plug);
   assert.equal(limited.battery.discharge_power_kw, 0.8);
+  assert.equal(limited.battery.charge_power_kw, 0.8);
   assert.equal(Data.isAssumed("discharge_power_kw", limited.notes.join(" ")), true);
+  assert.equal(Data.isAssumed("charge_power_kw", limited.notes.join(" ")), true);
+  // Al 800 W ontladen maar 2,5 kW laden: alleen het laden wordt begrensd, de naam blijft.
+  const charging = Data.plugLimit({ ...plug, dischargeKw: 0.8, chargeKw: 2.5, battery: { discharge_power_kw: 0.8, charge_power_kw: 2.5 } });
+  assert.equal(charging.battery.charge_power_kw, 0.8);
+  assert.equal(charging.name, plug.name);
+  assert.equal(Data.isAssumed("discharge_power_kw", charging.notes.join(" ")), false);
   const fixed = { ...plug, kind: "fixed" };
   assert.equal(Data.plugLimit(fixed), fixed);
   assert.equal(Data.isAssumed("discharge_power_kw", "Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact."), true);
@@ -99,9 +107,16 @@ const RULES = [
       assert.equal(d.efficiency, 86);
       assert.match(d.notes.join(" "), /gerekend met claim #3/);
     }],
-  ["sluimerverbruik: de hoogste waarde aan de AC-kant of zonder meetgrens, niet DC",
-    [claim(1, "standby_power_w", 5, "ac_ac"), claim(2, "standby_power_w", 12, "unspecified"), claim(3, "standby_power_w", 20, "battery_dc")],
+  ["sluimerverbruik: de hoogste waarde aan de AC-kant of zonder meetgrens, niet DC uit een andere bron",
+    [claim(1, "standby_power_w", 5, "ac_ac"), claim(2, "standby_power_w", 12, "unspecified"),
+      claim(3, "standby_power_w", 20, "battery_dc", { source_title: "Andere bron" })],
     d => assert.equal(d.standby, 12)],
+  ["sluimerverbruik: 0 W aan het net en minder dan 5 W uit de accu volgens dezelfde bron is 5 W",
+    [claim(1, "standby_power_w", 0, "system_ac"), claim(2, "standby_power_w", 5, "battery_dc", { qualifier: "less_than" })],
+    d => {
+      assert.equal(d.standby, 5);
+      assert.ok(d.notes.some(note => /uit de accu \(claim #2\) in plaats van 0 W aan de netkant/.test(note)), d.notes.join(" | "));
+    }],
   ["bruikbaar is nominaal × ontlaaddiepte als de bron geen bruikbare capaciteit noemt",
     [claim(1, "nominal_energy_wh", 10000), claim(2, "depth_of_discharge_pct", 90)], d => assert.equal(d.capacity, 9)],
   ["zonder ontlaaddiepte geldt de aanname voor het bruikbare deel", [claim(1, "nominal_energy_wh", 10000)],

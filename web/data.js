@@ -79,8 +79,9 @@ window.Data = (() => {
     // Energiebelasting 2027 per kWh met btw (fiscale sleuteltabel 2027, zie importSources).
     energyTax: 0.1065,
     importHelp: "Leveringstarief plus energiebelasting (in 2027 € 0,1065 per kWh), inclusief btw, zonder vaste kosten " +
-      "per maand. Staan ze apart op je tariefoverzicht, tel ze dan op. Heb je normaal en dal, neem dan het normaaltarief: " +
-      "een accu levert vooral op doordeweekse avonden vóór 23.00 uur.",
+      "per maand. Staan ze apart op je tariefoverzicht, tel ze dan op. Heb je normaal en dal en zijn ze (bijna) gelijk, neem dan " +
+      "het normaaltarief. Is dal duidelijk lager, neem dan een prijs ertussenin: een accu levert ook ’s nachts en in het " +
+      "weekend, als dal geldt; met alleen het normaaltarief valt de besparing iets te hoog uit.",
     importSources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)",
         "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
@@ -239,6 +240,9 @@ window.Data = (() => {
 
   // Regels en veiligheidsadvies rond aansluiten, voor de keuzehulp en de uitkomst; gedateerde bronnen, geen juridisch advies.
   const RULES = {
+    placement: "Zet een thuisbatterij op een goed geventileerde plek; een kast is dat niet, dus ook de meterkast niet. Niet in " +
+      "een loop- of vluchtroute, zoals de gang of het trappenhuis, en hang er een rook- en koolmonoxidemelder bij. Dat adviseert " +
+      "Milieu Centraal, voor een vaste accu en een stekkerbatterij.",
     register: "Meld je thuisaccu aan bij je netbeheerder via energieleveren.nl. Volgens Netbeheer Nederland is dat verplicht, " +
       "net als voor zonnepanelen; dat geldt sinds een wijziging van de Netcode elektriciteit voor opslag vanaf 0,8 kW die op het " +
       "net is aangesloten. Aanmelden is gratis. Naar schatting is minder dan 40% van de thuisaccu’s aangemeld.",
@@ -278,7 +282,7 @@ window.Data = (() => {
   // keuzehulp.js: pas ze samen aan. tests/e2e/data.test.js controleert dat elke zin herkend wordt.
   const ASSUMED = {
     usable_capacity_kwh: /Aanname: [\d,]+% van de opgegeven/,
-    charge_power_kw: /Aanname: laadvermogen gelijk/,
+    charge_power_kw: /Aanname: laadvermogen gelijk|Aanname: laden ingesteld op 800 W/,
     discharge_power_kw: /Aanname: ontladen ingesteld op 800 W/,
     ac_round_trip_efficiency_pct: /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
     standby_w: /Aanname: [\d,]+ W sluimerverbruik/,
@@ -382,14 +386,29 @@ window.Data = (() => {
       notes.push(`Rendement ${range}${rte.boundary === "ac_ac" || rte.boundary === "system_ac" ? " (AC → AC)" : `; meetgrens ${rte.boundary === "pv_ac" ? "PV → accu → AC" : "niet vermeld"}, gebruikt als AC → AC-aanname`}.`);
     } else notes.push(`Aanname: ${FALLBACK.efficiency}% rendement heen en terug; de bron noemt geen AC-rendement.${dcNote("round_trip_efficiency_pct", "rendement")}`);
 
-    const standbyClaim = claim("standby_power_w"), standby = standbyClaim ? standbyClaim.value : FALLBACK.standby;
+    // Meet dezelfde bron aan de netkant minder dan uit de accu zelf (bijvoorbeeld 0 W aan het net omdat de accu
+    // zichzelf voedt), dan is het verbruik uit de accu het echte rustverbruik. Een DC-claim uit een andere bron
+    // telt niet naast een AC-claim. ‘Minder dan 5 W’ telt als 5 W.
+    let standbyClaim = claim("standby_power_w");
+    const sourceOf = c => c.source_url || c.source_title;
+    const ownDc = standbyClaim && AC_BOUNDARY.includes(standbyClaim.boundary) ? numbers.filter(c => c.metric_key === "standby_power_w" &&
+      c.boundary === "battery_dc" && sourceOf(c) === sourceOf(standbyClaim) && c.value > standbyClaim.value) : [];
+    if (ownDc.length) {
+      const dc = ownDc.reduce((a, b) => b.value > a.value ? b : a), w = v => n(v, Number.isInteger(v) ? 0 : 1);
+      notes.push(`Sluimerverbruik ${w(dc.value)} W uit de accu (claim #${dc.id}) in plaats van ${w(standbyClaim.value)} W aan de netkant ` +
+        `(claim #${standbyClaim.id}): dezelfde bron meet aan de netkant minder dan de accu zelf verbruikt` +
+        `${dc.qualifier === "less_than" ? `; ‘minder dan ${w(dc.value)} W’ telt als ${w(dc.value)} W` : ""}.`);
+      used.push({ label: METRIC_LABELS.standby_power_w, claim: dc });
+      standbyClaim = dc;
+    }
+    const standby = standbyClaim ? standbyClaim.value : FALLBACK.standby;
     if (!standbyClaim) notes.push(`Aanname: ${FALLBACK.standby} W sluimerverbruik; niet opgegeven.`);
     notes.push(`Aanname: ${FALLBACK.degradation}% capaciteitsverlies per jaar en ${FALLBACK.life} jaar levensduur; geen garantie of fabrieksvoorspelling.`);
 
     const coupling = texts.find(t => t.metric_key === "coupling")?.value || "";
     const kind = /stekker/i.test(coupling) ? "plug" : coupling ? "fixed" : null;
-    // Een stekkeraccu op een eigen groep heet in de onderzochte sets altijd ‘… eigen groep …’.
-    const circuit = kind === "fixed" && /eigen groep/i.test(config.name);
+    // Een stekkeraccu op een eigen groep heet in de onderzochte sets ‘… eigen groep …’ of ‘… verdeelkast …’.
+    const circuit = kind === "fixed" && /eigen groep|verdeelkast/i.test(config.name);
     // Alleen aanbiedingen die niet betwist, vervangen of verlopen zijn.
     const now = Date.now() / 1000;
     const offers = cmp.offers.filter(o => live(o) && (o.valid_until_unix_s == null || o.valid_until_unix_s >= now));
@@ -427,15 +446,24 @@ window.Data = (() => {
     };
   }
 
-  // Een stekkeraccu in een gewoon stopcontact rekent met hoogstens 800 W ontladen, zoals het veiligheidsadvies in de keuzehulp;
-  // de uitvoeringen op een eigen groep houden hun volle vermogen. Keuzehulp en Zelf doorrekenen gebruiken allebei deze functie.
+  // Een stekkeraccu in een gewoon stopcontact rekent met hoogstens 800 W ontladen, zoals het veiligheidsadvies in de keuzehulp,
+  // en hoogstens 800 W laden: de bronnen noemen bij laden het vermogen van het apparaat, niet of de stekkerstand het begrenst,
+  // en sommige verkopers noemen 800 W laden op een bestaande groep. Meer vermogen kost een eigen groep; die uitvoeringen
+  // houden hun volle vermogen en krijgen de kosten van die groep. Keuzehulp en Zelf doorrekenen gebruiken allebei deze functie.
   const PLUG_LIMIT_KW = 0.8;
   function plugLimit(p) {
-    if (p.kind !== "plug" || !p.battery || !(p.dischargeKw > PLUG_LIMIT_KW)) return p;
-    return { ...p, name: `${p.name} · begrensd op 800 W`, dischargeKw: PLUG_LIMIT_KW,
-      battery: { ...p.battery, discharge_power_kw: PLUG_LIMIT_KW },
-      notes: [...p.notes, `Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.dischargeKw, 1)} kW. ` +
-        "Of en hoe je dat instelt, staat in de handleiding of app."] };
+    if (p.kind !== "plug" || !p.battery) return p;
+    const discharge = p.dischargeKw > PLUG_LIMIT_KW, charge = p.chargeKw > PLUG_LIMIT_KW;
+    if (!discharge && !charge) return p;
+    const notes = [...p.notes];
+    if (discharge) notes.push(`Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.dischargeKw, 1)} kW. ` +
+      "Of en hoe je dat instelt, staat in de handleiding of app.");
+    if (charge) notes.push(`Aanname: laden ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.chargeKw, 1)} kW. ` +
+      "Meer laadvermogen hoort, net als meer ontlaadvermogen, bij een eigen groep door een installateur.");
+    return { ...p, name: discharge ? `${p.name} · begrensd op 800 W` : p.name,
+      dischargeKw: Math.min(p.dischargeKw, PLUG_LIMIT_KW), chargeKw: Math.min(p.chargeKw, PLUG_LIMIT_KW),
+      battery: { ...p.battery, discharge_power_kw: Math.min(p.battery.discharge_power_kw, PLUG_LIMIT_KW),
+        charge_power_kw: Math.min(p.battery.charge_power_kw, PLUG_LIMIT_KW) }, notes };
   }
 
   // Kostenindicatie voor alle 26 posten. `item`: { kind, circuit, manufacturer, phases, inverterIncluded };
