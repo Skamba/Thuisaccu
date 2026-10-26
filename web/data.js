@@ -146,8 +146,11 @@ window.Data = (() => {
     variantYear: 2030,
     variantText: "Volgens de ACM krijg je een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief. Voor daarna " +
       "is geen minimum aangekondigd, en terugleverkosten kunnen nu al hoger zijn dan de vergoeding. Deze variant rekent vanaf 2030 " +
-      "met € 0 vergoeding en dezelfde terugleverkosten. Het is een variant om mee te vergelijken, geen voorspelling of aangekondigde " +
-      "regel. Een accu wordt daarin meestal meer waard, omdat zelf opslaan dan meer oplevert dan terugleveren."
+      "met € 0 vergoeding. Met de indicatie zijn de terugleverkosten dan ook € 0, zodat teruglevering niets meer oplevert: de " +
+      "terugleverkosten van de indicatie zijn alleen gekozen om op 1 cent netto uit te komen en zeggen niets over later. Met je " +
+      "eigen contract blijven je terugleverkosten staan, zodat teruglevering dan geld kost. Het is een variant om mee te " +
+      "vergelijken, geen voorspelling of aangekondigde regel. Een accu wordt daarin meestal meer waard, omdat zelf opslaan dan " +
+      "meer oplevert dan terugleveren."
   };
   // Wat elke aanname doet, in gewone taal (docs/roi-model.md); bij Instellingen en Zelf doorrekenen.
   const ASSUMPTION_HELP = {
@@ -274,6 +277,21 @@ window.Data = (() => {
     return { ok: true, reason: o.generator === "typical-nl-v1" ? "Bruikbaar · geschat profiel" : "Bruikbaar" };
   }
   const isDemo = item => item?.options?.is_demo === true;
+  // Uitleg in gewone taal als een profiel niet door te rekenen is om verbruik, gaten of dekking (de controles van
+  // suitability die geen importinstellingen nodig hebben, dus ook vóór het bewaren); anders null.
+  function unusableText(s) {
+    const tail = " Je kunt het bewaren om te bekijken, maar niet doorrekenen. Exporteer een volledig jaar, of gebruik in de " +
+      "keuzehulp je jaartotalen van de jaarafrekening.";
+    if (s.consumption_kwh == null) return "Dit bestand heeft alleen opwek, geen verbruik van het huis. Voor een berekening is ook " +
+      "het bruto verbruik nodig; voeg bij het importeren een meterbestand toe (netafname en teruglevering)." + tail;
+    if (s.gaps !== 0) return `Er ontbreken ${n(s.gaps, 0)} meetperioden. Voor een berekening is één aaneengesloten jaar nodig.` + tail;
+    if (![8760, 8784].some(hours => Math.abs(s.coverage_hours - hours) < 0.001)) {
+      const span = s.coverage_hours < 48 ? `${n(s.coverage_hours, 0)} uur` : `${n(s.coverage_hours / 24, 0)} dagen`;
+      return `Dit bestand dekt ${span}. Voor een berekening is één volledig, aaneengesloten jaar nodig, met opwek en verbruik ` +
+        "per uur of fijner." + tail;
+    }
+    return null;
+  }
 
   // Regels en veiligheidsadvies rond aansluiten, voor de keuzehulp en de uitkomst; gedateerde bronnen, geen juridisch advies.
   const RULES = {
@@ -283,6 +301,10 @@ window.Data = (() => {
     register: "Meld je thuisaccu aan bij je netbeheerder via energieleveren.nl. Volgens Netbeheer Nederland is dat verplicht, " +
       "net als voor zonnepanelen; dat geldt sinds een wijziging van de Netcode elektriciteit voor opslag vanaf 0,8 kW die op het " +
       "net is aangesloten. Aanmelden is gratis. Naar schatting is minder dan 40% van de thuisaccu’s aangemeld.",
+    insurance: "Meld de accu bij je verzekeraar en vraag of hij gedekt is. Volgens het Verbond van Verzekeraars valt een " +
+      "thuisbatterij niet automatisch onder je woonverzekering; een vaste accu valt meestal onder de opstal-, een stekkerbatterij " +
+      "vaker onder de inboedelverzekering. Bij schade kijkt de verzekeraar naar de installatie (door een erkend installateur) en " +
+      "naar de plek, zoals een schuur of garage.",
     plug: "Milieu Centraal raadt stekkerbatterijen op dit moment niet aan, onder meer vanwege brandrisico: in één groep kan " +
       "stroom van twee kanten komen, van het net en van de accu. Een installateur sluit een accu volgens de NEN 1010-norm aan " +
       "op een aparte groep in de meterkast, niet op een stopcontact. Kies je toch voor een stekkerbatterij, gebruik dan een " +
@@ -290,6 +312,8 @@ window.Data = (() => {
       "terugleververmogen op 800 W of minder. Die laatste adviezen geeft Milieu Centraal voor stekkerzonnepanelen; " +
       "ze gelden ook logisch voor een stekkerbatterij, maar zijn daarvoor niet afzonderlijk gepubliceerd.",
     sources: [
+      ["Solar Magazine: Verbond van Verzekeraars over de dekking van een thuisbatterij (21 augustus 2026)",
+        "https://solarmagazine.nl/nieuws-zonne-energie/i44570/verbond-van-verzekeraars-thuisbatterij-is-lang-niet-altijd-meeverzekerd"],
       ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)",
         "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
       ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)",
@@ -718,6 +742,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();

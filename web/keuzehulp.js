@@ -339,7 +339,9 @@
     const variantYear = Math.min(Math.max(INDICATION.variantYear, d.start_year), d.start_year + Number(horizon()) - 1);
     const variant = answers.variant === "yes" ? {
       label: `Geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
-      export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
+      // De terugleverkosten van de indicatie bestaan alleen om op 1 cent netto uit te komen; zonder vergoeding zou dat
+      // −5 cent per kWh worden, een getal dat geen leverancier noemt. Met de indicatie levert teruglevering dan niets op.
+      export_eur_per_kwh: 0, export_fee_eur_per_kwh: answers.feedin === "indication" ? 0 : feed.fee
     } : undefined;
     const candidates = chosen.map(p => ({ key: `${p.derived ? "g" : "c"}${p.config.id}`, name: p.name, configuration_id: p.config.id,
       battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
@@ -573,8 +575,8 @@
         "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
       h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), status);
     // Het stekkeradvies staat al bij de woningvragen en komt terug op de uitkomst; hier ingeklapt.
-    const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht en veiligheid"),
-      h("p", {}, RULES.placement), h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
+    const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht, veiligheid en verzekering"),
+      h("p", {}, RULES.placement), h("p", {}, RULES.register), h("p", {}, RULES.insurance), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
       // Tot 2027 geldt de salderingsregeling nog; de berekening begint daarom op 1 januari 2027.
       new Date() < new Date(2027, 0, 1) ? h("p", {}, "Tot en met 31 december 2026 geldt de salderingsregeling nog. Een accu " +
         "levert dan niets op en kost alleen laadverlies en sluimerverbruik; de berekening begint daarom in 2027. Eerder kopen " +

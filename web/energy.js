@@ -136,7 +136,10 @@
           button("Zelf doorrekenen", () => { UI.store.set("thuisaccu-scenario",
             { ...UI.store.get("thuisaccu-scenario", {}), profile: String(item.id) }); location.hash = "#/zelf"; }, "secondary"));
       }
+      const problem = fit.ok === false ? Data.unusableText(item.summary) : null;
       view.append(h("p", {}, title(item), " ", fitBadge(item)),
+        problem ? h("div", { class: "callout", role: "note" }, h("p", {}, problem),
+          h("p", {}, link("Naar de keuzehulp", "#/keuzehulp", "button secondary"))) : null,
         summaryView(item.summary, item.options.generator ? null : item.options.timezone || "UTC"));
       if (fit.ok === true) {
         const curve = await UI.api(`/api/v1/solar/imports/${item.id}/capacity`).catch(() => null);
@@ -409,7 +412,12 @@
         if (sent !== signature()) throw new Error("De instellingen zijn veranderd. Controleer opnieuw.");
         state.summary = summary; state.previewed = sent;
       }
-      function stepCheck(body) { body.append(h("h2", {}, "Controle"), summaryView(state.summary, options.timezone)); }
+      function stepCheck(body) {
+        const problem = Data.unusableText(state.summary);
+        body.append(h("h2", {}, "Controle"),
+          problem ? h("div", { class: "callout", role: "note" }, h("p", {}, problem)) : null,
+          summaryView(state.summary, options.timezone));
+      }
       function stepSave(body) {
         const name = input({ value: state.name, required: true, maxlength: "240",
           oninput: event => { state.name = event.target.value; } });

@@ -50,6 +50,8 @@ Dubbele tijdstippen, overlappende intervallen, negatieve energie, ongeldige geta
 
 Na bevestiging worden de SHA-256 van het bestand, bestandsnaam, importinstellingen, samenvatting en genormaliseerde intervallen transactioneel in SQLite bewaard. De ruwe bestandsinhoud wordt niet bewaard. Dezelfde bytes met dezelfde instellingen worden niet dubbel opgeslagen. Bij de instellingen staat ook de versie van het inlezen (`normalizer`, nu 2; `NORMALIZER_VERSION` in `solar_import.rs`). Na een reparatie in het inlezen wordt die verhoogd, zodat hetzelfde bestand opnieuw importeren een nieuwe, goed ingelezen import oplevert in plaats van de oude meetperioden terug te geven. Versie 2 (26 oktober 2026) leest het dubbele uur bij wintertijd in bestanden die teruglopen in de tijd goed in, en datum- en tijdcellen in aparte spreadsheetkolommen. De gebruiker kan bestaande samenvattingen opnieuw openen.
 
+Is het profiel niet door te rekenen, dan zegt de controlestap dat al vóór het bewaren, en de profielpagina daarna, in gewone taal (`Data.unusableText`): verbruik ontbreekt (voeg een meterbestand toe), er ontbreken meetperioden, of het bestand dekt geen volledig jaar (met hoeveel uur of dagen het wel dekt). Bewaren mag dan nog, om te bekijken; de profielpagina verwijst naar de keuzehulp met jaartotalen.
+
 Het overzicht toont totale productie, eventuele consumptie, dekking, gaten en maandtotalen. Met verbruik worden ook positieve productie-/verbruiksverschillen per gekozen interval getoond. Dit zijn aggregaten op die resolutie, geen gemeten accubesparing of nauwkeurige momentane gelijktijdigheid.
 
 ## Slimme meter (P1)

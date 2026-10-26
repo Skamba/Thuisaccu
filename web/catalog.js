@@ -8,7 +8,7 @@
   const SELECTION = "thuisaccu-vergelijking";
   const selected = new Set(store.get(SELECTION, []));
   const remember = () => store.set(SELECTION, [...selected]);
-  const filters = { query: "", maker: "", kind: "" };
+  const filters = { query: "", maker: "", connection: "" };
 
   const ofConfig = (rows, config) => rows.filter(row => row.configuration_id === config.id);
   const priceText = offer => `${offer.currency === "EUR" ? money(offer.upfront_amount_minor / 10 ** offer.minor_unit_exponent, { decimals: 0 }) : `${offer.currency} ${n(offer.upfront_amount_minor / 10 ** offer.minor_unit_exponent)}`}${{ included: " incl. btw", excluded: " excl. btw", unknown: "" }[offer.tax_basis]}`;
@@ -116,7 +116,7 @@
     clone.querySelectorAll("details").forEach(d => d.remove()); return clone.textContent.trim(); };
 
   function comparisonTable(cmp, configs, { differencesOnly, knownOnly }) {
-    const tableEl = h("table", { class: "compare" },
+    const tableEl = h("table", { class: "compare", style: `--cols:${configs.length}` },
       h("caption", {}, "Bronclaims naast elkaar; er wordt geen winnaar gekozen."),
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Eigenschap"),
         configs.map(c => h("th", { scope: "col" }, h("small", {}, c.manufacturer_name), h("strong", {}, c.product_name), h("small", {}, c.name))))));
@@ -307,16 +307,19 @@
         oninput: event => { filters.query = event.target.value; draw(); } });
       const maker = select([["", "Alle fabrikanten"], ...makers.map(m => [m, m])], filters.maker,
         { onchange: event => { filters.maker = event.target.value; draw(); } });
-      const kind = select([["", "Alle typen"], ["battery_system", "Accusysteem"],
-        ["battery_module", "Accumodule"]],
-        filters.kind, { onchange: event => { filters.kind = event.target.value; draw(); } });
-      view.append(h("div", { class: "toolbar" }, field("Zoek", search), field("Fabrikant", maker), field("Type", kind),
+      // De aansluiting uit de bronclaims (zoals in de keuzehulp); zonder koppelingsclaim onbekend.
+      const connections = new Map(cmp.configurations.map(c => [c.id, Data.describe(cmp, c)?.kind ?? "unknown"]));
+      const connection = select([["", "Alle aansluitingen"], ["plug", "Stekkerbatterij"], ["fixed", "Vaste installatie"],
+        ["unknown", "Onbekend"]], filters.connection,
+        { onchange: event => { filters.connection = event.target.value; draw(); } });
+      const count = h("p", { class: "help", "aria-live": "polite" });
+      view.append(h("div", { class: "toolbar" }, field("Zoek", search), field("Fabrikant", maker), field("Aansluiting", connection),
         h("details", { class: "menu" }, h("summary", {}, "Meer"), button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "secondary"))),
         ...(Data.priceAge().stale ? [h("p", { class: "callout", role: "note" }, Data.priceAge().text)] : []),
         h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}. ` +
           "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
           (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")),
-        list, priceless(cmp, rerender), tray);
+        count, list, priceless(cmp, rerender), tray);
       function drawTray() {
         tray.hidden = selected.size === 0;
         tray.replaceChildren(...cmp.configurations.filter(c => selected.has(c.id)).map(c => h("span", { class: "chip" }, `${c.product_name} · ${c.name}`,
@@ -325,7 +328,10 @@
       }
       function draw() {
         const q = filters.query.toLocaleLowerCase();
-        const configs = cmp.configurations.filter(c => `${c.manufacturer_name} ${c.product_name} ${c.name}`.toLocaleLowerCase().includes(q) && (!filters.maker || c.manufacturer_name === filters.maker) && (!filters.kind || c.product_kind === filters.kind));
+        const configs = cmp.configurations.filter(c => `${c.manufacturer_name} ${c.product_name} ${c.name}`.toLocaleLowerCase().includes(q) && (!filters.maker || c.manufacturer_name === filters.maker) && (!filters.connection || connections.get(c.id) === filters.connection));
+        const all = cmp.configurations.length;
+        count.textContent = configs.length === all ? `${all} ${all === 1 ? "uitvoering" : "uitvoeringen"}`
+          : `${configs.length} van ${all} uitvoeringen bij deze filters`;
         list.replaceChildren(configs.length ? table(["Vergelijk", "Accu", "Bruikbare energie", "Prijs", "Bronnen", "Status"], configs.map(c => {
           const box = h("input", { type: "checkbox", checked: selected.has(c.id), "aria-label": `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`,
             onchange: event => {
@@ -378,6 +384,7 @@
       view.append(h("div", { class: "toolbar" }, toggle("Alleen verschillen", "differencesOnly"), toggle("Verberg rijen zonder bekende waarde", "knownOnly")),
         h("p", { class: "callout" },
           "Bruikbare energie, nominale energie en kVA zijn verschillende grootheden, en een rendement hoort bij een meetgrens. Open een bron voor de context; onbekend blijft onbekend."),
+        configs.length > 2 ? h("p", { class: "compare-hint" }, "Schuif de tabel opzij voor de andere uitvoeringen.") : null,
         holder, h("p", { class: "help" }, "Prijs per kWh is een kengetal, geen terugverdientijd. Een aanbeveling bestaat alleen binnen een doorgerekend scenario: met ‘Reken deze accu’s door’ worden ze opties in Zelf doorrekenen, of gebruik de ",
           link("keuzehulp", "#/keuzehulp"), "."));
       draw();

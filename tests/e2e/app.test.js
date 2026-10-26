@@ -131,12 +131,12 @@ function syntheticYear(dir) {
 
 // Synthetisch jaar zoals een Nederlandse energiemonitor: puntkomma, decimale komma en lokale tijd,
 // dus zonder 02.00 uur eind maart en met 02.00 uur twee keer eind oktober.
-function dutchLocalYear(dir) {
+function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv") {
   const lines = ["Datum;Opwek (kWh);Verbruik (kWh)"];
   const local = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", day: "2-digit", month: "2-digit",
     year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const start = Date.UTC(2024, 11, 31, 23);
-  for (let hour = 0; hour < 8760; hour++) {
+  for (let hour = 0; hour < hours; hour++) {
     const parts = Object.fromEntries(local.formatToParts(new Date(start + hour * 3600e3)).map(p => [p.type, p.value]));
     const h = Number(parts.hour);
     const solar = h >= 7 && h < 19 ? 0.4 * Math.sin(Math.PI * (h - 7) / 12) : 0;
@@ -144,7 +144,7 @@ function dutchLocalYear(dir) {
     const comma = v => v.toFixed(3).replace(".", ",");
     lines.push(`${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute};${comma(solar)};${comma(load)}`);
   }
-  const file = path.join(dir, "energiemonitor.csv");
+  const file = path.join(dir, name);
   fs.writeFileSync(file, `${lines.join("\r\n")}\r\n`);
   return file;
 }
@@ -267,8 +267,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
   assert.match(summary, whatIf
-    ? /teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\) \(‘Geen terugleververgoeding[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
-    : /Als teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\)/);
+    ? /teruglevering vanaf 2030 niets meer oplevert \(‘Geen terugleververgoeding[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
+    : /Als teruglevering vanaf 2030 niets meer oplevert/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
   const saving = await page.textContent(".verdict .stats div:has(dt:text-is('Besparing in jaar 1')) dd");
@@ -278,8 +278,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const [, total] = receipt[2].match(/^= (−?⁠?€\s*[\d.]+) per jaar$/);
   assert.ok(Math.abs(euro(total) - euro(saving)) <= 1, `${total} ≠ ${saving}`);
   assert.ok(Math.abs(euro(gain) + (sign === "−" ? -1 : 1) * euro(lost) - euro(total)) <= 1);
-  // Zonder vergoeding scheelt elke niet teruggeleverde kWh de terugleverkosten.
-  assert.match(summary, /wordt de tweede regel vanaf 2030: \+ [\d.]+ kWh minder teruggeleverd × €\s*0,0515 \(vergoeding €\s*0,0000 − terugleverkosten €\s*0,0515: terugleveren kost je geld\) = €\s*[\d.]+, samen €\s*[\d.]+ per jaar/);
+  // Met de indicatie vallen in de variant vergoeding én terugleverkosten weg: een niet teruggeleverde kWh scheelt niets.
+  assert.match(summary, /wordt de tweede regel vanaf 2030: \+ [\d.]+ kWh minder teruggeleverd × €\s*0,0000 \(vergoeding €\s*0,0000 − terugleverkosten €\s*0,0000\) = €\s*0, samen €\s*[\d.]+ per jaar/);
   assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
   if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost)?|is hij zelfs gratis niet lonend)\./);
@@ -572,6 +572,7 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   // Het dubbele uur bij de overgang naar wintertijd is op volgorde gelezen, zonder gaten.
   assert.match(await page.textContent(".wizard-body"), /als zomertijd en het tweede als wintertijd gelezen/);
   assert.match(await page.textContent(".stats"), /8\.760 uur/);
+  assert.doesNotMatch(await page.textContent(".wizard-body"), /niet doorrekenen/);
   await next(page);
   await page.click("button:has-text('Bewaar energieprofiel')");
   await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
@@ -611,6 +612,27 @@ test("alleen een P1-export: uitleg dat opwek nodig is, kwartierperiode herkend",
   await close();
 });
 
+test("een te kort bestand zegt vóór het bewaren dat het niet door te rekenen is", async () => {
+  const file = dutchLocalYear(workdir, 72, "drie-dagen.csv");
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", file);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  assert.match(await page.textContent(".wizard-body [role=note]"), /dekt 3 dagen\..+niet doorrekenen/);
+  await next(page);
+  await page.click("button:has-text('Bewaar energieprofiel')");
+  await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+  await page.waitForSelector("#view [role=note]");
+  assert.match(await page.textContent("#view [role=note]"), /dekt 3 dagen/);
+  assert.equal(await page.locator("#view a:has-text('Naar de keuzehulp')").count(), 1);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const file = dutchLocalYear(workdir);
   const { page, problems, close } = await open();
@@ -628,7 +650,10 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.goto(`${base}/#/zelf`);
   await page.getByLabel("Naam van de berekening").fill("Synthetische offerte");
   // Het adres is optioneel: alleen een label bij de berekening.
-  await page.getByLabel(/Energieprofiel/).selectOption({ index: 1 });
+  // Het eerste profiel dat door te rekenen is; een te kort profiel uit een eerdere test staat uitgeschakeld in de lijst.
+  const profiles = page.getByLabel(/Energieprofiel/);
+  await page.waitForFunction(() => [...document.querySelectorAll("select option")].some(o => /energiemonitor/.test(o.textContent) && !o.disabled));
+  await profiles.selectOption(await profiles.evaluate(s => [...s.options].find(o => o.value && !o.disabled).value));
   // Een warmtepomp vanaf het tweede jaar telt pas vanaf 1 januari van dat jaar mee.
   await page.click("button:has-text('+ Warmtepomp')");
   assert.equal(await page.getByLabel("Vanaf jaar (1 januari)").inputValue(), "2028");
@@ -931,6 +956,14 @@ test("rendement en sluimerverbruik uit bronclaims: voorzichtig en niet dubbel", 
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/accus`);
   await page.waitForSelector("table", { timeout: 30000 });
+  // Filteren op aansluiting zegt hoeveel uitvoeringen overblijven; de telling is een live-regio.
+  const total = Number((await page.textContent("p[aria-live=polite]:has-text('uitvoeringen')")).match(/\d+/)[0]);
+  await page.getByLabel("Aansluiting").selectOption("plug");
+  const shown = await page.textContent("p[aria-live=polite]:has-text('bij deze filters')");
+  const [, kept, of] = shown.match(/^(\d+) van (\d+) uitvoeringen bij deze filters$/);
+  assert.ok(Number(kept) < total && Number(of) === total, shown);
+  assert.ok(await page.locator("tbody tr:has-text('SolarCube Pro')").count() > 0);
+  await page.getByLabel("Aansluiting").selectOption("");
   const solarCube = await page.evaluate(async () => {
     const cmp = await UI.api("/api/v1/comparison");
     return Object.fromEntries(cmp.configurations.filter(c => c.product_name === "SolarCube Pro")
@@ -1007,23 +1040,45 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   // Op een eigen groep volgt het volle vermogen uit de bronnen, met naam, aannames en de kosten van een extra groep;
   // terug naar de stekker weer 800 W. Eigen invoer blijft staan.
   const switched = await page.evaluate(async option => {
-    const steps = [];
-    option.kind = "circuit"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
-    option.kind = "plug"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
-    option.battery.discharge_power_kw = "1,5"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
+    const steps = [], to = async kind => { const previous = option.kind; option.kind = kind;
+      steps.push({ message: await Scenario.followConnection(option, previous), ...structuredClone(option) }); };
+    await to("circuit");
+    await to("plug");
+    option.battery.discharge_power_kw = "1,5"; await to("plug");
     return steps;
   }, plug);
   assert.ok(Number(switched[0].battery.discharge_power_kw.replace(",", ".")) > 0.8, switched[0].battery.discharge_power_kw);
   assert.match(switched[0].message, /Vermogen aangepast aan de aansluiting/);
   assert.doesNotMatch(switched[0].name, /begrensd op 800 W/);
   assert.doesNotMatch(switched[0].assumptions, /ontladen ingesteld op 800 W/);
+  assert.match(switched[0].assumptions, /afgeleide uitvoering op een eigen groep|^Overgenomen uit de catalogus/);
   assert.equal(switched[0].costs.installation.status, "priced");
   assert.notDeepEqual(switched[0].costs.installation, plug.costs.installation);
   assert.equal(switched[1].battery.discharge_power_kw, "0,8");
   assert.equal(switched[1].name, plug.name);
+  assert.equal(switched[1].assumptions, plug.assumptions);
   assert.deepEqual(switched[1].costs, plug.costs);
   assert.equal(switched[2].battery.discharge_power_kw, "1,5");
   assert.match(switched[2].message, /meer dan 800 W/);
+  // Een optie uit een keuzehulpberekening (aannames beginnen met ‘Keuzehulp.’) verliest de 800 W-zin ook; een
+  // stekkerbatterij tot 800 W houdt zijn vermogen maar krijgt op een eigen groep wel de kosten van de extra groep.
+  const more = await page.evaluate(async option => {
+    const copied = { ...structuredClone(option), assumptions: option.assumptions.replace(/^Overgenomen uit de catalogus\./, "Keuzehulp.") };
+    copied.kind = "circuit"; await Scenario.followConnection(copied, "plug");
+    const cmp = await Data.catalog();
+    const small = cmp.configurations.map(c => Data.describe(cmp, c)).find(p => p.kind === "plug" && p.battery &&
+      p.dischargeKw <= 0.8 && p.chargeKw <= 0.8 && !Data.circuitVariant(cmp, p))?.config;
+    await Scenario.addConfigurations([small.id]);
+    const low = JSON.parse(localStorage.getItem("thuisaccu-scenario")).options.find(o => o.configuration_id === small.id);
+    const before = structuredClone(low);
+    low.kind = "circuit";
+    return { copied, before, message: await Scenario.followConnection(low, "plug"), after: low };
+  }, plug);
+  assert.match(more.copied.assumptions, /^Keuzehulp\./);
+  assert.doesNotMatch(more.copied.assumptions, /ingesteld op 800 W/);
+  assert.deepEqual(more.after.battery, more.before.battery);
+  assert.match(more.message, /kostenpost/);
+  assert.notDeepEqual(more.after.costs.installation, more.before.costs.installation);
   assert.deepEqual(problems, []);
   await close();
 });

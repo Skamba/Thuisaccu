@@ -345,3 +345,14 @@ test("grafieknamen worden in het midden ingekort: aansluiting en capaciteit blij
   // Zonder genoeg ruimte voor het midden gewoon aan het eind afgekort.
   assert.equal(UI.clip("abcdefghij", 5), "abcd…");
 });
+
+test("importcontrole: een niet door te rekenen profiel krijgt uitleg in gewone taal", () => {
+  const { Data } = context;
+  const full = { consumption_kwh: 3500, gaps: 0, coverage_hours: 8760 };
+  assert.equal(Data.unusableText(full), null);
+  assert.equal(Data.unusableText({ ...full, coverage_hours: 8784 }), null);
+  assert.match(Data.unusableText({ ...full, consumption_kwh: null }), /alleen opwek, geen verbruik.+meterbestand/);
+  assert.match(Data.unusableText({ ...full, gaps: 3 }), /Er ontbreken 3 meetperioden/);
+  assert.match(Data.unusableText({ ...full, coverage_hours: 4 }), /dekt 4 uur\..+bewaren om te bekijken, maar niet doorrekenen/);
+  assert.match(Data.unusableText({ ...full, coverage_hours: 24 * 200 }), /dekt 200 dagen/);
+});

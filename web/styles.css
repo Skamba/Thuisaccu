@@ -149,6 +149,7 @@ td strong, th strong { display: block; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
 .compare td { min-width: 13rem; }
 .compare thead th:first-child { position: sticky; left: 0; z-index: 1; }
+.compare-hint { display: none; }
 /* Vóór het smalle scherm: dat maakt de tabbladen compacter. */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
 @media (max-width: 40rem) {
@@ -161,8 +162,15 @@ td strong, th strong { display: block; }
   .tabs [role="tab"] { padding: .35rem .3rem; font-size: .875rem; text-align: center; overflow-wrap: anywhere; hyphens: auto; }
   /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
   .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
-  .compare th[scope="row"], .compare thead th:first-child { min-width: 7.5rem; width: 7.5rem; hyphens: auto; }
-  .compare td { min-width: 11rem; }
+  /* Vergelijkingen: de rijnaam op een eigen regel over de volle breedte en de waarden eronder naast elkaar, zodat twee
+     kolommen in beeld staan. Bij drie of vier schuift de tabel; de rijnaam blijft dan links staan. `--cols` zet de code. */
+  table.compare, table.compare :is(thead, tbody) { display: block; }
+  table.compare caption { display: block; text-align: left; }
+  table.compare tr { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(9.5rem, 1fr)); border-bottom: 1px solid var(--line); }
+  table.compare :is(th, td) { border: 0; min-width: 0; width: auto; }
+  table.compare thead th:first-child { display: none; }
+  table.compare th:is([scope="row"], [scope="rowgroup"]) { grid-column: 1 / -1; justify-self: start; position: sticky; left: 0; padding-bottom: 0; }
+  .compare-hint { display: block; font-size: .875rem; color: var(--muted); margin: .25rem 0; }
   /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
   table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   table.stack, table.stack tbody, table.stack tr, table.stack caption { display: block; }

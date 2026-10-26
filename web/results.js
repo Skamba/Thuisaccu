@@ -329,7 +329,7 @@ window.Results = (() => {
       // Minder teruglevering kost de netto vergoeding; zijn de terugleverkosten hoger, dan levert het juist op.
       const exported = (compensation, fee) => {
         const net = (compensation - fee) * factor, value = -fewerExport * net;
-        return { value, text: `${value > 0 ? "+" : "−"} ${kwh(Math.abs(fewerExport))} ${fewerExport < 0 ? "meer" : "minder"} teruggeleverd × ${price(Math.abs(net))} ` +
+        return { value, text: `${value >= 0 ? "+" : "−"} ${kwh(Math.abs(fewerExport))} ${fewerExport < 0 ? "meer" : "minder"} teruggeleverd × ${price(Math.abs(net))} ` +
           `(vergoeding ${price(compensation * factor)} − terugleverkosten ${price(fee * factor)}${net < 0 ? ": terugleveren kost je geld" : ""}) = ${eur0(Math.abs(value))}` };
       };
       // Met veel sluimerverbruik kan de accu de netafname zelfs verhogen; dan is de regel een min.
@@ -795,6 +795,9 @@ window.Results = (() => {
         { question: "Plaats", hint: "Waar komt de accu te staan? Telt niet als antwoord: in een kast of de meterkast, in de gang of " +
           "een andere loop- of vluchtroute. " + Data.RULES.placement, fields: [], value: "Niet meegerekend",
           origin: badge("veiligheid", "warning"), assumed: false },
+        cost("Verzekering", "Heb je de accu bij je verzekeraar gemeld, en dekt je opstal- of inboedelverzekering hem, ook op de " +
+          "plek waar hij komt? Telt niet als antwoord: ‘thuisbatterijen zijn altijd meeverzekerd’. " + Data.RULES.insurance,
+          status(line("insurance")), ["insurance"]),
         cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), ["backup"]),
         cost("App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
           subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription),
@@ -892,7 +895,7 @@ window.Results = (() => {
       if (!input) return;
       const changes = [], wrong = [], notes = [], terms = quoted[c.key] || {};
       let price = null;
-      const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
+      const copy = structuredClone(trimmed(run, request, [c.key])), candidate = copy.candidates.find(v => v.key === c.key);
       for (const [field, name] of QUOTE_FIELDS) {
         const raw = answer(c, field).trim();
         if (!raw) continue;
@@ -921,7 +924,8 @@ window.Results = (() => {
         basis: { run_id: run.id, title: request.title, candidate_key: c.key,
           break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes,
           ...(price && changes.some(ch => ch.field === "upfront_eur") ? { price } : {}) } });
-      UI.toast("Offertewaarden overgenomen. Controleer de invoer, bevestig en reken opnieuw; de oude berekening blijft bewaard.");
+      UI.toast("Offertewaarden overgenomen. Controleer de invoer, bevestig en reken opnieuw; de oude berekening blijft bewaard." +
+        (copy.candidates.length < request.candidates.length ? ` ${trimmedText(request.candidates.length, copy.candidates.length)}` : ""));
       location.hash = "#/zelf";
     });
     out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron " +
@@ -1174,5 +1178,15 @@ window.Results = (() => {
 
   // De doorgerekende accu's op volgorde van het doel, zonder geen accu.
   const ranked = run => options(run).slice(1);
-  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation, ranked };
+  // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de beste vijf op het doel, de beste
+  // in de terugleveringsvariant, de optie uit een offerte en `extra`; de rest blijft in de oorspronkelijke berekening.
+  function trimmed(run, request, extra = []) {
+    if (request.candidates.length <= Scenario.MAX_OPTIONS) return request;
+    const keep = new Set([...ranked(run).slice(0, 5).map(c => c.key), run.result.export_variant_recommended_key,
+      request.quote_basis?.candidate_key, ...extra].filter(Boolean));
+    return { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) };
+  }
+  const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
+    "oorspronkelijke berekening staan.";
+  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation, ranked, trimmed, trimmedText };
 })();

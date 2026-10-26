@@ -98,6 +98,8 @@ window.Scenario = (() => {
           index: i
       }))
     };
+    // De herkomst uit een offerte blijft bij een kopie bewaard; basis() rekent de verschillen opnieuw uit.
+    state.basis = request.quote_basis ?? null;
     Object.assign(state, extra);
     store.set(STORE, state);
   }
@@ -377,6 +379,8 @@ window.Scenario = (() => {
     const i = Data.INDICATION;
     const use = button("Gebruik de indicaties", () => {
       Object.assign(state.tariff, { import: plain(i.import), export: plain(i.export), fee: plain(i.exportFee) });
+      // Zoals in de keuzehulp: in de variant zonder vergoeding vallen de terugleverkosten van de indicatie ook weg.
+      if (state.variant.fee === "") state.variant.fee = "0";
       persist(); flow.rerender();
     }, "secondary");
     return h("div", {}, h("p", { class: "help" },
@@ -416,10 +420,12 @@ window.Scenario = (() => {
   // Een stekkerbatterij uit de catalogus volgt bij een andere aansluiting het vermogen van de keuzehulp: in een stopcontact
   // hoogstens 800 W (plugLimit), op een eigen groep het volle vermogen uit de bronnen (circuitVariant, of de bronwaarden
   // als de catalogus zelf een eigen-groepuitvoering heeft). Alleen als laad- en ontlaadvermogen nog op een van die twee
-  // staan; eigen invoer blijft staan, met een waarschuwing als die niet bij een stopcontact past. Naam, aannames en
-  // kostenposten volgen alleen als ze nog de tekst of indicatie van de vorige aansluiting zijn. Geeft de melding terug,
-  // of null als er niets veranderde.
-  async function followConnection(option) {
+  // staan; eigen invoer blijft staan, met een waarschuwing als die niet bij een stopcontact past. De naam volgt als hij nog
+  // de naam uit de catalogus is, en in de aannames (ook die van de keuzehulp) worden de zinnen van de vorige vorm vervangen
+  // door die van de nieuwe. Kostenposten met de indicatie van de vorige aansluiting (`previous`) krijgen die van de nieuwe,
+  // ook als het vermogen gelijk blijft (een stekkerbatterij tot 800 W op een eigen groep kost wel de extra groep).
+  // Geeft de melding terug, of null als er niets veranderde.
+  async function followConnection(option, previous) {
     if (option.configuration_id == null || !["plug", "circuit"].includes(option.kind)) return null;
     const cmp = await Data.catalog(), config = cmp.configurations.find(c => c.id === option.configuration_id);
     const base = config && Data.describe(cmp, config);
@@ -427,28 +433,40 @@ window.Scenario = (() => {
     const forms = { plug: Data.plugLimit(base), circuit: Data.circuitVariant(cmp, base) || base };
     const target = forms[option.kind], power = ["charge_power_kw", "discharge_power_kw"];
     const at = form => power.every(key => Math.abs((parse(option.battery[key]) ?? NaN) - form.battery[key]) < 1e-9);
-    if (at(target)) return null;
-    const from = Object.keys(forms).find(kind => at(forms[kind]));
-    if (!from) return option.kind === "plug" && power.some(key => parse(option.battery[key]) > 0.8)
-      ? "Let op: het ingevulde vermogen is meer dan 800 W. In een gewoon stopcontact rekent de keuzehulp met hoogstens 800 W." : null;
-    for (const key of power) option.battery[key] = plain(target.battery[key]);
-    if (Object.values(forms).some(form => form.name === option.name)) option.name = target.name;
-    const text = form => `Overgenomen uit de catalogus. ${form.notes.join(" ")}`;
-    const written = Object.values(forms).find(form => option.assumptions.startsWith(text(form)));
-    if (written) option.assumptions = text(target) + option.assumptions.slice(text(written).length);
-    const costCatalog = await Data.costs(), before = estimates(from, costCatalog, base), after = estimates(option.kind, costCatalog, base);
-    const same = (a, b) => a?.status === b?.status && a?.amount === b?.amount && a?.source === b?.source;
-    let costs = 0;
-    for (const category of new Set([...before.keys(), ...after.keys()])) {
-      const current = option.costs[category];
-      if (!(before.has(category) ? same(current, before.get(category)) : !current || current.status === "unknown")) continue;
-      if (same(current, after.get(category))) continue;
-      if (after.has(category)) option.costs[category] = after.get(category); else delete option.costs[category];
-      costs++;
+    const messages = [];
+    const matched = at(target) ? null : Object.keys(forms).find(kind => at(forms[kind]));
+    if (matched) {
+      const old = forms[matched];
+      for (const key of power) option.battery[key] = plain(target.battery[key]);
+      if (old.name === option.name) option.name = target.name;
+      const gone = old.notes.filter(note => !target.notes.includes(note)), added = target.notes.filter(note => !old.notes.includes(note));
+      let text = option.assumptions || "";
+      if (gone.length && gone.every(note => text.includes(note))) {
+        text = text.replace(gone[0], added.join(" "));
+        for (const note of gone.slice(1)) text = text.replace(note, "");
+      } else if (!gone.length && added.length) text = `${text} ${added.join(" ")}`;
+      option.assumptions = text.replace(/ {2,}/g, " ").trim();
+      const n1 = v => n(v, Number.isInteger(v) ? 0 : 1);
+      messages.push(`Vermogen aangepast aan de aansluiting: ${n1(target.battery.discharge_power_kw)} kW ontladen, ` +
+        `${n1(target.battery.charge_power_kw)} kW laden.`);
+    } else if (!at(target) && option.kind === "plug" && power.some(key => parse(option.battery[key]) > 0.8)) {
+      messages.push("Let op: het ingevulde vermogen is meer dan 800 W. In een gewoon stopcontact rekent de keuzehulp met hoogstens 800 W.");
     }
-    const n1 = v => n(v, Number.isInteger(v) ? 0 : 1);
-    return `Vermogen aangepast aan de aansluiting: ${n1(target.battery.discharge_power_kw)} kW ontladen, ` +
-      `${n1(target.battery.charge_power_kw)} kW laden` + (costs ? `, en ${costs} kostenposten met indicaties aangepast.` : ".");
+    const from = ["plug", "circuit"].includes(previous) ? previous : matched;
+    if (from && from !== option.kind) {
+      const costCatalog = await Data.costs(), before = estimates(from, costCatalog, base), after = estimates(option.kind, costCatalog, base);
+      const same = (a, b) => a?.status === b?.status && a?.amount === b?.amount && a?.source === b?.source;
+      let costs = 0;
+      for (const category of new Set([...before.keys(), ...after.keys()])) {
+        const current = option.costs[category];
+        if (!(before.has(category) ? same(current, before.get(category)) : !current || current.status === "unknown")) continue;
+        if (same(current, after.get(category))) continue;
+        if (after.has(category)) option.costs[category] = after.get(category); else delete option.costs[category];
+        costs++;
+      }
+      if (costs) messages.push(`${costs === 1 ? "Eén kostenpost" : `${costs} kostenposten`} met indicaties aangepast aan de aansluiting.`);
+    }
+    return messages.length ? messages.join(" ") : null;
   }
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
@@ -533,8 +551,9 @@ window.Scenario = (() => {
     const kind = select([["unknown", "Onbekend"], ["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij in een stopcontact"],
       ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind ?? "unknown",
       { onchange: async event => {
+        const previous = option.kind;
         option.kind = event.target.value; persist();
-        const followed = await followConnection(option);
+        const followed = await followConnection(option, previous);
         if (!followed) return;
         persist(); toast(followed); flow.rerender();
       } });

@@ -293,8 +293,8 @@
         }
       ],
       "insurance": {
-        "detail": "Voorbeeld: Centraal Beheer noemt ‘Zonnepanelen, laadpaal en thuisbatterij standaard meeverzekerd’ in de opstalverzekering. Controleer je eigen polis.",
-        "url": "https://www.centraalbeheer.nl/verzekeringen/opstalverzekering"
+        "detail": "Aanname: geen extra premie. Volgens het Verbond van Verzekeraars valt een thuisbatterij niet automatisch onder je woonverzekering en willen de meeste verzekeraars dat je hem meldt; een vaste accu valt meestal onder de opstal-, een stekkerbatterij vaker onder de inboedelverzekering (Solar Magazine, 21 augustus 2026). Sommige polissen noemen hem wel, zoals Centraal Beheer (‘standaard meeverzekerd’). Vraag het na bij je verzekeraar.",
+        "url": "https://solarmagazine.nl/nieuws-zonne-energie/i44570/verbond-van-verzekeraars-thuisbatterij-is-lang-niet-altijd-meeverzekerd"
       },
       "grid_fees": {
         "detail": "Liander: ‘De typen stroomaansluitingen 1x25A, 1x35A en 1x40A vallen in de zelfde tariefgroep als 3x25A.’ Een overstap naar 3x25A verandert de jaarlijkse netbeheerkosten dus niet.",

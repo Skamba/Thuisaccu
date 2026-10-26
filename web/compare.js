@@ -135,8 +135,9 @@ window.Compare = (() => {
     if (warnings.length) view.append(h("div", { class: "callout", role: "note" }, h("p", {}, h("strong", {}, "Let op bij vergelijken")),
       h("ul", { class: "compact" }, warnings.map(text => h("li", {}, text)))));
     view.append(
+      runs.length > 2 ? h("p", { class: "compare-hint" }, "Schuif de tabel opzij voor de andere berekeningen.") : null,
       h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": "Berekeningen naast elkaar" },
-        h("table", { class: "compare" }, h("caption", {}, `${runs.length} berekeningen naast elkaar`),
+        h("table", { class: "compare", style: `--cols:${runs.length}` }, h("caption", {}, `${runs.length} berekeningen naast elkaar`),
           h("thead", {}, head), h("tbody", {}, body))),
       h("p", { class: "help" }, "Elke kolom gebruikt de invoer en het rekenmodel van die berekening. Bij geen aanbevolen accu staat " +
         "de accu met het hoogste netto voordeel erbij."),

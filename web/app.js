@@ -21,17 +21,13 @@
       path.setAttribute("d", ICONS[name] || ""); svg.append(path); return svg;
   };
 
-  // Een kopie in Zelf doorrekenen houdt bij meer dan twaalf opties de beste vijf op het doel, de beste in de
-  // terugleveringsvariant en de optie uit een offerte; de rest blijft in de oorspronkelijke berekening.
+  // Een kopie in Zelf doorrekenen houdt bij meer dan twaalf opties de beste (Results.trimmed).
   function duplicate(run) {
-    const request = run.input.request, all = request.candidates.length;
-    const keep = all <= Scenario.MAX_OPTIONS ? null : new Set([...Results.ranked(run).slice(0, 5).map(c => c.key),
-      run.result.export_variant_recommended_key, request.quote_basis?.candidate_key].filter(Boolean));
-    const copy = keep ? { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) } : request;
+    const request = run.input.request, copy = Results.trimmed(run, request), all = request.candidates.length;
     const open = () => {
       Scenario.load(copy);
-      toast(keep ? `Kopie geladen met de ${copy.candidates.length} beste van ${all} opties; de andere ${all - copy.candidates.length} ` +
-        "blijven in de oorspronkelijke berekening staan. Controleer de invoer en bevestig opnieuw."
+      toast(copy.candidates.length < all ? `Kopie geladen met de ${copy.candidates.length} beste van ${all} opties; de andere ` +
+        `${all - copy.candidates.length} blijven in de oorspronkelijke berekening staan. Controleer de invoer en bevestig opnieuw.`
         : "Kopie geladen. Controleer de invoer en bevestig opnieuw.");
       location.hash = "#/zelf";
     };
