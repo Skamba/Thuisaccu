@@ -9,7 +9,7 @@ De volgende routes bestaan:
 | `/api/v1/health` | `200`, `application/json` | Servicestatus |
 | `/ui.js`, `/data.js`, `/results.js`, `/keuzehulp.js`, `/catalog.js`, `/energy.js`, `/scenario.js`, `/app.js` | `200`, `text/javascript; charset=utf-8` | Browserscripts uit de tabel `ASSETS` |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
-| `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers` |
+| `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers`; elke configuratie heeft `researched` (staat in een ingebouwde onderzochte set) |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
 | `GET /api/v1/references` | `200`, JSON met `sets` en `pending` | Aantal ingebouwde sets bronmomentopnamen en hoeveel daarvan nog niet in deze database staan; laadt zelf niets |
 | `POST /api/v1/references` | `200`, JSON | Invoer van acht sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was. De interface roept dit één keer per bezoek aan |

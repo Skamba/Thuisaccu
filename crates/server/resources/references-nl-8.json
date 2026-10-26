@@ -1,0 +1,422 @@
+[
+  {
+    "manufacturer": "Sunpura",
+    "product": "S2400",
+    "model_code": "S2400",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 2,4 kWh · stekker 800 W",
+    "market": "Nederland; webshop fabrikant (Sunpura Energy NL)",
+    "document_revision": null,
+    "published_on": null,
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Sunpura Energy NL (sunpuraenergy.nl)",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 96900,
+      "tax_basis": "included",
+      "includes_installation": false
+    },
+    "source_url": "https://sunpuraenergy.nl/en/products/s2400-home-battery-storage",
+    "source_title": "Sunpura S2400 thuisbatterij met stekker – 2,4 kWh voor zonnepanelen",
+    "source_kind": "offer",
+    "locator": "Productpagina, prijsblok; variant 2,4 kWh (A2400 + B2400) / Zonder zonnepanelen",
+    "conditions": "Onderzocht 2026-10-26. ‘Aanbiedingsprijs €969,00’, ‘Normale prijs €1.219,00’, ‘Inclusief belasting.’ Dezelfde prijs staat in de productgegevens van de winkel (/collections/all/products.json). Einddatum van de actie niet vermeld; de bovenbalk noemt ‘Koop de S2400 en ontvang een cadeau ter waarde van €129’. Voorraad: ‘Weinig voorraad’. Verzendkosten worden bij het afrekenen berekend. De pagina noemt als inbegrepen (Duitstalig blok ‘Im Angebot enthalten’): ‘P1 Meter Reader + 2 × Smart Plugs’ en ‘1 × A2400 in jeder Konfiguration’. Zonder zonnepanelen; geen installatie; een eigen groep is niet inbegrepen."
+  },
+  {
+    "manufacturer": "Zendure",
+    "product": "SolarFlow 3000 Mix AC+",
+    "model_code": "SolarFlow 3000 Mix AC+",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 8 kWh · stekker",
+    "market": "Nederland; webshop fabrikant",
+    "document_revision": null,
+    "published_on": null,
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 3000,
+        "upper_value": null,
+        "boundary": "system_ac",
+        "reported_value": "Tot 3 kW plug-and-play AC-vermogen",
+        "conditions": "Plug-and-play (stekker) volgens de productpagina; definitieve netgekoppelde gegevens zijn volgens de pagina nog niet gepubliceerd."
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": null,
+    "source_url": "https://www.zendure.nl/products/solarflow-3000-mix-ac",
+    "source_title": "Zendure SolarFlow 3000 Mix AC+ – Compacte 8 kWh Thuisbatterij",
+    "source_kind": "product_page",
+    "locator": "Productpagina, kenmerkenblok ‘Tot 3 kW plug-and-play AC-vermogen’ en sectie Plug-and-play",
+    "conditions": "Onderzocht 2026-10-26. ‘Tot 3 kW plug-and-play AC-vermogen’; sectie Plug-and-play: ‘SolarFlow 3000 Mix AC+ levert tot 3 kW plug-and-play AC-vermogen.’ Het FAQ-antwoord over het maximale netgekoppelde uitgangsvermogen zegt echter: ‘De exacte gegevens over het netgekoppelde uitgangsvermogen van de SolarFlow 3000 Mix AC+ zullen worden bekendgemaakt in de definitieve productspecificaties.’ De waarde is dus een marketingvermelding en geen definitieve specificatie."
+  },
+  {
+    "manufacturer": "Zendure",
+    "product": "SolarFlow 4000 Mix AC+",
+    "model_code": "SolarFlow 4000 Mix AC+",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 8 kWh · stekker",
+    "market": "Nederland; webshop fabrikant",
+    "document_revision": null,
+    "published_on": null,
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 3000,
+        "upper_value": null,
+        "boundary": "system_ac",
+        "reported_value": "Bij een plug-and-play-opstelling bedraagt het maximaal instelbare netgekoppelde uitgangsvermogen 3 kW.",
+        "conditions": "Plug-and-play (stekker), instelbaar maximum."
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": null,
+    "source_url": "https://www.zendure.nl/products/solarflow-4000-mix-ac",
+    "source_title": "Zendure SolarFlow 4000 Mix AC+ – 8kWh Beste Thuisbatterij",
+    "source_kind": "product_page",
+    "locator": "Productpagina, FAQ ‘Wat is het maximale netgekoppelde uitgangsvermogen bij plug-and-play en bij vaste bekabeling?’",
+    "conditions": "Onderzocht 2026-10-26. ‘Bij een plug-and-play-opstelling bedraagt het maximaal instelbare netgekoppelde uitgangsvermogen 3 kW. Bij vaste bekabeling kan dit, mits de lokale regelgeving en de installatieomstandigheden dit toelaten, worden verhoogd tot 5 kW. Let op: de omvormer zelf heeft een nominale capaciteit van 4 kW. Een uitgangsvermogen van 5 kW is alleen mogelijk in een situatie met een externe AC-gekoppelde PV-ingang.’ Kenmerkenblok van dezelfde pagina: ‘4 kW bidirectioneel AC-vermogen’. Voor de uitvoering stekker geldt de plug-and-playwaarde 3 kW; 4 kW is de nominale omvormercapaciteit. De aparte off-grid-poort levert volgens de pagina ‘continu uitgangsvermogen tot 3680 W’ (niet netgekoppeld, hier niet als ontlaadvermogen overgenomen)."
+  },
+  {
+    "manufacturer": "Growatt",
+    "product": "NEXA 2000",
+    "model_code": "NEXA 2000",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 2 kWh · stekker",
+    "market": "Europa; datasheet",
+    "document_revision": null,
+    "published_on": null,
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 800,
+        "upper_value": null,
+        "boundary": "system_ac",
+        "reported_value": "AC nominal output power 800W",
+        "conditions": "On-grid poort; ook ‘Rated off-grid AC output power 800W’."
+      },
+      {
+        "metric": "continuous_charge_power_w",
+        "qualifier": "at_most",
+        "value": 2000,
+        "upper_value": null,
+        "boundary": "unspecified",
+        "reported_value": "Max. charging power 2000W max",
+        "conditions": ""
+      },
+      {
+        "metric": "weight_kg",
+        "qualifier": "exact",
+        "value": 24,
+        "upper_value": null,
+        "boundary": "unspecified",
+        "reported_value": "Weight 24kg",
+        "conditions": ""
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported",
+        "conditions": "Datasheet: On-grid Port met AC nominal output power 800W; ‘All-in-one Balcony Solar Storage’."
+      }
+    ],
+    "texts": [],
+    "product_warranty_months": 120,
+    "price": null,
+    "source_url": "https://cdn.tepto.de/media/a8/8c/3c/1739365907/NEXA%202000_Datasheet_EN%20DE_202501.pdf",
+    "source_title": "NEXA 2000 Datasheet EN DE 202501",
+    "source_kind": "datasheet",
+    "locator": "Pagina 1, tabel Specifications: On-grid Port, Versatile AC Port, Battery Specifications, General",
+    "conditions": "Onderzocht 2026-10-26. Fabrikantdatasheet van Growatt (bestandsnaam ‘NEXA 2000_Datasheet_EN DE_202501’), gehost door een Duitse retailer (tepto.de); een kopie op en.growatt.com is niet gevonden, dus de herkomst is niet bij Growatt zelf gecontroleerd. Letterlijk: ‘AC nominal output power 800W’ (On-grid Port), ‘Rated off-grid AC output power 800W’ (Versatile AC Port), ‘Max. charging power 2000W max’, ‘Battery capacity 2048Wh’, ‘Weight 24kg’, ‘Warranty 10 years’. Sommige verkopers noemen 2000 W uitgang; de datasheet noemt 2000 W alleen als maximaal laadvermogen."
+  },
+  {
+    "manufacturer": "EcoFlow",
+    "product": "STREAM AC 5000",
+    "model_code": "STREAM AC 5000",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 5,04 kWh · stekker",
+    "market": "Nederland; webshop fabrikant",
+    "document_revision": null,
+    "published_on": null,
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "range",
+        "value": 800,
+        "upper_value": 3000,
+        "boundary": "system_ac",
+        "reported_value": "AC-uitgang met het net gekoppeld 800 W/3000 W",
+        "conditions": "Twee waarden gescheiden door een schuine streep; voor 3000 W geldt volgens de voetnoot een uitbreidingsbatterij of powerpack."
+      },
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 2500,
+        "upper_value": null,
+        "boundary": "battery_dc",
+        "reported_value": "Maximaal ontlaadvermogen van de accu van de hoofdeenheid 2 500 W",
+        "conditions": "Alleen de accu van de hoofdeenheid."
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": null,
+    "source_url": "https://nl.ecoflow.com/products/stream-ac-solar-battery",
+    "source_title": "STREAM AC 5000 Thuisbatterij 5000 Wh | EcoFlow NL",
+    "source_kind": "product_page",
+    "locator": "Productpagina, specificatietabel (regels ‘Maximaal ontladingsvermogen van het accusysteem’, ‘Maximaal ontlaadvermogen van de accu van de hoofdeenheid’, ‘AC-uitgang met het net gekoppeld’) en FAQ",
+    "conditions": "Onderzocht 2026-10-26. Letterlijk uit de specificaties: ‘Maximaal ontladingsvermogen van het accusysteem 3000 W’; ‘Maximaal ontlaadvermogen van de accu van de hoofdeenheid 2 500 W’; ‘AC-uitgang met het net gekoppeld 800 W/3000 W’; ‘AC-uitgang - niet netgekoppeld 3000 W’. Voetnoot: ‘*Tot 3000 W uitgangsvermogen in combinatie met een uitbreidingsbatterij.’ FAQ: ‘Als de STREAM AC 5000 parallel wordt gestapeld met een powerpack, is het maximum netgekoppelde uitgangsvermogen van het apparaat 3000 W.’ De pagina zegt niet welke van 800 W en 3000 W voor een stekker geldt; 800 W is waarschijnlijk de stekkerwaarde, maar dat staat niet letterlijk op de pagina."
+  },
+  {
+    "manufacturer": "SAMDUO",
+    "product": "Nex E6000",
+    "model_code": "Nex E6000",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 6,02 kWh · stekker",
+    "market": "Nederland; webshop fabrikant",
+    "source_url": "https://nl.samduo.com/products/6kwh-thuisbatterij-met-stekker-samduo-nex-e6000",
+    "source_title": "6kWh Thuisbatterij met Stekker - SAMDUO Nex E6000",
+    "source_kind": "product_page",
+    "locator": "Productpagina, kopblok en tabel ‘Productspecificaties’ (rij AC-uitgang (netgekoppeld))",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. Kopregel: ‘2600W bidirectioneel vermogen met 800W netgekoppelde uitgang’; elders op de pagina ‘800 W on-grid output.’ Specificatietabel: ‘AC-uitgang (netgekoppeld) 800W’ en ‘AC-uitgang (autonoom) 2600VA’. De 2600 W is dus het bidirectionele (laad)vermogen; het continue ontlaadvermogen op het net (stekker) is 800 W. De pagina noemt daarnaast ‘Max. uitgangsvermogen (piek) 3640VA (10s)’ en een capaciteit van 6028 Wh; die zijn hier niet als claim overgenomen. De tabelopmaak (labels en waarden in aparte regels) is uit de paginatekst gelezen; de kopregel bevestigt de 800 W.",
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "exact",
+        "value": 800,
+        "upper_value": null,
+        "boundary": "system_ac",
+        "reported_value": "2600W bidirectioneel vermogen met 800W netgekoppelde uitgang",
+        "conditions": "Netgekoppelde AC-uitgang (stekker); autonome uitgang volgens de tabel 2600 VA"
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": null
+  },
+  {
+    "manufacturer": "AEG",
+    "product": "SolarCube",
+    "model_code": "AS-BBL09",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 4,8 kWh · stekker",
+    "market": "Europa; datasheet",
+    "source_url": "https://www.woba-solar.de/cdn/shop/files/AEG_Plug-In_Battery_AS-BBL09-4.8K_EN.pdf",
+    "source_title": "AC COUPLED PLUG-IN BATTERY SYSTEM AS-BBL09 SERIES (datasheet, Solar Solutions Group, Version 2025.09.V1.0.EN)",
+    "source_kind": "datasheet",
+    "locator": "Datasheet, blok ‘AC OUTPUT’, rij ‘AC-output (ON-grid)’ met voetnoot 2",
+    "document_revision": "2025.09.V1.0.EN",
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. Tabelwaarde ‘AC-output (ON-grid)[2] [W] 800-2400’. Voetnoot 2: ‘For AC output higher than 800 Watt, the AEG AS-BBL09-4.8K should be connected to a dedicated circuit breaker’. Dus 800 W is het niveau voor een gewone stekker, tot 2400 W alleen op een eigen groep. De pdf-tekst is een tabel met losse kolommen; de rijkoppeling is met de bijbehorende eenheden (W) gelezen en komt overeen met de Nederlandse winkelspecificaties (‘800 tot 2400 watt’).",
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "range",
+        "value": 800,
+        "upper_value": 2400,
+        "boundary": "system_ac",
+        "reported_value": "800-2400",
+        "conditions": "Boven 800 W alleen op een eigen groep (voetnoot 2 van de datasheet)"
+      }
+    ],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": null
+  },
+  {
+    "manufacturer": "TSUN",
+    "product": "PowerTrunk MAU5000",
+    "model_code": "PowerTrunk MAU5000",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 5,12 kWh · stekker 2,5 kW",
+    "market": "Nederland; webwinkel bol (verkoper CJX)",
+    "source_url": "https://www.bol.com/nl/nl/p/tsun-plug-play-thuisbatterij-5-kwh-via-stopcontact-backup-functie-inclusief-p1-meter/9300000329084026/",
+    "source_title": "TSUN - Plug & play thuisbatterij - 5 kwh - via stopcontact - backup functie - inclusief P1 meter",
+    "source_kind": "offer",
+    "locator": "Productpagina bol, prijsblok en specificatietabel (‘MAU 5000’)",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. ‘1.399,-’; ‘Verkoop door CJX’; levering ‘Uiterlijk 29 oktober in huis’. De pagina noemt de btw niet; consumentenprijzen moeten volgens de ACM inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Inclusief P1-meter (titel), geen installatie. Voorraad niet expliciet vermeld. Let op: bol noemt ‘5020 Wh (± 5,02 kWh)’ terwijl de bestaande claim 5,12 kWh is; modelnaam ‘MAU 5000’, ‘Max. AC output: 2500 W’. Dezelfde prijs (€1.399, bol) staat op thuisbatterijgids.net.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "CJX via bol",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 139900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "HYXI",
+    "product": "Halo",
+    "model_code": "HYX-MS3000AC",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 3,01 kWh · stekker 3 kW",
+    "market": "Nederland; webwinkel BatterijXpert",
+    "source_url": "https://shop.batterijxpert.nl/products/hyxi-halo-3-kwh",
+    "source_title": "HYXI Halo (3 kWh) - met GRATIS P1-meter",
+    "source_kind": "offer",
+    "locator": "Productpagina, prijsblok (variant ‘GRATIS HYXI P1 / Zonder installatie’)",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. €899,00; de pagina meldt ‘Inclusief btw.’ en ‘Levering binnen 3 dagen’; variant als beschikbaar gemarkeerd. Inbegrepen: een HYXI P1-meter; installatie niet (met installatie op de begane grond met eigen groep +€650 = €1.549, op 1e of 2e verdieping +€750 = €1.649). Omvormer ingebouwd. Geen doorgestreepte prijs.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "BatterijXpert",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 89900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "HYXI",
+    "product": "Halo",
+    "model_code": "HYX-MS3000AC",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 3,01 kWh · stekker 3 kW",
+    "market": "Nederland; webwinkel Powerstationshop",
+    "source_url": "https://powerstationshop.eu/products/hyxi-halo-plugin-thuisbatterij-3-tot-18kwh-modulair-uitbreidbaar",
+    "source_title": "HYXi HALO Plugin Thuisbatterij 3 tot 18kWh modulair uitbreidbaar",
+    "source_kind": "offer",
+    "locator": "Productpagina, prijsblok (variant ‘HYXi HALO 3 kWh Hoofdunit’) en paginavoet",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. €799,00 voor de 3 kWh-hoofdunit; paginavoet: ‘Alle prijzen zijn inclusief BTW, tenzij anders vermeld’; tekst op de pagina: ‘wij hebben de Hyxi Halo op voorraad en kunnen direct leveren’. De pagina noemt een meegeleverde P1-meter; geen installatie inbegrepen (‘Geen complexe installatie, geen installateur nodig’). Geen doorgestreepte prijs gezien.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Powerstationshop (powerstationshop.eu)",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 79900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Jackery",
+    "product": "SolarVault 3 Pro Max",
+    "model_code": "SolarVault 3 Pro Max",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 2,52 kWh · stekker",
+    "market": "Nederland; webshop fabrikant",
+    "source_url": "https://nl.jackery.com/products/solarvault-3-pro-max",
+    "source_title": "Jackery SolarVault 3 Pro Max Plug-in Thuisbatterij – Jackery NL",
+    "source_kind": "product_page",
+    "locator": "Productpagina, Specificaties, blok ‘AC Ingang/Uitgang (Net)’, en voetnoten onderaan",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. Specificaties: ‘Max. AC uitgangsvermogen (Net) 2.500 W / 800 W’ en ‘Max. AC Output Schijnbare Macht 2.500 VA / 800 VA’. Voetnoot: ‘De batterij is aanvankelijk geconfigureerd met een uitgangsvermogen van 800 W. Voor een upgrade naar 2.500 W is professionele installatie vereist’; ‘Plug-in-installatie: Alleen toepasbaar voor netgekoppelde scenario’s met een vermogen van maximaal 800 W’. Voor de uitvoering met stekker geldt dus 800 W. Daarnaast 4 MPPT-ingangen (4 × 1.000 W) voor zonnepanelen; de berekening laadt via het stopcontact. Dit is de Pro Max, niet de Pro Max AC.",
+    "numbers": [
+      {
+        "metric": "continuous_discharge_power_w",
+        "qualifier": "at_most",
+        "value": 800,
+        "upper_value": null,
+        "boundary": "system_ac",
+        "reported_value": "Max. AC uitgangsvermogen (Net) 2.500 W / 800 W",
+        "conditions": "800 W bij plug-in (stekker); 2.500 W alleen na professionele installatie."
+      },
+      {
+        "metric": "pv_input_power_w",
+        "qualifier": "at_most",
+        "value": 4000,
+        "upper_value": null,
+        "boundary": "unspecified",
+        "reported_value": "4.000 W PV-ingang met 4 MPPT’s",
+        "conditions": ""
+      }
+    ],
+    "features": [
+      {
+        "metric": "inverter_included",
+        "status": "supported",
+        "conditions": ""
+      }
+    ],
+    "texts": [],
+    "product_warranty_months": 120,
+    "price": null
+  },
+  {
+    "manufacturer": "Indevolt",
+    "product": "SolidFlex 2000",
+    "model_code": "SolidFlex 2000",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 1,8 kWh · stekker 2,4 kW",
+    "market": "Nederland; webwinkel Thuisbatterij.nl",
+    "source_url": "https://thuisbatterij.nl/winkel/indevolt-solidflex-2000/",
+    "source_title": "Indevolt SolidFlex 2000 Thuisbatterij | Plug-in Thuisaccu Indevolt",
+    "source_kind": "offer",
+    "locator": "Productpagina, keuzes ‘Omvormer: Solidflex hybride’, ‘extra-capaciteit: Geen extra batterij module’, ‘Type (P1) meter: Indevolt P1 meter’; prijsblok van die variant",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. Variant ‘Indevolt Solidflex Hybride plug-in thuisbatterij met interne 2.400 watt omvormer en 1,8 kWh aan opslagcapaciteit. Powermodule met 4 MPPT-trackers’: € 725,00, oorspronkelijk € 825,00 (met Indevolt P1-meter); zonder meter ook € 725,00 (oorspronkelijk € 799,00). ‘Op voorraad’, ‘Binnen 1 à 2 werkdagen gratis geleverd’; einddatum van de actie niet vermeld. De winkel verkoopt daarnaast een ‘Solidflex AC’-variant zonder MPPT (€ 625,00); die is hier niet gebruikt, omdat de SolidFlex 2000 de uitvoering met zonne-ingangen is. De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Geen installatie.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Thuisbatterij.nl",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 72500,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  },
+  {
+    "manufacturer": "Anker",
+    "product": "SOLIX Solarbank 2 E1600 AC",
+    "model_code": "SOLIX Solarbank 2 E1600 AC",
+    "product_kind": "battery_system",
+    "configuration": "1 unit · 1,6 kWh · stekker 800 W",
+    "market": "Nederland; webshop fabrikant",
+    "source_url": "https://www.ankersolix.com/nl/products/a17c2",
+    "source_title": "Anker SOLIX Solarbank 2 E1600 AC - Anker SOLIX NL",
+    "source_kind": "offer",
+    "locator": "Productpagina, ‘Kies jouw systeem’, keuze ‘Solarbank 2 E1600 AC’",
+    "document_revision": null,
+    "published_on": null,
+    "conditions": "Onderzocht 2026-10-26. ‘Solarbank 2 E1600 AC €599,00 na korting’ (‘-€500’ op €1.099,00); einddatum van de actie niet vermeld. Eén unit zonder uitbreidingsaccu (de set met 1 × BP2700 kost €1.399,00). De pagina noemt de btw niet; volgens de ACM moeten consumentenprijzen inclusief btw zijn (https://www.acm.nl/nl/verkoop-aan-consumenten/consumenten-informeren/prijzen-vermelden). Geen installatie.",
+    "numbers": [],
+    "features": [],
+    "texts": [],
+    "product_warranty_months": null,
+    "price": {
+      "seller": "Anker Innovations (Anker SOLIX webshop Nederland)",
+      "currency": "EUR",
+      "minor_unit_exponent": 2,
+      "amount_minor": 59900,
+      "tax_basis": "included",
+      "includes_installation": false
+    }
+  }
+]

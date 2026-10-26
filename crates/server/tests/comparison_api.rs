@@ -40,8 +40,8 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         response_json(response).await
     };
     // De status laadt zelf niets; ze zegt alleen hoeveel sets er nog niet in staan.
-    assert_eq!(status(app.clone()).await, json!({"sets": 8, "pending": 8}));
-    assert_eq!(status(app.clone()).await["pending"], 8);
+    assert_eq!(status(app.clone()).await, json!({"sets": 9, "pending": 9}));
+    assert_eq!(status(app.clone()).await["pending"], 9);
     for expected in [true, false] {
         let response = app
             .clone()
@@ -71,10 +71,19 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
     // datasheet, de test van de Zendure AC+ en de catalogusgegevens van al opgenomen accu's
     // hangen als extra bron aan een bestaande uitvoering.
     assert_eq!(data["configurations"].as_array().unwrap().len(), 102);
+    // Elke uitvoering uit een ingebouwde set is gemarkeerd; de interface verbergt de onvolledige.
+    assert!(
+        data["configurations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["researched"] == true)
+    );
     let offers = data["offers"].as_array().unwrap();
     // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding. De zesde
-    // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen, de zevende twee (AlphaESS).
-    assert_eq!(offers.len(), 69);
+    // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen, de zevende twee (AlphaESS) en
+    // de achtste zes.
+    assert_eq!(offers.len(), 75);
     assert!(offers.iter().all(
         |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
     ));
@@ -220,6 +229,19 @@ async fn candidate_import_is_atomic_and_multiple_source_claims_are_not_overwritt
         comparison.numbers[0]
             .source_url
             .starts_with("urn:thuisaccu:manual:")
+    );
+    // Eigen invoer is geen onderzochte uitvoering en blijft dus altijd zichtbaar.
+    let response = app
+        .oneshot(
+            Request::get("/api/v1/comparison")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response_json(response).await["configurations"][0]["researched"],
+        false
     );
 }
 

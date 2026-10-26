@@ -12,10 +12,19 @@ window.Data = (() => {
   // oudere, nog in de browsercache staande WebAssembly-module.
   const loadReferences = () => (referencesLoaded ||= api("/api/v1/references", { method: "POST" })
     .catch(error => { referencesLoaded = null; throw error; }));
+  // Een onderzochte uitvoering die niet zonder eigen invoer door te rekenen is (capaciteit,
+  // AC-ontlaadvermogen, prijs inclusief btw en de omvormer), voegt weinig toe en wordt niet getoond;
+  // `hidden` telt ze. Zelf toegevoegde uitvoeringen blijven altijd zichtbaar.
   const catalog = async (fresh = false) => {
     await loadReferences();
-    return (catalogCache = (!fresh && catalogCache) || await api("/api/v1/comparison"));
+    if (fresh || !catalogCache) {
+      const cmp = await api("/api/v1/comparison");
+      const shown = cmp.configurations.filter(c => !c.researched || complete(describe(cmp, c)));
+      catalogCache = { ...cmp, configurations: shown, hidden: cmp.configurations.length - shown.length };
+    }
+    return catalogCache;
   };
+  const complete = p => p.battery != null && p.offer != null && (p.inverterIncluded || p.offer.includes_inverter === true);
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   const typicalSources = async () => (typicalCache ||= await api("/api/v1/solar/typical"));
   const imports = async () => (await api("/api/v1/solar/imports")).imports;

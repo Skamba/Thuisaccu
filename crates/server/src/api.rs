@@ -3,6 +3,8 @@ use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
 };
+use std::collections::HashSet;
+
 use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -43,8 +45,52 @@ pub fn database_error(error: StorageError) -> ApiError {
     }
 }
 
-pub async fn comparison(State(catalog): State<Catalog>) -> Result<Json<Comparison>, ApiError> {
-    catalog.comparison().await.map(Json).map_err(database_error)
+/// De vergelijking, met per uitvoering `researched`: of ze in een ingebouwde onderzochte set staat.
+/// De interface verbergt onderzochte uitvoeringen die niet zonder eigen invoer door te rekenen zijn;
+/// wat de gebruiker zelf heeft toegevoegd blijft zichtbaar.
+pub async fn comparison(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
+    let data: Comparison = catalog.comparison().await.map_err(database_error)?;
+    let mut researched = HashSet::new();
+    for (key, json) in REFERENCE_SETS {
+        for d in reference_drafts(key, json)? {
+            researched.insert(identity(
+                &d.manufacturer,
+                &d.product,
+                &d.model_code,
+                &d.configuration,
+            ));
+        }
+    }
+    let mut value = serde_json::to_value(data).map_err(|error| {
+        tracing::error!(%error, "Comparison serialization failed");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"database_error"})),
+        )
+    })?;
+    if let Some(configurations) = value["configurations"].as_array_mut() {
+        for c in configurations {
+            let text = |key: &str| c[key].as_str().unwrap_or_default().to_owned();
+            let known = researched.contains(&identity(
+                &text("manufacturer_name"),
+                &text("product_name"),
+                &text("model_code"),
+                &text("name"),
+            ));
+            c["researched"] = Value::Bool(known);
+        }
+    }
+    Ok(Json(value))
+}
+
+/// Identiteit van een uitvoering zoals de opslag die vastlegt (getrimd).
+fn identity(
+    manufacturer: &str,
+    product: &str,
+    model_code: &str,
+    configuration: &str,
+) -> [String; 4] {
+    [manufacturer, product, model_code, configuration].map(|s| s.trim().to_owned())
 }
 
 pub async fn add_candidate(
@@ -59,7 +105,7 @@ pub async fn add_candidate(
 }
 
 /// Elke set heeft een eigen sleutel: een eerder geladen set wordt niet opnieuw ingevoegd.
-const REFERENCE_SETS: [(&str, &str); 8] = [
+const REFERENCE_SETS: [(&str, &str); 9] = [
     (
         "research-2026-10-24-v1",
         include_str!("../resources/references.json"),
@@ -92,6 +138,10 @@ const REFERENCE_SETS: [(&str, &str); 8] = [
         "research-2026-10-25-nl-v7",
         include_str!("../resources/references-nl-7.json"),
     ),
+    (
+        "research-2026-10-26-nl-v8",
+        include_str!("../resources/references-nl-8.json"),
+    ),
 ];
 
 /// Hoeveel ingebouwde sets er zijn en hoeveel daarvan nog niet geladen zijn; laadt zelf niets.
@@ -112,19 +162,23 @@ pub async fn reference_status(State(catalog): State<Catalog>) -> Result<Json<Val
 pub async fn references(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let mut imported = false;
     for (key, json) in REFERENCE_SETS {
-        let drafts: Vec<CandidateDraft> = serde_json::from_str(json).map_err(|error| {
-            tracing::error!(%error, key, "Invalid reference resource");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error":"reference_data_error"})),
-            )
-        })?;
+        let drafts = reference_drafts(key, json)?;
         imported |= catalog
             .import_references(key, &drafts, Utc::now().timestamp())
             .await
             .map_err(database_error)?;
     }
     Ok(Json(json!({"imported":imported})))
+}
+
+fn reference_drafts(key: &str, json: &str) -> Result<Vec<CandidateDraft>, ApiError> {
+    serde_json::from_str(json).map_err(|error| {
+        tracing::error!(%error, key, "Invalid reference resource");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"reference_data_error"})),
+        )
+    })
 }
 
 struct Upload {

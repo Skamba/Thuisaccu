@@ -274,7 +274,8 @@
         h("details", { class: "menu" }, h("summary", {}, "Meer"), button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "secondary"))),
         Data.priceAge().stale ? h("p", { class: "callout", role: "note" }, Data.priceAge().text) : null,
         h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}. ` +
-          "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd."), list, tray);
+          "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
+          (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")), list, tray);
       function drawTray() {
         tray.hidden = selected.size === 0;
         tray.replaceChildren(...cmp.configurations.filter(c => selected.has(c.id)).map(c => h("span", { class: "chip" }, `${c.product_name} · ${c.name}`,
