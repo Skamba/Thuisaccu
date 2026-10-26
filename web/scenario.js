@@ -12,8 +12,10 @@ window.Scenario = (() => {
     ["discharge_power_kw", "Ontladen AC (kW)", "0.01", "1000"],
       ["ac_round_trip_efficiency_pct", "Rendement AC → AC (%)", "1", "100"],
     ["standby_w", "Sluimerverbruik (W)", "0", "10000"],
-      ["annual_capacity_loss_pct", "Capaciteitsverlies per jaar (%)", "0", "20"],
-    ["operating_life_years", "Levensduur (jaar)", "1", "30"]
+      ["annual_capacity_loss_pct", "Capaciteitsverlies per jaar (%)", "0", "20",
+        "Een gegarandeerde restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar."],
+    ["operating_life_years", "Levensduur (jaar)", "1", "30",
+      "Na zoveel jaar stopt de accu in de berekening. Garantie is geen levensduur: garantiejaren zijn vaak korter dan hoe lang een accu meegaat."]
   ];
   const PARAMS = [
     ["start_year", "Startjaar", "2026", "2100", "1"], ["horizon_years", "Looptijd (jaren)", "1", "30", "1"],
@@ -92,12 +94,12 @@ window.Scenario = (() => {
     Object.assign(state, extra);
     store.set(STORE, state);
   }
-  const short = value => n(value, 2).replace(/,?0+$/, "");
-  // De herkomst uit de offertecheck, met de waarden zoals ze nu in de optie staan; zonder verschil vervalt ze.
-  function basis() {
-    const option = state.basis && state.options.find(o => o.key === state.basis.candidate_key);
-    const changes = option ? state.basis.changes.map(c => ({ ...c, after: parse(option.battery[c.field]) }))
-      .filter(c => c.after != null && c.after !== c.before) : [];
+  // De herkomst uit de offertecheck, met de waarden zoals ze nu in de opgebouwde optie staan; wat je
+  // daarna terugzette naar de oude waarde vervalt, en zonder verschil vervalt de hele herkomst.
+  function basis(candidates) {
+    const option = state.basis && candidates.find(o => o.key === state.basis.candidate_key);
+    const changes = option ? state.basis.changes.map(c => ({ ...c, after: Data.quoteValue(option, c.field) }))
+      .filter(c => Number.isFinite(c.after) && c.after !== c.before) : [];
     return changes.length ? { ...state.basis, changes } : null;
   }
 
@@ -178,7 +180,7 @@ window.Scenario = (() => {
       : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
     return { problems,
       request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates,
-        ...(load_changes.length ? { load_changes } : {}), ...(basis() ? { quote_basis: basis() } : {}) } };
+        ...(load_changes.length ? { load_changes } : {}), ...(basis(candidates) ? { quote_basis: basis(candidates) } : {}) } };
   }
 
   function stepProfile(body) {
@@ -370,7 +372,7 @@ window.Scenario = (() => {
     const tech = h("div", { class: "grid" },
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
-      TECH.map(([key, label, min, max]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }))));
+      TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)));
     const assumptions = field("Bron en aannames van de techniek", bindValue(h("textarea", { rows: "3", required: true }), () => option.assumptions, v => { option.assumptions = v; }),
       "Controleer bruikbare capaciteit, werkelijk AC-vermogen en AC-systeemrendement; kVA en DC-rendement zijn hiervoor onvoldoende.");
     const progress = h("p", { class: "help" });
@@ -468,20 +470,21 @@ window.Scenario = (() => {
         store.set(STORE, null); state = blank();
         location.hash = `#/berekeningen/${response.id}`;
       }));
-      host.append(table(["Onderdeel", "Invoer"], [
+      UI.append(host, [table(["Onderdeel", "Invoer"], [
         ["Naam en adres", `${state.title} · ${state.address || "geen adres"}`],
           ["Doel", Data.objectives[state.objective]],
         ["Stroomprijs / terugleververgoeding",
           `${state.tariff.import || "?"} / ${state.tariff.export || "?"} €/kWh`],
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
         ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"],
-        ...(basis() ? [["Uit de offerte", basis().changes.map(c => `${TECH.find(([key]) => key === c.field)[1]}: ` +
-          `${short(c.before)} → ${short(c.after)}`).join("; ")]] : [])]),
+        ...(request.quote_basis ? [["Uit de offerte", request.quote_basis.changes.map(Data.quoteChange).join("; ")]] : [])]),
         problems.length ? h("div", { class: "callout" },
           h("p", {}, `${problems.length} ${problems.length === 1 ? "punt vraagt" : "punten vragen"} nog aandacht:`),
           h("ul", {}, problems.slice(0, 40).map(p => h("li", {}, p)))) : h("p", { class: "derived" },
           "De invoer is compleet."),
-        h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), run);
+        h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),
+        request.quote_basis ? h("p", { class: "help" }, "Je vinkt de bevestigingen bewust opnieuw aan: zo bevestig je dat de " +
+          "waarden uit de offerte kloppen.") : null, run]);
     });
   }
 

@@ -174,6 +174,7 @@ td strong, th strong { display: block; }
 .plain li { margin: .35rem 0; }
 .receipt { list-style: none; margin: .35rem 0; padding-left: 1rem; font-variant-numeric: tabular-nums; }
 .receipt li { margin: .1rem 0; }
+.plug-advice:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
 .warnings li { margin-bottom: .5rem; }
 .tray { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); padding: .6rem; margin-top: 1rem; }
 .chip { display: inline-flex; align-items: center; gap: .3rem; background: var(--soft); border-radius: 1rem; padding: .2rem .3rem .2rem .7rem; font-size: .85rem; }

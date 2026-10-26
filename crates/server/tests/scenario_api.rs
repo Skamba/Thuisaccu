@@ -511,4 +511,16 @@ async fn quote_basis_is_saved_as_provenance_and_strictly_validated() {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
     }
     assert_eq!(catalog.list_analyses().await.unwrap().len(), 2);
+
+    // Ook de totaalprijs en het abonnement uit de offerte zijn herkomst.
+    let mut priced = request.clone();
+    priced["quote_basis"]["changes"] = json!([
+        {"field": "upfront_eur", "before": 4000, "after": 3500},
+        {"field": "subscription_eur", "before": 0, "after": 60}
+    ]);
+    let response = app
+        .oneshot(post("/api/v1/analysis/runs", priced))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
 }

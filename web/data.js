@@ -25,7 +25,60 @@ window.Data = (() => {
     return catalogCache;
   };
   const complete = p => p.battery != null && p.offer != null && (p.inverterIncluded || p.offer.includes_inverter === true);
+  // De onderzochte uitvoering achter elke optie van een run, op nummer én naam: een gedeelde run kan uit
+  // een andere database komen, waar hetzelfde nummer een andere accu is. Opties zonder overeenkomst ontbreken.
+  async function described(candidates) {
+    const cmp = await catalog(), out = new Map();
+    for (const c of candidates) {
+      const config = cmp.configurations.find(x => x.id === c.configuration_id);
+      if (!config || !(c.name === describe(cmp, config).name || c.name.includes(config.product_name))) continue;
+      out.set(c.key, describe(cmp, config));
+    }
+    return out;
+  }
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
+  // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern.
+  const CREDITS = ["grant", "vat_refund", "residual_value"];
+  // Wat de offertecheck uit een offerte kan overnemen: [veld, naam, eenheid], gelijk aan QUOTE_FIELDS in
+  // scenario_api.rs. De technische velden staan in `battery`; de totaalprijs is de som van alle betaalde
+  // startposten vóór teruggaven, het abonnement het bedrag per jaar (0 zonder abonnement).
+  const QUOTE_FIELDS = [["usable_capacity_kwh", "bruikbare capaciteit", "kWh"], ["charge_power_kw", "laadvermogen AC", "kW"],
+    ["discharge_power_kw", "ontlaadvermogen AC", "kW"], ["ac_round_trip_efficiency_pct", "rendement AC → AC", "%"],
+    ["standby_w", "sluimerverbruik", "W"], ["operating_life_years", "levensduur", "jaar"],
+    ["annual_capacity_loss_pct", "capaciteitsverlies per jaar", "%"],
+    ["upfront_eur", "totaalprijs inclusief btw", "€"], ["subscription_eur", "abonnement per jaar", "€"]];
+  const isPriceField = field => field === "upfront_eur" || field === "subscription_eur";
+  // De waarde van een offerteveld bij een optie zoals die naar de rekenkern gaat (bedragen in eurocenten).
+  function quoteValue(candidate, field) {
+    const priced = l => l.status === "priced" ? l.amount_minor / 100 : 0;
+    if (field === "upfront_eur") return candidate.costs.filter(l => l.timing === "upfront" && !CREDITS.includes(l.category))
+      .reduce((sum, l) => sum + priced(l), 0);
+    if (field === "subscription_eur") return priced(candidate.costs.find(l => l.category === "subscription") || { status: "" });
+    return candidate.battery[field];
+  }
+  const plain = value => n(value, 2).replace(/,?0+$/, "");
+  const quoteUnit = (field, value) => { const unit = QUOTE_FIELDS.find(([key]) => key === field)[2];
+    return unit === "€" ? UI.money(value, { decimals: Number.isInteger(value) ? 0 : 2 }) : `${plain(value)}${unit === "%" ? "%" : ` ${unit}`}`; };
+  const quoteChange = c => `${QUOTE_FIELDS.find(([key]) => key === c.field)[1]} ${quoteUnit(c.field, c.before)} → ${quoteUnit(c.field, c.after)}`;
+  // Zet een offerteprijs in de kostenposten: de totaalprijs op de accupost, wat al betaald was als inbegrepen,
+  // en geen reserve voor meerwerk; het abonnement als jaarbedrag. Bedragen in hele eurocenten.
+  function applyQuotePrice(candidate, field, value) {
+    const set = (line, status, amount, source, notes) => Object.assign(line, { status, amount_minor: amount, source, notes });
+    if (field === "subscription_eur") {
+      const line = candidate.costs.find(l => l.category === "subscription");
+      if (value > 0) set(line, "priced", Math.round(value * 100), "Offerte", "Abonnement per jaar volgens de offerte.");
+      else set(line, "not_applicable", 0, "Offerte", "Geen abonnement volgens de offerte.");
+      return;
+    }
+    for (const line of candidate.costs.filter(l => l.timing === "upfront" && !CREDITS.includes(l.category))) {
+      if (line.category === "battery") set(line, "priced", Math.round(value * 100), "Offerte (totaalprijs inclusief btw)",
+        "Totaalprijs uit de offerte, inclusief btw.");
+      else if (line.category === "contingency") set(line, "not_applicable", 0, "Aanname",
+        "Aanname: de offerte is een vaste prijs; meerwerk na de schouw is niet meegeteld.");
+      else if (line.status === "priced") set(line, "included", 0, "In de totaalprijs van de offerte",
+        "Was eerder apart geschat; nu inbegrepen in de totaalprijs van de offerte.");
+    }
+  }
   const typicalSources = async () => (typicalCache ||= await api("/api/v1/solar/typical"));
   const imports = async () => (await api("/api/v1/solar/imports")).imports;
   const runs = async () => (await api("/api/v1/analysis/runs")).runs;
@@ -82,6 +135,28 @@ window.Data = (() => {
   }
   const isDemo = item => item?.options?.is_demo === true;
 
+  // Regels en veiligheidsadvies rond aansluiten, voor de keuzehulp en de uitkomst; gedateerde bronnen, geen juridisch advies.
+  const RULES = {
+    register: "Meld je thuisaccu aan bij je netbeheerder via energieleveren.nl. Volgens Netbeheer Nederland is dat verplicht, " +
+      "net als voor zonnepanelen; dat geldt sinds een wijziging van de Netcode elektriciteit voor opslag vanaf 0,8 kW die op het " +
+      "net is aangesloten. Aanmelden is gratis. Naar schatting is minder dan 40% van de thuisaccu’s aangemeld.",
+    plug: "Milieu Centraal raadt stekkerbatterijen op dit moment niet aan, onder meer vanwege brandrisico: in één groep kan " +
+      "stroom van twee kanten komen, van het net en van de accu. Een installateur sluit een accu volgens de NEN 1010-norm aan " +
+      "op een aparte groep in de meterkast, niet op een stopcontact. Kies je toch voor een stekkerbatterij, gebruik dan een " +
+      "vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, en houd het " +
+      "terugleververmogen op 800 W of minder. Die laatste adviezen geeft Milieu Centraal voor stekkerzonnepanelen; " +
+      "ze gelden ook logisch voor een stekkerbatterij, maar zijn daarvoor niet afzonderlijk gepubliceerd.",
+    sources: [
+      ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)",
+        "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
+      ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)",
+        "https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd"],
+      ["Milieu Centraal: thuisbatterij (gewijzigd 28 september 2026)",
+        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/"],
+      ["Milieu Centraal: zonnepanelen met een stekker (gewijzigd 30 juni 2026)",
+        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/"]
+    ]
+  };
   // Aannames voor gegevens die een bron niet noemt; altijd zichtbaar bij de accu. Rendement en
   // sluimerverbruik zijn bewust voorzichtig: gemeten stekkeraccu's halen 77–87% heen en terug en
   // gebruiken 3–14 W in rust (docs/keuzehulp.md).
@@ -348,6 +423,7 @@ window.Data = (() => {
   };
 
   return {
+    RULES, described, CREDITS, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults

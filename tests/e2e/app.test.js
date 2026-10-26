@@ -220,6 +220,13 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // De grens voor een offerte, ook zonder terugleververgoeding.
   assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert)?|is hij zelfs gratis niet lonend)\./);
   assert.match(summary, /geschat uit jaartotalen/);
+  // Met de stekker staat het veiligheidsadvies boven de som, met het vermogen waarmee is gerekend; de kaart
+  // van een stekkerbatterij springt ernaartoe zonder de pagina te verlaten.
+  assert.match(summary, /is een stekkerbatterij\. Milieu Centraal raadt stekkerbatterijen op dit moment af.*Hier is gerekend met [\d,]+ kW ontladen.*energieleveren\.nl/);
+  assert.ok(summary.indexOf("is een stekkerbatterij") < summary.indexOf("Zo reken je de besparing"));
+  await page.locator("button:has-text('Milieu Centraal raadt stekkerbatterijen af: lees waarom')").first().click();
+  assert.equal(await page.evaluate(() => document.activeElement.id), "stekkeradvies");
+  assert.equal(await page.evaluate(() => location.hash), runHash);
   // De kostenopbouw telt de startposten op tot de startinvestering van de gekozen accu.
   await page.click(`[role=tab]:has-text("Kostenopbouw")`);
   const costPanel = page.locator("[role=tabpanel]:not([hidden])");
@@ -593,18 +600,24 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.click(`[role=tab]:has-text("Offertecheck")`);
   await page.getByLabel("Offerte zegt: bruikbare capaciteit (kWh)").fill("9,3");
   await page.getByLabel("Offerte zegt: sluimerverbruik (W)").fill("15");
+  await page.getByLabel("Offerte zegt: totaalprijs inclusief btw (euro)").fill("8750");
   await page.click("button:has-text('Reken opnieuw met de offerte')");
   await page.waitForSelector("text=Controle en berekenen");
-  assert.match(await page.textContent("#view"), /Uit de offerte.*Bruikbare capaciteit \(kWh\): 10 → 9,3; Sluimerverbruik \(W\): 10 → 15/);
+  const review = await page.textContent("#view");
+  assert.match(review, /Uit de offerte.*bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; totaalprijs inclusief btw €\s*[\d.,]+ → €\s*8\.750/);
+  assert.match(review, /bewust opnieuw aan/);
   for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
   await page.click("button:has-text('Bereken en bewaar')");
   await page.waitForFunction(old => /berekeningen\/\d+/.test(location.hash) && location.hash !== old, firstRun, { timeout: 120000 });
   await page.waitForSelector("text=Herberekend met de antwoorden uit je offerte");
   const quotedView = await page.textContent("#view");
-  assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W/);
+  assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; totaalprijs inclusief btw/);
+  assert.doesNotMatch(quotedView, /nog de schatting|is een stekkerbatterij/);
   assert.match(quotedView, /is nu lonend tot ongeveer €\s*[\d.]+; met de oorspronkelijke waarden was dat €\s*[\d.]+/);
   await page.click(`[role=tab]:has-text("Offertecheck")`);
-  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /9,3 kWh bruikbaar\s*offerte/);
+  const quotedCheck = await page.textContent("[role=tabpanel]:not([hidden])");
+  assert.match(quotedCheck, /9,3 kWh bruikbaar\s*offerte/);
+  assert.match(quotedCheck, /€\s*8\.750 startinvestering na teruggaven/);
   assert.deepEqual(problems, []);
   await close();
 });

@@ -25,8 +25,7 @@ window.Results = (() => {
   // Naar beneden afgerond op € 10: de grens is een schatting, geen bedrag op de euro.
   const roundedLimit = value => eur0(Math.floor(value / 10) * 10);
   const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
-  // Zelfde lijst als `finance::is_credit` in de rekenkern: deze posten verlagen de kosten.
-  const CREDITS = ["grant", "vat_refund", "residual_value"];
+  const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
   const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
   const isEstimated = run => run.result.warnings.some(w => /GESCHAT PROFIEL/.test(w));
@@ -50,7 +49,37 @@ window.Results = (() => {
   const shown = all => all.slice(0, TOP + 1);
   const more = all => all.length > TOP + 1;
 
-  function summary(run) {
+  // Veiligheidsadvies boven de som als een doorgerekende accu een stekkerbatterij is. `plugs`: optie → uitvoering
+  // (Data.described), `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
+  const PLUG_ADVICE = "stekkeradvies";
+  function plugAdvice(run, judged, plugs, circuit) {
+    const candidates = run.input.request.candidates;
+    const plugged = candidates.filter(c => plugs.get(c.key)?.kind === "plug");
+    if (!plugged.length) return null;
+    const about = plugged.find(c => c.key === judged?.key) || plugged[0];
+    const kw = about.battery.discharge_power_kw, grouped = candidates.find(c => plugs.get(c.key)?.circuit);
+    const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
+    return h("li", { id: PLUG_ADVICE, tabindex: "-1", class: "plug-advice" },
+      h("strong", {}, `${about.name} is een stekkerbatterij. `),
+      "Milieu Centraal raadt stekkerbatterijen op dit moment af, onder meer vanwege brandrisico: in één groep kan stroom van twee " +
+        "kanten komen, van het net en van de accu. Kies je er toch voor, gebruik dan een vaste wandcontactdoos op een groep met " +
+        "weinig andere apparaten, geen verlengsnoer of stekkerdoos, en lever ten hoogste 800 W terug (dat advies geeft Milieu Centraal " +
+        `voor stekkerzonnepanelen). Hier is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
+        "dus stel de accu lager in of kies een vaste aansluiting"}. Veiliger is een eigen groep in de meterkast door een installateur` +
+        (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
+        (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’` : "") +
+        ". Meld de accu aan op energieleveren.nl, zoals Netbeheer Nederland voorschrijft. Twijfel je of je woonverzekering een " +
+        "stekkerbatterij dekt, vraag het dan na bij je verzekeraar. Bronnen: ",
+      UI.external(mc[0], mc[1]), ", ", UI.external(mcPlug[0], mcPlug[1]), ", ", UI.external(nbnl[0], nbnl[1]),
+      ...(circuit ? [", ", UI.external("Homedeal: richtprijs extra groep", circuit.url)] : []), ".");
+  }
+  // Knop op de kaart van een stekkerbatterij: springt naar het advies; een hash-link zou de router laten navigeren.
+  const toAdvice = () => button("Milieu Centraal raadt stekkerbatterijen af: lees waarom", () => {
+    const advice = document.getElementById(PLUG_ADVICE);
+    advice.scrollIntoView({ block: "center" }); advice.focus({ preventScroll: true });
+  }, "ghost");
+
+  function summary(run, plugs, circuit) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
@@ -83,6 +112,8 @@ window.Results = (() => {
           : "dan blijft géén accu de beste keuze.")));
     }
     const judged = rec || best;
+    const advice = plugAdvice(run, judged, plugs, circuit);
+    if (advice) list.append(advice);
     const first = judged?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
     // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
     // minder netafname × stroomprijs min minder teruglevering × netto vergoeding (de vaste kosten vallen weg).
@@ -151,7 +182,9 @@ window.Results = (() => {
       (finite(quotedOption.break_even_investment_eur) && finite(quote.break_even_investment_eur)
         ? `${quotedOption.name} is nu lonend tot ongeveer ${roundedLimit(Math.max(0, quotedOption.break_even_investment_eur))}; ` +
           `met de oorspronkelijke waarden was dat ${roundedLimit(Math.max(0, quote.break_even_investment_eur))}.`
-        : "")));
+        : "") +
+      (quote.changes.some(c => c.field === "upfront_eur") ? ""
+        : " De startinvestering is nog de schatting uit de oorspronkelijke berekening; vergelijk de grens zelf met de prijs in je offerte.")));
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
@@ -160,7 +193,7 @@ window.Results = (() => {
     return h("section", { class: "panel plain" }, h("h2", {}, "Wat betekent dit voor jou?"), list);
   }
 
-  function overview(run, all) {
+  function overview(run, all, plugs) {
     const result = run.result, out = h("div");
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
       { class: "callout" }, warning));
@@ -180,7 +213,8 @@ window.Results = (() => {
           ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
             eur0(c.export_variant.npv_eur)] : null
       ].filter(Boolean)),
-      c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null))));
+      c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
+      plugs.get(c.key)?.kind === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; de tabel hieronder toont ze allemaal.`));
     out.append(chart("range", {
@@ -390,14 +424,7 @@ window.Results = (() => {
   const VAT_URL = "https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw";
   // Hoogstens twee decimalen, zonder nullen aan het eind: 9,3 en 6,03.
   const plain = value => n(value, 2).replace(/,?0+$/, "");
-  // Technische velden die je uit de offerte kunt overnemen: [veld, naam, eenheid].
-  const QUOTE_FIELDS = [["usable_capacity_kwh", "bruikbare capaciteit", "kWh"], ["charge_power_kw", "laadvermogen AC", "kW"],
-    ["discharge_power_kw", "ontlaadvermogen AC", "kW"], ["ac_round_trip_efficiency_pct", "rendement AC → AC", "%"],
-    ["standby_w", "sluimerverbruik", "W"], ["operating_life_years", "levensduur", "jaar"],
-    ["annual_capacity_loss_pct", "capaciteitsverlies per jaar", "%"]];
-  const withUnit = (field, value) => { const unit = QUOTE_FIELDS.find(([key]) => key === field)[2];
-    return `${plain(value)}${unit === "%" ? "%" : ` ${unit}`}`; };
-  const changeText = c => `${QUOTE_FIELDS.find(([key]) => key === c.field)[1]} ${withUnit(c.field, c.before)} → ${withUnit(c.field, c.after)}`;
+  const withUnit = Data.quoteUnit;
   // [vraag, velden in de offerte, waarde, aannamepatroon, wat geen antwoord is]
   const CHECK = [
     ["Bruikbare capaciteit", ["usable_capacity_kwh"], b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`, /Aanname: [\d,]+% van de opgegeven/,
@@ -413,7 +440,9 @@ window.Results = (() => {
       "Ook als de accu niets doet. ‘Zit in het rendement’ is geen antwoord."],
     ["Garantie: jaren, cycli of MWh doorvoer en gegarandeerde restcapaciteit", ["operating_life_years", "annual_capacity_loss_pct"],
       b => `${plain(b.operating_life_years)} jaar levensduur, ${plain(b.annual_capacity_loss_pct)}% capaciteitsverlies per jaar`, /Aanname: [\d,]+% capaciteitsverlies/,
-      "Vraag ook wie de garantie geeft, fabrikant of installateur, en wat er gebeurt als de installateur stopt."]
+      "Garantie is geen levensduur: in de berekening stopt de accu na de levensduur, en garantiejaren zijn vaak korter. Een gegarandeerde " +
+        "restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar. Vraag ook wie de garantie geeft, fabrikant of installateur, " +
+        "en wat er gebeurt als de installateur stopt."]
   ];
   function quoteCheck(run, all, categories) {
     const request = run.input.request, result = run.result, out = h("div"), target = h("div");
@@ -443,28 +472,30 @@ window.Results = (() => {
         .map(line).filter(l => l && l.status === "not_applicable");
       const listed = (title, lines, show) => lines.length ? `${title} ${lines.map(show).join(", ")}` : null;
       const subscription = line("subscription"), vat = line("vat_refund");
-      const cost = (question, hint, value, ...keys) => { const assumed = assumedCost(...keys);
-        return { question, hint, fields: [], value, origin: origin(assumed), assumed }; };
+      const cost = (question, hint, value, keys, fields = []) => { const assumed = assumedCost(...keys) && !fromQuote(fields);
+        return { question, hint, fields, value, origin: origin(assumed, fields), assumed }; };
       const list = [
         ...CHECK.map(([question, fields, value, pattern, hint]) => {
           const assumed = !mine && pattern.test(input.assumptions) && !fromQuote(fields);
           return { question, hint, fields, value: value(input.battery), origin: origin(assumed, fields), assumed };
         }),
-        cost("Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin?",
+        cost("Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin? " +
+          "Vul de totaalprijs inclusief btw in; teruggaven en subsidie tellen apart.",
           [paper ? null : `${money(c.initial_investment_eur, { decimals: 0 })} startinvestering na teruggaven`,
             listed(paper ? "Gerekend met:" : "waarvan", priced, l => paper ? label(l.category) : `${label(l.category)} ${money(l.amount_minor / 100, { decimals: 0 })}`),
             listed("inbegrepen:", included, l => label(l.category)), listed("niet meegeteld:", skipped, l => label(l.category))]
             .filter(Boolean).join("; "),
-          "installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering"),
+          ["installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering"], ["upfront_eur"]),
         cost("Aansluiting", "1- of 3-fase, past het op je huidige aansluiting, en is een eigen groep in de meterkast (NEN 1010) inbegrepen?",
-          `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, "meter_cabinet", "grid_connection"),
-        cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), "backup"),
+          `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, ["meter_cabinet", "grid_connection"]),
+        cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), ["backup"]),
         cost("App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
-          subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription), "subscription"),
+          subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription),
+          ["subscription"], ["subscription_eur"]),
         cost("Btw", h("span", {}, "Prijs inclusief 21% btw? Zegt de installateur dat je de btw terugkrijgt: volgens de ",
           UI.external("Belastingdienst", VAT_URL), " kan dat niet als je de accu alleen voor je eigen huis gebruikt."),
           vat?.status === "priced" && !paper ? `Teruggave van ${money(vat.amount_minor / 100, { decimals: 0 })} gerekend`
-            : vat?.status === "priced" ? "Teruggave gerekend" : "Geen btw-teruggave gerekend", "vat_refund")
+            : vat?.status === "priced" ? "Teruggave gerekend" : "Geen btw-teruggave gerekend", ["vat_refund"])
       ];
       // Aannames eerst: die vraag je aan de keukentafel het eerst na.
       return [...list.filter(r => r.assumed), ...list.filter(r => !r.assumed)];
@@ -478,7 +509,7 @@ window.Results = (() => {
       return h("span", { class: "quote-inputs" }, r.fields.map(f => {
         const [, name, unit] = QUOTE_FIELDS.find(([key]) => key === f);
         const control = h("input", { type: "text", inputmode: "decimal", value: answer(c, f), placeholder: unit,
-          "aria-label": `Offerte zegt: ${name} (${unit})`, size: "6" });
+          "aria-label": `Offerte zegt: ${name} (${unit === "€" ? "euro" : unit})`, size: "6" });
         control.addEventListener("input", () => { quoted[c.key][f] = control.value; });
         return control;
       }));
@@ -516,14 +547,19 @@ window.Results = (() => {
       for (const [field, name] of QUOTE_FIELDS) {
         const raw = answer(c, field).trim();
         if (!raw) continue;
-        const after = UI.parse(raw);
+        // Bedragen in hele centen, zoals de kostenposten.
+        const parsed = UI.parse(raw), after = parsed != null && Data.isPriceField(field) ? Math.round(parsed * 100) / 100 : parsed;
+        const before = Data.quoteValue(input, field);
         if (after == null || after < 0) wrong.push(name);
-        else if (after !== input.battery[field]) changes.push({ field, before: input.battery[field], after });
+        else if (after !== before) changes.push({ field, before, after });
       }
       if (wrong.length) { UI.toast(`Geen geldig getal bij ${wrong.join(", ")}.`, true); return; }
       if (!changes.length) { UI.toast("Vul eerst minstens één waarde uit de offerte in die afwijkt.", true); return; }
       const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
-      for (const ch of changes) candidate.battery[ch.field] = ch.after;
+      for (const ch of changes) {
+        if (Data.isPriceField(ch.field)) Data.applyQuotePrice(candidate, ch.field, ch.after);
+        else candidate.battery[ch.field] = ch.after;
+      }
       candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${changes.map(changeText).join("; ")}.`.slice(0, 2000);
       delete copy.quote_basis;
       Scenario.load(copy, { title: `${request.title} · offerte`.slice(0, 200), step: 3,
@@ -533,7 +569,7 @@ window.Results = (() => {
       location.hash = "#/zelf";
     });
     out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron " +
-      "en staan bovenaan. Vul de technische waarden uit de offerte in (bijvoorbeeld 9,3) en reken opnieuw; de oude berekening blijft bewaard."),
+      "en staan bovenaan. Vul de waarden uit de offerte in (bijvoorbeeld 9,3 of de totaalprijs) en reken opnieuw; de oude berekening blijft bewaard."),
       UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, run.id == null ? null : again, print));
     return out;
   }
@@ -669,7 +705,9 @@ window.Results = (() => {
 
   async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
     const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
-    const categories = (await Data.costs()).categories;
+    const costCatalog = await Data.costs(), categories = costCatalog.categories;
+    // Zonder catalogus (of bij een gedeelde run met onbekende accu's) blijft het stekkeradvies weg.
+    const plugs = await Data.described(request.candidates).catch(() => new Map());
     UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
       shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),
       button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "ghost")]);
@@ -685,8 +723,8 @@ window.Results = (() => {
     // De aanbeveling noemt de optie al; een extra label herhaalt alleen de (soms lange) naam.
     view.append(h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
       h("h2", {}, result.recommendation)));
-    view.append(summary(run), tabs([
-      { label: "Overzicht", content: overview(run, all) }, { label: "Kasstromen", content: cashflows(run, all) },
+    view.append(summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit), tabs([
+      { label: "Overzicht", content: overview(run, all, plugs) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Kostenopbouw", content: costs(run, all, categories) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },

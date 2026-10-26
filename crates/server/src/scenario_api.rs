@@ -74,8 +74,10 @@ pub struct QuoteChange {
     pub after: f64,
 }
 
-/// De velden van `Battery` die de offertecheck kan overnemen.
-const QUOTE_FIELDS: [&str; 7] = [
+/// Wat de offertecheck kan overnemen: de velden van `Battery`, de totaalprijs inclusief btw
+/// (`upfront_eur`) en het abonnement per jaar (`subscription_eur`). Gelijk aan `QUOTE_FIELDS` in
+/// `web/data.js`.
+const QUOTE_FIELDS: [&str; 9] = [
     "usable_capacity_kwh",
     "charge_power_kw",
     "discharge_power_kw",
@@ -83,6 +85,8 @@ const QUOTE_FIELDS: [&str; 7] = [
     "standby_w",
     "annual_capacity_loss_pct",
     "operating_life_years",
+    "upfront_eur",
+    "subscription_eur",
 ];
 
 fn validate_quote_basis(request: &RunRequest) -> Result<(), ApiError> {

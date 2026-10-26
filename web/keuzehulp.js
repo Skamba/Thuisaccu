@@ -40,28 +40,7 @@
       "is geen minimum aangekondigd, en terugleverkosten kunnen nu al hoger zijn dan de vergoeding. Deze variant rekent vanaf 2030 " +
       "met € 0 vergoeding en dezelfde terugleverkosten. Het is een stresstest, geen voorspelling of aangekondigde regel."
   };
-  // Regels en veiligheidsadvies rond aansluiten; gedateerde bronnen, geen juridisch advies.
-  const RULES = {
-    register: "Meld je thuisaccu aan bij je netbeheerder via energieleveren.nl. Volgens Netbeheer Nederland is dat verplicht, " +
-      "net als voor zonnepanelen; dat geldt sinds een wijziging van de Netcode elektriciteit voor opslag vanaf 0,8 kW die op het " +
-      "net is aangesloten. Aanmelden is gratis. Naar schatting is minder dan 40% van de thuisaccu’s aangemeld.",
-    plug: "Milieu Centraal raadt stekkerbatterijen op dit moment niet aan, onder meer vanwege brandrisico: in één groep kan " +
-      "stroom van twee kanten komen, van het net en van de accu. Een installateur sluit een accu volgens de NEN 1010-norm aan " +
-      "op een aparte groep in de meterkast, niet op een stopcontact. Kies je toch voor een stekkerbatterij, gebruik dan een " +
-      "vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, en houd het " +
-      "terugleververmogen op 800 W of minder. Die laatste adviezen geeft Milieu Centraal voor stekkerzonnepanelen; " +
-      "ze gelden ook logisch voor een stekkerbatterij, maar zijn daarvoor niet afzonderlijk gepubliceerd.",
-    sources: [
-      ["Netbeheer Nederland: netbewust gebruik thuisbatterij (december 2024)",
-        "https://www.netbeheernederland.nl/sites/default/files/2024-12/nbnl_netbewust-gebruik-thuisbatterij_a4_fc_.pdf"],
-      ["Solar Magazine: registratie thuisbatterij en Netcode (8 mei 2024)",
-        "https://solarmagazine.nl/nieuws-zonne-energie/i37394/verplichte-registratie-thuisbatterij-website-energieleveren-nl-vernieuwd"],
-      ["Milieu Centraal: thuisbatterij (gewijzigd 28 september 2026)",
-        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij-zonne-energie-opslaan/"],
-      ["Milieu Centraal: zonnepanelen met een stekker (gewijzigd 30 juni 2026)",
-        "https://www.milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker/"]
-    ]
-  };
+  const RULES = Data.RULES;
   // Zinvol bereik op de capaciteitscurve: aandeel van wat een accu van 20 kWh zou opleveren.
   const SIZING = {
     value: { low: 0.75, high: 0.9, label: "Veel opbrengst per kWh accu",
@@ -380,7 +359,7 @@
         "Of en hoe je dat instelt, staat in de handleiding of app."] };
   }
   // Som van de startposten zoals de rekenkern die telt; teruggaven verlagen de kosten.
-  const CREDITS = ["grant", "vat_refund", "residual_value"];
+  const CREDITS = Data.CREDITS;
   const startCosts = lines => lines.filter(l => l.timing === "upfront" && l.status === "priced")
     .reduce((sum, l) => sum + l.amount_minor / 100 * (CREDITS.includes(l.category) ? -1 : 1), 0);
 
