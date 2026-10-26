@@ -173,6 +173,11 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.click("text=Zo veel mogelijk eigen zonnestroom");
   assert.notEqual(await lead(), before);
   assert.match(await lead(), /zo veel mogelijk eigen zonnestroom/);
+  // Het volle bereik rekent alle accu's door, zodat de deellink hieronder moet inkorten.
+  await page.getByLabel("Kleinste accu (bruikbaar)").focus();
+  await page.keyboard.press("Home");
+  await page.getByLabel("Grootste accu (bruikbaar)").focus();
+  await page.keyboard.press("End");
   for (const box of await page.$$("fieldset .check input")) await box.check();
   await page.click("button:has-text('Bereken mijn advies')");
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 30000 });
@@ -260,11 +265,27 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
   assert.equal(await high.inputValue(), "20");
   assert.match(await page.textContent(".wizard-body .lead"), /Je eigen bereik is een bruikbare capaciteit van \S+ tot 20 kWh/);
   assert.equal(await page.locator("input[name=kh-sizing]:checked").count(), 0);
+  // Alleen accu's binnen het bereik gaan mee; de rest staat met de reden bij de niet meegerekende.
+  const sizes = () => page.$$eval(".product-group:first-of-type tbody tr td:nth-child(3)",
+    cells => cells.map(c => Number(c.textContent.replace(/[^\d,]/g, "").replace(",", "."))));
+  await low.focus();
+  await page.keyboard.press("Home");
+  await high.focus();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  assert.deepEqual([await low.inputValue(), await high.inputValue()], ["0", "3"]);
+  const small = await sizes();
+  assert.ok(small.length > 0 && small.every(s => s <= 3), `doorgerekend ${small}`);
+  assert.match(await page.textContent(".wizard-body"), /binnen je eigen bereik/);
+  assert.match(await page.textContent(".product-group:last-of-type"), /Groter dan je eigen bereik/);
   await low.focus();
   await page.keyboard.press("End");
   assert.equal(await high.inputValue(), "20");
   await page.keyboard.press("ArrowLeft");
   assert.equal(await low.inputValue(), "19.5");
+  // Valt niets binnen het bereik, dan gaan de dichtstbijzijnde accu's mee, met die uitleg.
+  assert.match(await page.textContent(".wizard-body"), /Geen accu .* valt binnen je eigen bereik/);
+  assert.ok((await sizes()).length <= 2);
   await page.click("text=Veel opbrengst per kWh accu");
   assert.deepEqual([await low.inputValue(), await high.inputValue()], preset);
   assert.equal(await page.locator("input[name=kh-sizing][value=value]").isChecked(), true);

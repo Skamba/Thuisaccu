@@ -498,11 +498,12 @@
         button("Laad onderzochte accu’s", event => UI.busy(event.target, async () => { await UI.api("/api/v1/references", { method: "POST" }); Data.invalidateCatalog(); flow.rerender(); })));
       body.append(size, pickSection); return;
     }
-    // Iedere passende accu met een prijs en bekende kosten doet mee; de gebruiker hoeft niet te kiezen.
-    // Boven de grens van de rekenkern gaan de accu's voor die het dichtst bij het zinvolle bereik liggen.
+    // Iedere passende accu met een prijs en bekende kosten binnen het bereik doet mee; de gebruiker hoeft niet te kiezen.
+    // Valt er niets binnen, dan gaan de dichtstbijzijnde kleinere en grotere accu mee.
     const distance = p => !range ? 0 : Math.max(0, range.low - p.capacity, p.capacity - range.high);
     const position = p => !range ? "—" : p.capacity < range.low ? "Kleiner" : p.capacity > range.high ? "Groter" : "Binnen";
-    const excluded = products.filter(p => p.reason).sort((a, b) => a.name.localeCompare(b.name, "nl"));
+    const rangeName = () => SIZING[answers.sizing] ? "het zinvolle bereik" : "je eigen bereik";
+    const rangeText = () => `${rangeName()} (${size1(range.low)} tot ${kwhText(range.high)})`;
     const opened = { included: false, excluded: false }, pickBody = h("div");
     const group = (key, text, content) => {
       const box = h("details", { class: "product-group", open: opened[key] }, h("summary", {}, text), content);
@@ -510,17 +511,29 @@
       return box;
     };
     renderPick = () => {
-      const eligible = products.filter(p => !p.reason)
-        .sort((a, b) => distance(a) - distance(b) || a.capacity - b.capacity);
-      included = eligible.slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
+      const eligible = products.filter(p => !p.reason);
+      const inside = eligible.filter(p => distance(p) === 0);
+      const nearest = side => eligible.filter(side).sort((a, b) => distance(a) - distance(b))[0];
+      const fallback = range != null && !inside.length;
+      const chosen = !range ? eligible : fallback
+        ? [nearest(p => p.capacity < range.low), nearest(p => p.capacity > range.high)].filter(Boolean) : inside;
+      included = chosen.slice().sort((a, b) => a.capacity - b.capacity).slice(0, MAX_CANDIDATES);
+      const outside = eligible.filter(p => !included.includes(p)).map(p => ({ ...p, reason: distance(p) > 0
+        ? `${position(p)} dan ${rangeText()}.`
+        : `Binnen ${rangeName()}, maar de berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk.` }));
+      const excluded = [...products.filter(p => p.reason), ...outside].sort((a, b) => a.name.localeCompare(b.name, "nl"));
       const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast", circuit: "Stekker, eigen groep" };
+      const where = range ? `, binnen ${rangeText()} vallen` : "";
       pickBody.replaceChildren(...[
-        h("p", {}, included.length
-          ? `We rekenen ${eligible.length > included.length ? `de ${included.length} van de ${eligible.length}` : `alle ${included.length}`} ` +
-            `accu’s door die bij je antwoorden passen en waarvan prijs, capaciteit en vermogen bekend zijn` +
-            `${eligible.length > included.length ? " die het dichtst bij het zinvolle bereik liggen" : ""}, ` +
-            "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."
-          : "Geen enkele accu past bij je antwoorden en heeft tegelijk een gepubliceerde prijs en volledige gegevens."),
+        h("p", {}, !included.length
+          ? "Geen enkele accu past bij je antwoorden en heeft tegelijk een gepubliceerde prijs en volledige gegevens."
+          : fallback
+            ? `Geen accu met een prijs en volledige gegevens valt binnen ${rangeText()}. We rekenen de dichtstbijzijnde ` +
+              `${included.length === 1 ? "accu" : "kleinere en grotere accu"} door en vergelijken met geen accu. ` +
+              "Verschuif het bereik om andere accu’s mee te nemen."
+            : `We rekenen ${chosen.length > included.length ? `de ${included.length} kleinste van de ${chosen.length}` : `alle ${included.length}`} ` +
+              `accu’s door die bij je antwoorden passen${where} en waarvan prijs, capaciteit en vermogen bekend zijn, ` +
+              "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."),
         age.stale ? h("p", { class: "callout", role: "note" }, age.text) : null,
         h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. ` +
           "Heb je een offerte, of wil je een accu zonder gepubliceerde prijs meenemen? Gebruik ", link("Zelf doorrekenen", "#/zelf"), "."),
