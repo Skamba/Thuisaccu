@@ -144,8 +144,13 @@ window.Scenario = (() => {
       // Pieken binnen de meetperiode volgens gemeten huishoudens; zie docs/roi-model.md.
       load_variation: "households"
     };
+    const start = parse(state.params.start_year), last = start != null && horizon != null ? start + horizon - 1 : null;
     if (state.variant.on) {
       if (!state.variant.label.trim()) problems.push("Geef de terugleveringsvariant een omschrijving.");
+      const year = parse(state.variant.year);
+      if (year != null && last != null && (year < start || year > last)) {
+        problems.push(`Terugleveringsvariant: kies een beginjaar binnen de looptijd (${start} tot en met ${last}); daarna verandert er niets.`);
+      }
       parameters.export_variant = {
         label: state.variant.label.trim(),
           from_calendar_year: number(state.variant.year, "Beginjaar terugleveringsvariant"),
@@ -153,7 +158,6 @@ window.Scenario = (() => {
         export_fee_eur_per_kwh: number(state.variant.fee, "Terugleverkosten in de variant")
       };
     }
-    const start = parse(state.params.start_year), last = start != null && horizon != null ? start + horizon - 1 : null;
     const load_changes = (state.changes || []).map(change => {
       const kind = CHANGES[change.kind], year = parse(change.year), kwh = parse(change.kwh);
       if (year == null || last == null || year < start || year > last) {
@@ -338,13 +342,20 @@ window.Scenario = (() => {
   function stepTariffs(body) {
     const tariff = (label, key, props, help) => field(label,
       bindValue(numberInput({ step: "0.0001", required: true, ...props }), () => state.tariff[key],
-        v => { state.tariff[key] = v; }),
+        v => { state.tariff[key] = v; if (key === "import") checkPrice(); }),
       help);
+    const priceCheck = h("p", { class: "warning live-check wide", "aria-live": "polite" });
+    const checkPrice = () => {
+      const message = Data.importPriceCheck(UI.parse(state.tariff.import));
+      priceCheck.textContent = message ?? "";
+    };
+    checkPrice();
     body.append(h("h2", {}, "Tarieven en looptijd"),
       h("p", { class: "help" },
         "Gebruik je contractbedragen inclusief belastingen. Het startjaar is het eerste volledige jaar met de accu; vanaf 2027 rekent het model zonder salderen. De overige waarden zijn aanpasbare aannames, geen voorspelling."),
       h("fieldset", {}, h("legend", {}, "Contract"), h("div", { class: "grid" },
-        tariff("Stroomprijs, alles inbegrepen (€/kWh)", "import", { min: "-10", max: "10" }),
+        tariff("Stroomprijs, alles inbegrepen (€/kWh)", "import", { min: "-10", max: "10" }, Data.INDICATION.importHelp),
+        priceCheck,
         tariff("Terugleververgoeding (€/kWh)", "export", { min: "-10", max: "10" }, "Vóór aparte terugleverkosten."),
         tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" },
           "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger."),

@@ -356,10 +356,14 @@ pub fn validate(
             "Geef de terugleveringsvariant een korte omschrijving.",
         )?;
         ensure(
-            (p.start_year..=2100).contains(&v.from_calendar_year)
-                && bounded(v.export_eur_per_kwh, -10.0, 10.0)
+            bounded(v.export_eur_per_kwh, -10.0, 10.0)
                 && bounded(v.export_fee_eur_per_kwh, 0.0, 10.0),
-            "Ongeldige terugleveringsvariant; het beginjaar ligt op of na het startjaar.",
+            "Ongeldige terugleveringsvariant.",
+        )?;
+        // Na de looptijd zou de variant gelijk zijn aan de basis en toch als stresstest worden getoond.
+        ensure(
+            (p.start_year..p.start_year + p.horizon_years).contains(&v.from_calendar_year),
+            "De terugleveringsvariant begint binnen de looptijd, op of na het startjaar.",
         )?;
     }
     let mut previous = -1.0;

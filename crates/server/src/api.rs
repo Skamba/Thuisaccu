@@ -380,6 +380,7 @@ pub async fn save_solar(
     hasher.update(Sha256::digest(&input.bytes));
     let mut options =
         serde_json::to_value(&input.options).map_err(|e| bad_request(e.to_string()))?;
+    options["normalizer"] = json!(solar_import::NORMALIZER_VERSION);
     let mut filename = input.filename.clone();
     if let Some(meter) = &input.meter {
         // Een combinatie is uniek door beide bestanden en beide instellingen.

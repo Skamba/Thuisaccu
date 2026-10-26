@@ -361,15 +361,20 @@ window.UI = (() => {
   // Grafieken in inline SVG, altijd met een tabel als tekstalternatief.
   const palette = ["#2b7a5f", "#3f7cc0", "#c06a1f", "#8f5aa0", "#00858b", "#8b6b23", "#5e68b8", "#b84d74", "#5f7338",
     "#7a6a5e"];
-  function chart(type, { title, rows, series, unit = "", format = v => number(v, 0), marks = [] }) {
-    // Op een smal scherm een smallere tekening, zodat de tekst na het schalen leesbaar blijft.
+  // `unit` is de eenheid van de waarden: bij liggende balken onder de waardeas rechts, anders linksboven bij de
+  // verticale as. `xLabel` benoemt de liggende as van een lijn- of staafgrafiek.
+  function chart(type, { title, rows, series, unit = "", xLabel = "", format = v => number(v, 0), marks = [] }) {
+    // Op een smal scherm een smallere tekening met grotere letters (styles.css), zodat de tekst na het schalen
+    // leesbaar blijft; de namen van liggende balken staan dan op een eigen regel boven de balk, voluit.
     const narrow = window.matchMedia?.("(max-width: 640px)").matches === true;
-    const width = narrow ? 440 : 880, horizontal = type === "range" || type === "stacked";
-    const height = horizontal ? Math.max(220, rows.length * 56 + 80) : 320;
-    const longest = Math.max(0, ...rows.map(r => String(r.label).length)), maxLabel = narrow ? 24 : 48;
-    const left = horizontal ? Math.min(narrow ? 170 : 330, Math.max(110, Math.min(longest, maxLabel) * 6.6 + 24)) : 80, right = 24, top = 20,
-      bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
+    const width = narrow ? 400 : 880, horizontal = type === "range" || type === "stacked", above = narrow && horizontal;
+    const height = horizontal ? Math.max(220, rows.length * (above ? 64 : 56) + 80) : 320;
+    const longest = Math.max(0, ...rows.map(r => String(r.label).length));
+    const left = above ? 40 : horizontal ? Math.min(330, Math.max(110, Math.min(longest, 48) * 6.6 + 24)) : 80, right = 24,
+      top = !horizontal && unit ? 32 : 20, bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
+    const maxLabel = above ? Math.floor(plotW / 7.7) : 48;
     const svg = document.createElementNS(SVG, "svg");
+    if (narrow) svg.classList.add("narrow");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", `${title}. De waarden staan ook in de tabel onder de grafiek.`);
     const draw = (tag, attrs, label) => {
@@ -429,7 +434,7 @@ window.UI = (() => {
           text(at, height - 28, r.label, "middle"); previous = at;
         });
       } else {
-        const step = Math.max(1, Math.ceil(rows.length / 10));
+        const step = Math.max(1, Math.ceil(rows.length / (narrow ? 5 : 10)));
         rows.forEach((r,
           i) => { if (i % step === 0 || i === rows.length - 1) text(px(i), height - 28, r.label, "middle"); });
       }
@@ -447,7 +452,7 @@ window.UI = (() => {
         if (horizontal) {
           const cy = top + (ri + 0.5) / rows.length * plotH;
           const name = String(r.label), short = name.length > maxLabel ? `${name.slice(0, maxLabel - 1)}…` : name;
-          text(left - 12, cy + 4, short, "end");
+          if (above) text(left, cy - 18, short); else text(left - 12, cy + 4, short, "end");
           if (type === "stacked") {
             let start = 0;
             r.values.forEach((v, si) => {
@@ -483,7 +488,8 @@ window.UI = (() => {
         }
       });
     }
-    text(width - right, height - 6, unit, "end");
+    if (horizontal) text(width - right, height - 6, unit, "end");
+    else { text(8, 14, unit); if (xLabel) text(left + plotW / 2, height - 6, xLabel, "middle"); }
     const legend = h("ul", { class: "legend" }, series.map((s, i) => h("li", {},
       type === "range" ? h("span", { class: `swatch ${i === 1 ? "swatch-base" : "swatch-tick"}` })
         : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));

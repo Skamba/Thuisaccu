@@ -9,6 +9,13 @@ use serde::{Deserialize, Serialize};
 use thuisaccu_storage::solar::{SolarInterval, SolarPeriod, SolarSummary};
 
 pub const MAX_ROWS: usize = 250_000;
+/// Versie van het inlezen, bewaard bij de instellingen van een import. Verhoog hem bij elke
+/// wijziging die uit hetzelfde bestand met dezelfde instellingen andere meetperioden maakt:
+/// een import telt als dubbel bij dezelfde bytes én dezelfde instellingen, en zou anders de
+/// oude, verkeerd ingelezen meetperioden teruggeven. Versie 2 (26 oktober 2026): het dubbele
+/// uur bij wintertijd in bestanden die teruglopen in de tijd, en datum- en tijdcellen in
+/// aparte spreadsheetkolommen.
+pub const NORMALIZER_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -202,11 +209,7 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
             if range.height() > MAX_ROWS + options.header_row + 1 || range.width() > 200 {
                 return Err("Werkblad is te groot: maximaal 250.000 gegevensrijen en 200 kolommen.".into());
             }
-            range.rows().skip(options.header_row).map(|row| row.iter().map(|cell| match cell {
-                Data::DateTime(date) => date.as_datetime().map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_else(|| cell.to_string()),
-                Data::Float(value) if options.decimal == "comma" => value.to_string().replace('.', ","),
-                _ => cell.to_string(),
-            }).collect()).collect()
+            range.rows().skip(options.header_row).map(|row| row.iter().map(|cell| spreadsheet_cell(cell, &options.decimal)).collect()).collect()
         },
         "json" => {
             if options.header_row != 0 { return Err("Kopregels overslaan geldt niet voor JSON.".into()); }
@@ -262,6 +265,48 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
         rows,
         sheets,
     })
+}
+
+/// Zet een spreadsheetcel om naar tekst zoals in een CSV. Een cel met alleen een tijd (een
+/// Excel-getal onder 1, of een duur) wordt `10:00:00`, niet `1899-12-31 10:00:00`, zodat een
+/// aparte tijdkolom achter de datum past; een ODS-duur (`PT10H00M00S`) idem.
+fn spreadsheet_cell(cell: &Data, decimal: &str) -> String {
+    let clock = |seconds: i64| {
+        format!(
+            "{:02}:{:02}:{:02}",
+            seconds / 3600,
+            seconds / 60 % 60,
+            seconds % 60
+        )
+    };
+    match cell {
+        Data::DateTime(date) if date.is_duration() || (0.0..1.0).contains(&date.as_f64()) => {
+            clock((date.as_f64() * 86_400.0).round() as i64)
+        }
+        Data::DateTime(date) => date
+            .as_datetime()
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| cell.to_string()),
+        Data::DurationIso(text) => iso_duration_seconds(text)
+            .map(clock)
+            .unwrap_or_else(|| text.clone()),
+        Data::Float(value) if decimal == "comma" => value.to_string().replace('.', ","),
+        _ => cell.to_string(),
+    }
+}
+
+/// Seconden in een ISO-duur van uren, minuten en seconden (`PT10H00M00S`), zoals ODS die voor
+/// een tijdcel geeft; `None` voor iets anders.
+fn iso_duration_seconds(text: &str) -> Option<i64> {
+    let mut rest = text.strip_prefix("PT")?;
+    let mut seconds = 0.0;
+    for (unit, factor) in [('H', 3600.0), ('M', 60.0), ('S', 1.0)] {
+        if let Some((value, tail)) = rest.split_once(unit) {
+            seconds += value.parse::<f64>().ok()? * factor;
+            rest = tail;
+        }
+    }
+    (rest.is_empty() && seconds < 86_400.0).then(|| seconds.round() as i64)
 }
 
 fn cell(row: &[String], index: usize) -> Result<&str, String> {
@@ -512,7 +557,13 @@ pub fn normalize(
         }
         let mut read = || -> Result<_, String> {
             let timestamp = if let Some(column) = options.time_part_column {
-                format!("{} {}", cell(row, options.time_column)?, cell(row, column)?)
+                // Een datumcel uit een spreadsheet komt als datum met middernacht; de tijd staat ernaast.
+                let date = cell(row, options.time_column)?;
+                format!(
+                    "{} {}",
+                    date.strip_suffix(" 00:00:00").unwrap_or(date),
+                    cell(row, column)?
+                )
             } else {
                 cell(row, options.time_column)?.to_owned()
             };

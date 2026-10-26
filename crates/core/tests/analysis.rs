@@ -665,6 +665,26 @@ fn export_variant_before_the_start_year_is_rejected() {
 }
 
 #[test]
+fn export_variant_after_the_horizon_is_rejected_instead_of_equalling_the_base() {
+    // Looptijd 2027 tot en met 2029: een variant vanaf 2030 zou niets veranderen.
+    let mut p = parameters();
+    p.horizon_years = 3;
+    let variant = |year| analysis::ExportVariant {
+        label: "Geen vergoeding".into(),
+        from_calendar_year: year,
+        export_eur_per_kwh: 0.0,
+        export_fee_eur_per_kwh: 0.0,
+    };
+    p.export_variant = Some(variant(2030));
+    let error = analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("binnen de looptijd"), "{error}");
+    p.export_variant = Some(variant(2029));
+    assert!(analysis::analyze(&profile(), &p, &[candidate("battery", 2.0, 50_000)]).is_ok());
+}
+
+#[test]
 fn up_to_fifty_battery_options_are_compared_at_once() {
     // De keuzehulp rekent alle passende accu's met een prijs door; de grens ligt op vijftig.
     let p = parameters();

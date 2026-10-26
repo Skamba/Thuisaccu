@@ -37,7 +37,7 @@ De fictieve voorbeeldbestanden [CSV](../crates/server/resources/solar-example.cs
 
 ## Interpretatie en controles
 
-1. Kies datum/tijd, productie en optioneel verbruik. Bij gescheiden datum en tijd kies je een tweede tijdkolom. Gebruik bruto zonneproductie; een P1-netexportkolom is daarvoor onvoldoende. Vindt de interface geen opwekkolom, dan legt hij uit dat een P1-export alleen niet volstaat en dat die als meterbestand bij een omvormerexport hoort.
+1. Kies datum/tijd, productie en optioneel verbruik. Bij gescheiden datum en tijd kies je een tweede tijdkolom. In een spreadsheet mogen dat echte datum- en tijdcellen zijn: een tijdcel (Excel-getal onder 1, of een ODS-duur) wordt als `10:00:00` gelezen en de middernacht van de datumcel valt weg. Gebruik bruto zonneproductie; een P1-netexportkolom is daarvoor onvoldoende. Vindt de interface geen opwekkolom, dan legt hij uit dat een P1-export alleen niet volstaat en dat die als meterbestand bij een omvormerexport hoort.
 2. Kies energie in Wh/kWh of gemiddeld vermogen in W/kW. Vermogen wordt vermenigvuldigd met de duur van de meetperiode. Piek- en losse momentwaarden zijn daarvoor ongeschikt.
 3. Kies intervalopbrengst of cumulatieve meterstanden. Cumulatieve standen worden van elkaar afgetrokken; de eerste is alleen een beginstand. Een reset of daling stopt de import. Intervallen volgen dan de werkelijke tijd tussen standen.
 4. Kies periode en begin-/eindpositie van tijdstempels. Ondersteund zijn 5, 10, 15, 30 minuten, uur, dag, week, maand en jaar. Kalenderperioden respecteren de gekozen tijdzone. Grove totalen worden niet tot een uurprofiel omgevormd. De interface stelt periode en decimaalteken voor uit de eerste rijen (gelijke tijdstappen van 5 minuten tot een uur; alleen komma’s of alleen punten in de getallen); de gebruiker controleert dat en de server leest het hele bestand daarna met die keuze.
@@ -48,7 +48,7 @@ Dubbele tijdstippen, overlappende intervallen, negatieve energie, ongeldige geta
 
 ## Opslag en betekenis
 
-Na bevestiging worden de SHA-256 van het bestand, bestandsnaam, importinstellingen, samenvatting en genormaliseerde intervallen transactioneel in SQLite bewaard. De ruwe bestandsinhoud wordt niet bewaard. Dezelfde bytes met dezelfde instellingen worden niet dubbel opgeslagen. De gebruiker kan bestaande samenvattingen opnieuw openen.
+Na bevestiging worden de SHA-256 van het bestand, bestandsnaam, importinstellingen, samenvatting en genormaliseerde intervallen transactioneel in SQLite bewaard. De ruwe bestandsinhoud wordt niet bewaard. Dezelfde bytes met dezelfde instellingen worden niet dubbel opgeslagen. Bij de instellingen staat ook de versie van het inlezen (`normalizer`, nu 2; `NORMALIZER_VERSION` in `solar_import.rs`). Na een reparatie in het inlezen wordt die verhoogd, zodat hetzelfde bestand opnieuw importeren een nieuwe, goed ingelezen import oplevert in plaats van de oude meetperioden terug te geven. Versie 2 (26 oktober 2026) leest het dubbele uur bij wintertijd in bestanden die teruglopen in de tijd goed in, en datum- en tijdcellen in aparte spreadsheetkolommen. De gebruiker kan bestaande samenvattingen opnieuw openen.
 
 Het overzicht toont totale productie, eventuele consumptie, dekking, gaten en maandtotalen. Met verbruik worden ook positieve productie-/verbruiksverschillen per gekozen interval getoond. Dit zijn aggregaten op die resolutie, geen gemeten accubesparing of nauwkeurige momentane gelijktijdigheid.
 

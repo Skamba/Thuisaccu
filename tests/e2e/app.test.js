@@ -192,8 +192,13 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.equal(await page.evaluate(() => document.activeElement.textContent), "Je woning");
   await page.click("text=Zelf, met de stekker");
   await next(page);
+  // Alleen het leveringstarief invullen geeft een waarschuwing; de indicatie (met energiebelasting) niet.
+  const price = page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)");
+  await price.fill("0,14");
+  assert.match(await page.textContent(".live-check"), /Is dit alleen het leveringstarief\?/);
   await page.click("button:has-text('Gebruik de indicatie')");
-  assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0,2552");
+  assert.equal(await price.inputValue(), "0,2552");
+  assert.equal(await page.textContent(".live-check"), "");
   await next(page);
   await next(page);
   // Ook een lege catalogus krijgt de onderzochte accu's: de app laadt ontbrekende sets zelf bij.
@@ -250,6 +255,13 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.ok(stressed.length > 0 && stressed.every(Boolean));
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
+  // De garantiestresstest is één waarschuwing met een tabel per accu, niet een zin per accu.
+  const warningTexts = await page.locator(".warnings > li").allTextContents();
+  assert.equal(warningTexts.filter(w => w.startsWith("Garantiestresstest bij")).length, stressed.length === 1 ? 1 : 0);
+  assert.equal(warningTexts.filter(w => /^Garantiestresstest voor \d+ accu’s/.test(w)).length, stressed.length > 1 ? 1 : 0);
+  assert.ok(await page.isVisible("[role=tab]:has-text('Waarschuwingen (" + warningTexts.length + ")')"));
+  // Het gratis alternatief staat erbij, met de waarde per verschoven kWh.
+  assert.match(summary, /Elke kWh die je naar zonuren verschuift .+ levert €\s*0,\d\d op/);
   // Bij een lonende accu staan de grensprijzen in een tabel, met de stresstests als eigen regels.
   if (!/Dat verandert als:/.test(summary)) assert.match(summary, /Grensprijs voor .+Zoals berekend \(alle startposten\).+Geen terugleververgoeding vanaf 2030/);
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.

@@ -44,3 +44,8 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
+
+# De rekenkern op snelheid: de simulatie blokkeert de worker zolang ze loopt, en het bestand wordt
+# er nauwelijks groter van.
+[profile.wasm.package.thuisaccu-core]
+opt-level = 3

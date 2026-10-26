@@ -211,6 +211,23 @@ fn xlsx_numeric_cells_and_excel_datetimes_are_read_with_a_real_workbook() {
 }
 
 #[test]
+fn xlsx_with_separate_date_and_time_cells_is_read_like_a_csv() {
+    // Synthetisch werkblad: Datum (datumcel) en Tijd (tijdcel, uu:mm), 1,2 en 0,8 kWh.
+    let options = ImportOptions {
+        time_column: 0,
+        time_part_column: Some(1),
+        production_column: 2,
+        ..Default::default()
+    };
+    let bytes = include_bytes!("fixtures/split-date-time.xlsx");
+    let table = read_table("opwek.xlsx", bytes, &options).unwrap();
+    assert_eq!(table.rows[0][..2], ["2026-06-01 00:00:00", "10:00:00"]);
+    let (intervals, summary) = normalize(&table, &options).unwrap();
+    assert_eq!(summary.production_kwh, 2.0);
+    assert_eq!(intervals.len(), 2);
+}
+
+#[test]
 fn json_column_mapping_and_pvgis_hourly_envelope_are_supported() {
     let bytes = br#"{"outputs":{"hourly":[{"time":"20260601:1000","P":1000},{"time":"20260601:1100","P":2000}]}}"#;
     let mut options = ImportOptions {

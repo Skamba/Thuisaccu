@@ -251,6 +251,18 @@ window.Results = (() => {
       `terugleverkosten), dan is je rekening zonder accu ongeveer ${eur0(cent.bill)} per jaar lager en is ${best.name} over de looptijd ` +
       `${eur0(Math.abs(cent.npv))} ${cent.npv <= 0 ? "minder" : "meer"} waard; 1 cent minder werkt andersom. Vergelijk dus ook de ` +
       "terugleververgoeding en terugleverkosten van leveranciers: overstappen vraagt geen investering."));
+    // Het gratis alternatief: verbruik naar zonuren schuiven levert per kWh het verschil tussen stroomprijs en netto
+    // terugleverwaarde op, zonder aanschaf of laadverlies. Alleen met zonnestroom over en zonder staffel (dan is de
+    // waarde per kWh niet één getal).
+    const shift = tariff => tariff.import_eur_per_kwh - (tariff.export_eur_per_kwh - tariff.export_fee_eur_per_kwh);
+    if (best?.years?.[0] && base.grid_export_kwh > 0 && p.start_year >= 2027 && !p.tariff.export_fee_bands?.length) {
+      const delivered = best.years[0].energy.battery_to_load_kwh;
+      change.append(h("li", {}, `Ook zonder accu kun je besparen. Elke kWh die je naar zonuren verschuift (wasmachine, vaatwasser, ` +
+        `de auto overdag laden) levert ${money(shift(p.tariff), { decimals: 2 })} op: de stroomprijs min wat teruglevering netto ` +
+        `oplevert, zonder aanschaf en zonder laadverlies. Ter vergelijking: ${best.name} levert in het eerste jaar ` +
+        `${kwh(delivered)} aan je huis, ongeveer ${n(delivered / 365, 1)} kWh per dag. Wat je zelf verschuift, hoeft niet meer ` +
+        "via de accu; die levert dan wat minder op."));
+    }
     const advice = plugAdvice(run, best, plugs, circuit);
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
     // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
@@ -408,7 +420,7 @@ window.Results = (() => {
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; onder de grafiek staan ze allemaal.`));
     out.append(chart("range", {
-      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP} en geen accu)` : ""}`, unit: "EUR",
+      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP} en geen accu)` : ""}`, unit: "€",
       rows: shown(all).map(c => ({ label: c.name, color: c.color,
         values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
       series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
@@ -445,7 +457,7 @@ window.Results = (() => {
           symbol: "↧", label: `${c.name}: vervanging einde jaar ${cost.year}` });
       }
     }
-    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "EUR", rows, series: top.map(c => ({ label: c.name, color: c.color })), marks }),
+    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.name, color: c.color })), marks }),
       h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging."));
     const pick = UI.select(all.map(c => [c.key, c.name]), run.result.recommended_key), target = h("div");
     const render = () => {
@@ -491,7 +503,7 @@ window.Results = (() => {
       .filter(l => l.timing === "upfront" && amount(l) > 0).map(l => l.category)))].sort((a, b) => order(a) - order(b));
     if (keys.length) {
       out.append(chart("stacked", {
-        title: `Startinvestering per kostenpost${more(all) ? ` (beste ${TOP})` : ""}`, unit: "EUR",
+        title: `Startinvestering per kostenpost${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€",
         rows: top.map(c => ({ label: c.name, values: keys.map(k => linesOf(c)
           .filter(l => l.timing === "upfront" && l.category === k).reduce((sum, l) => sum + amount(l), 0)) })),
         series: keys.map(k => ({ label: label(k) }))
@@ -586,7 +598,7 @@ window.Results = (() => {
     out.append(h("p", {},
       `Tarieven ±${n(p.price_uncertainty_pct, 0)}%, kosten ±${n(p.cost_uncertainty_pct, 0)}%. De gunstige variant verhoogt de stroomprijs, verlaagt de terugleververgoeding en verlaagt de kosten; de ongunstige doet het omgekeerde. Bevestigde aftrekposten blijven gelijk. Dit zijn gevoeligheidstests, geen betrouwbaarheidsintervallen.`));
     // Eerst de grafieken van de beste vijf, dan de tabellen; de overige opties staan ingeklapt.
-    for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "EUR"], ["roi_pct", "ROI over de looptijd", "%"]]) {
+    for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "€"], ["roi_pct", "ROI over de looptijd", "%"]]) {
       out.append(chart("range",
         { title: `${title}${more(all) ? ` (beste ${TOP})` : ""}`, unit,
           rows: shown(all).filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color,
@@ -1004,6 +1016,23 @@ window.Results = (() => {
     return note;
   }
 
+  // De waarschuwingen als lijst. De garantiestresstest geeft per accu dezelfde zin; die worden één regel met een tabel
+  // per accu, op de plaats van de eerste, zodat de andere waarschuwingen niet ondersneeuwen. Runs van vóór
+  // 26 oktober 2026 missen ‘nooit gunstiger dan de basisaannames’.
+  const STRESS_WARNING = /^Garantiestresstest bij (.+?): dezelfde berekening met (\d+) jaar levensduur en ([\d,]+)% capaciteitsverlies per jaar \((.*?)(?:; nooit gunstiger dan de basisaannames)?\)\. Het is een stresstest/;
+  function warningItems(warnings) {
+    const stress = warnings.map(w => w.match(STRESS_WARNING));
+    const count = stress.filter(Boolean).length, first = stress.findIndex(Boolean);
+    if (count < 2) return warnings.map(w => h("li", {}, w));
+    const rows = stress.filter(Boolean).map(([, name, life, loss, basis]) => [name, `${life} jaar`, `${loss}% per jaar`, basis]);
+    const grouped = h("li", {}, `Garantiestresstest voor ${count} accu’s: dezelfde berekening als de accu direct na zijn ` +
+      "productgarantie stopt en elk jaar meer capaciteit verliest, nooit gunstiger dan de basisaannames. Het is een stresstest, " +
+      "geen voorspelling; de keuze gebruikt de basisaannames.",
+      fold("Per accu", table(["Accu", "Levensduur", "Capaciteitsverlies", "Herkomst"], rows,
+        { caption: "Aannames in de garantiestresstest", stack: true })));
+    return warnings.flatMap((w, i) => i === first ? [grouped] : stress[i] ? [] : [h("li", {}, w)]);
+  }
+
   async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
     const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
     const costCatalog = await Data.costs(), categories = costCatalog.categories;
@@ -1033,6 +1062,7 @@ window.Results = (() => {
     if (age >= 3) view.append(h("p", { class: "callout", role: "note" },
       `Deze berekening is ${age} maanden oud. Stroomprijs, terugleververgoeding en prijzen van accu’s en installatie zijn van toen` +
       (shared ? "." : ". Kijk ze na met ‘Pas aan en reken opnieuw’, of reken opnieuw in de keuzehulp voor de indicaties van nu.")));
+    const warnings = warningItems(result.warnings);
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
     view.append(verdict(run, plugs), meta, summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
@@ -1041,8 +1071,7 @@ window.Results = (() => {
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
       { label: "Invoer en aannames", content: inputs(run, categories, all) },
-      { label: `Waarschuwingen (${result.warnings.length})`,
-        content: h("ul", { class: "warnings print-keep" }, result.warnings.map(w => h("li", {}, w))) }
+      { label: `Waarschuwingen (${warnings.length})`, content: h("ul", { class: "warnings print-keep" }, warnings) }
     ]));
   }
 

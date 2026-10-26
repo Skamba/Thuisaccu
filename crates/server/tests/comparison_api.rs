@@ -292,7 +292,14 @@ async fn upload_inspection_and_preview_do_not_persist_until_save_and_repeat_save
         ids.push(response_json(response).await["id"].clone());
     }
     assert_eq!(ids[0], ids[1]);
-    assert_eq!(catalog.list_solar().await.unwrap().len(), 1);
+    let saved = catalog.list_solar().await.unwrap();
+    assert_eq!(saved.len(), 1);
+    // Met de versie van het inlezen erbij: na een reparatie in het inlezen wordt hetzelfde bestand
+    // een nieuwe import in plaats van de oude meetperioden terug te geven.
+    assert_eq!(
+        saved[0].options["normalizer"],
+        thuisaccu_server::solar_import::NORMALIZER_VERSION
+    );
     let response = app
         .oneshot(upload(
             "/api/v1/solar/imports",

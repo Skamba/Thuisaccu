@@ -112,6 +112,8 @@ input.range { padding: 0; border: 0; background: none; accent-color: var(--accen
 .callout { background: var(--soft); border-left: 4px solid var(--accent); padding: .8rem 1rem; border-radius: 0 var(--radius) var(--radius) 0; }
 .banner { background: var(--warn-bg); color: var(--warn-ink); font-weight: 700; padding: .8rem 1rem; border-radius: var(--radius); }
 .warning { color: var(--warn-ink); background: var(--warn-bg); padding: .4rem .6rem; border-radius: .4rem; }
+/* Een meldingsgebied dat altijd bestaat (aria-live), maar leeg niets inneemt. */
+.live-check:empty { padding: 0; margin: 0; }
 .derived { font-weight: 650; }
 .unknown { color: var(--muted); font-style: italic; }
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 2rem; text-align: left; }
@@ -231,6 +233,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .chart figcaption { font-weight: 700; margin-bottom: .4rem; }
 .chart svg { width: 100%; height: auto; color: var(--ink); }
 .chart-text { fill: currentColor; font-size: 12px; }
+/* De smalle tekening wordt op een telefoon nog iets verkleind; zo blijft de tekst ongeveer 11 px. */
+.chart svg.narrow .chart-text { font-size: 14px; }
 .chart-grid { stroke: var(--line); }
 .chart-axis { stroke: currentColor; stroke-width: 1.3; }
 .chart-mark { stroke: var(--muted); stroke-dasharray: 3 4; }

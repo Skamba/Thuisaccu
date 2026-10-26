@@ -141,7 +141,8 @@
       if (fit.ok === true) {
         const curve = await UI.api(`/api/v1/solar/imports/${item.id}/capacity`).catch(() => null);
         if (curve) view.append(chart("line",
-          { title: "Zonnestroom die je via een accu zelf kunt gebruiken, per accugrootte", unit: "kWh/jaar",
+          { title: "Zonnestroom die je via een accu zelf kunt gebruiken, per accugrootte", unit: "kWh per jaar",
+            xLabel: "Bruikbare capaciteit van de accu",
             rows: curve.points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, x: p.usable_capacity_kwh,
               values: [p.battery_to_load_kwh] })),
             series: [{ label: "Uit de accu zelf gebruikt" }] }),

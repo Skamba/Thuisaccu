@@ -185,9 +185,16 @@
         "lager uitvallen dan in werkelijkheid."));
     }
     const useImport = () => { answers.tariffImport = UI.plain(INDICATION.import); save(); rerender(); };
+    const priceCheck = h("p", { class: "warning live-check", "aria-live": "polite" });
+    const checkPrice = () => {
+      const message = Data.importPriceCheck(parse(answers.tariffImport));
+      priceCheck.textContent = message ?? "";
+    };
+    checkPrice();
     body.append(
       h("div", { class: "grid" }, amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport",
-        { min: "-1", max: "2", step: "0.0001", required: true }, INDICATION.importText)),
+        { min: "-1", max: "2", step: "0.0001", required: true }, `${INDICATION.importHelp} ${INDICATION.importText}`, checkPrice)),
+      priceCheck,
       h("p", { class: "actions" }, button("Gebruik de indicatie", useImport, "secondary")),
       sourceList(INDICATION.importSources),
       pick("feedin", "Wat krijg je vanaf 2027 voor teruggeleverde stroom?", [
@@ -319,8 +326,9 @@
     if (feed.export == null || feed.fee == null) {
       throw new Error("Vul in stap 3 je terugleververgoeding en terugleverkosten in, of kies de indicatie.");
     }
-    // Een later startjaar uit Instellingen schuift de stresstest mee; het model eist dat hij binnen de looptijd begint.
-    const variantYear = Math.max(INDICATION.variantYear, d.start_year);
+    // Een later startjaar of een korte looptijd uit Instellingen schuift de stresstest mee; het model eist dat hij
+    // binnen de looptijd begint.
+    const variantYear = Math.min(Math.max(INDICATION.variantYear, d.start_year), d.start_year + Number(horizon()) - 1);
     const variant = answers.variant === "yes" ? {
       label: `Stresstest: geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
       export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
@@ -416,7 +424,7 @@
           title: "Zonnestroom die je via de accu zelf gebruikt, per accugrootte",
           rows: points.map(p => ({ label: `${n(p.usable_capacity_kwh, 0)} kWh`, x: p.usable_capacity_kwh,
             values: [p.battery_to_load_kwh] })),
-          series: [{ label: "Uit de accu zelf gebruikt (kWh per jaar)" }], unit: "kWh/jaar",
+          series: [{ label: "Uit de accu zelf gebruikt (kWh per jaar)" }], unit: "kWh per jaar", xLabel: "Bruikbare capaciteit van de accu",
           marks: [["low", "begin"], ["high", "einde"]].map(([key, word]) => ({
             at: kwhText(range[key]), x: range[key], symbol: "│",
             label: `${word} van ${SIZING[answers.sizing] ? "het zinvolle" : "je eigen"} bereik: ${kwhText(range[key])}`

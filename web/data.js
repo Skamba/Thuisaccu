@@ -76,16 +76,22 @@ window.Data = (() => {
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
       "plus energiebelasting 2027 (8,80 cent, met btw € 0,1065), beide per kWh inclusief btw. Het model rekent vanaf 2027, " +
       "dus met de belasting van 2027. Vaste en dynamische contracten wijken af.",
+    // Energiebelasting 2027 per kWh met btw (fiscale sleuteltabel 2027, zie importSources).
+    energyTax: 0.1065,
+    importHelp: "Leveringstarief plus energiebelasting (in 2027 € 0,1065 per kWh), inclusief btw, zonder vaste kosten " +
+      "per maand. Staan ze apart op je tariefoverzicht, tel ze dan op. Heb je normaal en dal, neem dan het normaaltarief: " +
+      "een accu levert vooral op doordeweekse avonden vóór 23.00 uur.",
     importSources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)",
         "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
       ["Rijksoverheid: fiscale sleuteltabel 2027 (versie september 2026, energiebelasting elektriciteit)",
         "https://www.rijksfinancien.nl/sites/default/files/bestanden/belastingplan-2027/pakket-belastingplan-2027/Fiscale-sleuteltabel-2027-incl-correctie-tarieven-energiebelasting-zelfstandigenaftrek.pdf"]
     ],
-    // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
+    // Netto 1 cent per kWh: de mediaan van 14 vaste contracten (salderingcheck.nl, 16 oktober 2026).
     export: 0.0615, exportFee: 0.0515,
     exportText: "Wat telt is het verschil tussen vergoeding en terugleverkosten. Voor een 1-jarig vast contract " +
-      "vanaf 2027 lag dat bij 15 leveranciers tussen −4,3 en +4,4 cent per kWh, met een mediaan van 1,0 cent " +
+      "vanaf 2027 lag dat bij 14 leveranciers tussen +0,25 en +4,4 cent per kWh, met een mediaan van 1,0 cent; " +
+      "één variabel contract kost vanaf 2027 netto 4,32 cent per kWh die je teruglevert " +
       "(overzicht van salderingcheck.nl, peildatum 16 oktober 2026). Eneco rekent in een eigen voorbeeld met " +
       "€ 0,0506 vergoeding en € 0,0387 kosten: 1,2 cent netto. De indicatie gebruikt € 0,0615 vergoeding " +
       "(het wettelijke minimum van 50% van het kale leveringstarief volgens de ACM, bij het CBS-gemiddelde) " +
@@ -560,6 +566,12 @@ window.Data = (() => {
   }
   const isAssumption = line => line.source === "Aanname" || line.notes.startsWith("Aanname");
 
+  // Een stroomprijs onder de energiebelasting plus een paar cent levering is vrijwel zeker alleen het leveringstarief;
+  // dan valt de besparing van een accu veel te laag uit. Een waarschuwing, geen fout: het blijft je eigen invoer.
+  const importPriceCheck = value => value == null || value >= INDICATION.energyTax + 0.05 ? null :
+    `Dat is minder dan de energiebelasting van 2027 (€ 0,1065 per kWh) plus een gangbaar leveringstarief. Is dit alleen ` +
+    "het leveringstarief? Tel de energiebelasting erbij op, anders valt de besparing van een accu veel te laag uit.";
+
   // Standaard projectie-aannames, aanpasbaar in Instellingen; nooit voor bewaarde runs. Alles in lopende euro's:
   // de discontovoet is een gewone rente (met inflatie), dus energieprijzen en jaarkosten stijgen standaard even hard
   // mee, 2% per jaar (het inflatiedoel van de ECB). Met 0% prijsverandering zou stroom elk jaar goedkoper worden
@@ -586,6 +598,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();
