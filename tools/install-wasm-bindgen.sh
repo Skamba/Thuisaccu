@@ -12,7 +12,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL --retry 3 -o "$tmp/$name.tar.gz" "$url"
 curl -fsSL --retry 3 -o "$tmp/$name.tar.gz.sha256sum" "$url.sha256sum"
-(cd "$tmp" && sha256sum -c "$name.tar.gz.sha256sum")
+# Het controlebestand noemt een pad uit de releasebuild; alleen het getal telt.
+want=$(cut -d' ' -f1 "$tmp/$name.tar.gz.sha256sum")
+echo "$want  $tmp/$name.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
 mkdir -p "$bin"
 install -m 755 "$tmp/$name/wasm-bindgen" "$bin/wasm-bindgen"
