@@ -3,7 +3,7 @@
 // Zelf doorrekenen: alle aannames, accu-opties en 26 kostenposten zelf invullen.
 // De toestand staat in één object (ook als concept in deze browser) en het scherm wordt daaruit opgebouwd.
 window.Scenario = (() => {
-  const { h, button, link, badge, table, field, input, numberInput, select, checkbox, money, number: n, parse, store,
+  const { h, button, link, badge, table, field, input, numberInput, select, checkbox, money, number: n, parse, plain, store,
     toast } = UI;
   const STORE = "thuisaccu-scenario";
   const TECH = [
@@ -45,8 +45,8 @@ window.Scenario = (() => {
     const d = Data.defaults();
     return {
       title: "Mijn berekening", address: "", site: null, profile: "", objective: "net_present_value", budget: "",
-      params: Object.fromEntries(PARAMS.map(([key]) => [key, String(d[key])])),
-      tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
+      params: Object.fromEntries(PARAMS.map(([key]) => [key, plain(d[key])])),
+      tariff: { import: "", export: "", fee: "", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
       variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
         changes: [], basis: null, options: []
     };
@@ -64,30 +64,30 @@ window.Scenario = (() => {
       title: `${request.title} (kopie)`, address: NO_ADDRESS.test(request.site.address) ? "" : request.site.address,
         site: request.site.latitude != null ? request.site : null, profile: String(request.solar_import_id),
       objective: request.parameters.objective,
-        budget: request.parameters.budget_eur == null ? "" : String(request.parameters.budget_eur),
-      params: Object.fromEntries(PARAMS.map(([key]) => [key, String(request.parameters[key])])),
-      tariff: { import: String(request.parameters.tariff.import_eur_per_kwh),
-        export: String(request.parameters.tariff.export_eur_per_kwh),
-        fee: String(request.parameters.tariff.export_fee_eur_per_kwh),
-        change: String(request.parameters.tariff.annual_price_change_pct),
+        budget: request.parameters.budget_eur == null ? "" : plain(request.parameters.budget_eur),
+      params: Object.fromEntries(PARAMS.map(([key]) => [key, plain(request.parameters[key])])),
+      tariff: { import: plain(request.parameters.tariff.import_eur_per_kwh),
+        export: plain(request.parameters.tariff.export_eur_per_kwh),
+        fee: plain(request.parameters.tariff.export_fee_eur_per_kwh),
+        change: plain(request.parameters.tariff.annual_price_change_pct),
         bands: request.parameters.tariff.export_fee_bands.map(b => `${b.up_to_kwh ?? ""};${b.annual_eur}`).join("\n"),
         fixed: request.parameters.tariff.fixed_annual_eur },
       variant: request.parameters.export_variant ? {
         on: true, label: request.parameters.export_variant.label,
-          year: String(request.parameters.export_variant.from_calendar_year),
-        export: String(request.parameters.export_variant.export_eur_per_kwh),
-          fee: String(request.parameters.export_variant.export_fee_eur_per_kwh)
+          year: plain(request.parameters.export_variant.from_calendar_year),
+        export: plain(request.parameters.export_variant.export_eur_per_kwh),
+          fee: plain(request.parameters.export_variant.export_fee_eur_per_kwh)
       } : blank().variant,
-      changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: String(c.from_calendar_year),
-        kwh: String(c.annual_kwh), charging: c.charging || "evening" })),
+      changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: plain(c.from_calendar_year),
+        kwh: plain(c.annual_kwh), charging: c.charging || "evening" })),
       options: request.candidates.map((c, i) => ({
         key: c.key, name: c.name, configuration_id: c.configuration_id, kind: "fixed", assumptions: c.assumptions,
-        battery: Object.fromEntries(TECH.map(([key]) => [key, String(c.battery[key])])),
+        battery: Object.fromEntries(TECH.map(([key]) => [key, plain(c.battery[key])])),
         costs: Object.fromEntries(c.costs.map(l => [l.category,
           { status: l.status, amount: l.status === "priced" ? money2(l.amount_minor) : "",
-            year: l.year == null ? "" : String(l.year), source: l.source, notes: l.notes }])),
-        loan: { amount: String(c.financing.loan_amount_eur), interest: String(c.financing.annual_interest_pct),
-          years: String(c.financing.years) },
+            year: l.year == null ? "" : plain(l.year), source: l.source, notes: l.notes }])),
+        loan: { amount: plain(c.financing.loan_amount_eur), interest: plain(c.financing.annual_interest_pct),
+          years: plain(c.financing.years) },
           index: i
       }))
     };
@@ -165,8 +165,10 @@ window.Scenario = (() => {
         if (line.status === "unknown") problems.push(`${option.name}: kostenpost ‘${c.label}’ is nog onbekend.`);
         let amount = 0;
         if (line.status === "priced") {
-          if (!/^\d+([.,]\d{1,2})?$/.test(String(line.amount).trim())) problems.push(`${option.name}: bedrag voor ‘${c.label}’ in euro met hoogstens twee decimalen.`);
-          else amount = Math.round(parse(line.amount) * 100);
+          // Nederlandse notatie mag (6.500,00); hele centen, zoals de kostenposten.
+          const euro = parse(line.amount);
+          if (euro == null || euro < 0 || Math.abs(euro * 100 - Math.round(euro * 100)) > 1e-6) problems.push(`${option.name}: bedrag voor ‘${c.label}’ in euro met hoogstens twee decimalen.`);
+          else amount = Math.round(euro * 100);
           if (c.timing === "event" && !(parse(line.year) >= 1 && parse(line.year) <= horizon)) problems.push(`${option.name}: jaar voor ‘${c.label}’ moet binnen de looptijd vallen.`);
         }
         if (line.status !== "unknown" && !String(line.source || "").trim()) problems.push(`${option.name}: geef een bron of aanname voor ‘${c.label}’.`);
@@ -317,7 +319,8 @@ window.Scenario = (() => {
       h("fieldset", {}, h("legend", {}, "Contract"), h("div", { class: "grid" },
         tariff("Stroomprijs, alles inbegrepen (€/kWh)", "import", { min: "-10", max: "10" }),
         tariff("Terugleververgoeding (€/kWh)", "export", { min: "-10", max: "10" }, "Vóór aparte terugleverkosten."),
-        tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" }),
+        tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" },
+          "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger."),
         tariff("Prijsverandering per jaar (%)", "change", { min: "-20", max: "30", step: "0.1" })),
         h("details", {}, h("summary", {}, "Terugleverkosten via vaste staffels"),
           field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; }),
@@ -335,13 +338,13 @@ window.Scenario = (() => {
     const p = Data.describe(cmp, config);
     const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: p.kind || "fixed",
       assumptions: `Overgenomen uit de catalogus. ${p.notes.join(" ")}${p.missing.length ? ` Nog in te vullen: ${p.missing.join(", ")}.` : ""}` });
-    if (p.battery) for (const [key] of TECH) option.battery[key] = String(p.battery[key]);
+    if (p.battery) for (const [key] of TECH) option.battery[key] = plain(p.battery[key]);
     else {
       for (const [key, value] of [["usable_capacity_kwh", p.capacity], ["charge_power_kw", p.chargeKw],
-        ["discharge_power_kw", p.dischargeKw]]) if (value != null) option.battery[key] = String(value);
+        ["discharge_power_kw", p.dischargeKw]]) if (value != null) option.battery[key] = plain(value);
       Object.assign(option.battery,
-        { ac_round_trip_efficiency_pct: String(p.efficiency), standby_w: String(p.standby),
-          annual_capacity_loss_pct: String(Data.FALLBACK.degradation),
+        { ac_round_trip_efficiency_pct: plain(p.efficiency), standby_w: plain(p.standby),
+          annual_capacity_loss_pct: plain(Data.FALLBACK.degradation),
           operating_life_years: String(Data.FALLBACK.life) });
     }
     fillEstimates(option, costCatalog, p);

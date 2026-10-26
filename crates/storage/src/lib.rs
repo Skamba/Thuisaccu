@@ -110,6 +110,12 @@ impl Catalog {
         Ok(self.connection().serialize(MAIN_DB)?.to_vec())
     }
 
+    /// Aantal rijen dat sinds het openen is toegevoegd, gewijzigd of verwijderd. De browserversie
+    /// bewaart de database alleen opnieuw als dit getal veranderde.
+    pub fn total_changes(&self) -> u64 {
+        self.connection().total_changes()
+    }
+
     /// Voor onderzoeksqueries en transacties met meerdere samenhangende writes.
     /// Houd daarbij de bron- en eenheidsafspraken uit `docs/data-model.md` aan.
     pub fn connection(&self) -> MutexGuard<'_, Connection> {

@@ -111,6 +111,19 @@ pub async fn request(
     })
 }
 
+/// Teller van gewijzigde rijen sinds het openen; `web/worker.js` bewaart alleen na een verandering.
+/// Als getal voor JavaScript: ruim binnen de 2^53 die een `f64` exact houdt.
+#[wasm_bindgen]
+pub fn changes() -> Result<f64, JsError> {
+    STATE
+        .with_borrow(|state| {
+            state
+                .as_ref()
+                .map(|(catalog, _)| catalog.total_changes() as f64)
+        })
+        .ok_or_else(|| js_error("De database is nog niet geopend."))
+}
+
 /// Volledige kopie van de database, om te bewaren of als back-up te downloaden.
 #[wasm_bindgen]
 pub fn snapshot() -> Result<Vec<u8>, JsError> {

@@ -235,7 +235,7 @@
         } });
         body.append(h("h2", {}, "Bestand"), h("div", { class: "split" },
           h("div", {}, field("Exportprofiel", platform), drop,
-            h("div", { class: "grid" }, field("Regels vóór de kopregel", bind(numberInput({ min: "0", max: "1000", step: "1", value: String(options.header_row) }), "header_row", Number)),
+            h("div", { class: "grid" }, field("Regels vóór de kopregel", bind(numberInput({ min: "0", max: "1000", step: "1", value: String(options.header_row) }), "header_row", v => UI.parse(v) ?? 0)),
               field("CSV-scheiding",
                 bind(select([["auto", "Automatisch"], ["semicolon", "Puntkomma ;"], ["comma", "Komma ,"],
                   ["tab", "Tab"]],
@@ -362,7 +362,7 @@
           h("div", { class: "grid" },
             field("Regels vóór de kopregel",
               bindMeter(numberInput({ min: "0", max: "1000", step: "1", value: String(meter.options.header_row) }),
-                "header_row", Number)),
+                "header_row", v => UI.parse(v) ?? 0)),
             field("CSV-scheiding", bindMeter(select([["auto", "Automatisch"], ["semicolon", "Puntkomma ;"], ["comma", "Komma ,"], ["tab", "Tab"]], meter.options.delimiter), "delimiter"))),
           h("p", { class: "actions" }, read));
         if (!meter.inspected) return;

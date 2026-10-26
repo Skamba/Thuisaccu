@@ -172,7 +172,15 @@ pub async fn reference_status(State(catalog): State<Catalog>) -> Result<Json<Val
 
 pub async fn references(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     let mut imported = false;
+    // De interface vraagt dit bij elk bezoek; geladen sets worden niet opnieuw ingelezen (ongeveer 1 MB JSON).
+    let loaded = catalog
+        .reference_import_keys()
+        .await
+        .map_err(database_error)?;
     for (key, json) in REFERENCE_SETS {
+        if loaded.iter().any(|k| k == key) {
+            continue;
+        }
         let drafts = reference_drafts(key, json)?;
         imported |= catalog
             .import_references(key, &drafts, Utc::now().timestamp())

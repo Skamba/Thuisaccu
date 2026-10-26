@@ -45,11 +45,19 @@ window.UI = (() => {
   const years = value => value == null ? "Niet binnen de looptijd" : `${number(value, 0)} jaar`;
   const dateTime = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleString("nl-NL");
   const dateOnly = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleDateString("nl-NL");
-  // Getal uit een invoerveld; komma en punt als decimaalteken. Leeg geeft null.
+  // Getal uit een invoerveld in Nederlandse notatie: komma (of punt) als decimaalteken, punten in groepen
+  // van drie als duizendtallen (6.500,00 en 1.250.000). Leeg of geen getal geeft null.
+  // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na.
+  const ambiguous = raw => /^[+-]?[1-9]\d{0,2}\.\d{3}$/.test(String(raw ?? "").trim());
   const parse = raw => {
-    const text = String(raw ?? "").trim().replace(",", ".");
+    let text = String(raw ?? "").trim().replace(/^€/, "").replace(/\s/g, "");
+    if (/^[+-]?\d{1,3}(\.\d{3})+,\d*$/.test(text) || /^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(text)) text = text.replace(/\./g, "");
+    else if (ambiguous(text)) return null;
+    text = text.replace(",", ".");
     return text === "" || !Number.isFinite(Number(text)) ? null : Number(text);
   };
+  // Een getal als beginwaarde van een invoerveld; drie decimalen met een punt zouden als duizendtal lezen.
+  const plain = value => value == null ? "" : ambiguous(String(value)) ? String(value).replace(".", ",") : String(value);
 
   async function api(url, { method = "GET", json, body } = {}) {
     const options = { method };
@@ -113,7 +121,11 @@ window.UI = (() => {
       help ? h("small", { id: helpId, class: "help" }, help) : null);
   }
   const input = (props = {}) => h("input", { type: "text", ...props });
-  const numberInput = (props = {}) => h("input", { type: "number", step: "any", inputmode: "decimal", ...props });
+  // Een tekstveld, geen type=number: dat leest ‘3.500’ in een Nederlandse browser als 3,5 of laat de komma
+  // vallen. `parse` leest de tekst; `validate` controleert getal, grenzen en stappen met Nederlandse meldingen.
+  // Het decimale toetsenbord op een telefoon heeft geen minteken; velden die negatief mogen krijgen er een gewoon.
+  const numberInput = (props = {}) => h("input", { type: "text", step: "any", autocomplete: "off", spellcheck: "false",
+    inputmode: props.min != null && Number(props.min) < 0 ? "text" : "decimal", ...props, dataset: { number: "" } });
   function select(options, value, props = {}) {
     const element = h("select", props, options.map(([v, text]) => h("option", { value: v }, text)));
     if (value != null) element.value = String(value);
@@ -134,6 +146,35 @@ window.UI = (() => {
   };
   // Markeert ongeldige velden met een zichtbare melding; geeft het eerste ongeldige veld terug.
   // Meldingen in het Nederlands, ook in een anderstalige browser; een eigen melding gaat voor.
+  // Wat er mis is met een getalveld, of "" als het klopt; grenzen en stappen zoals bij type=number.
+  function numberProblem(control) {
+    const raw = control.value.trim(), num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6 });
+    if (raw === "") return "";
+    if (ambiguous(raw)) return `Bedoel je ${raw.replace(".", "")} of ${raw.replace(".", ",")}? Schrijf duizendtallen zonder punt en decimalen met een komma.`;
+    const value = parse(raw);
+    if (value == null) return "Vul een getal in, bijvoorbeeld 3500 of 0,25.";
+    if (control.min !== "" && value < Number(control.min)) return `Vul ${num(control.min)} of meer in.`;
+    if (control.max !== "" && value > Number(control.max)) return `Vul ${num(control.max)} of minder in.`;
+    const step = control.getAttribute("step");
+    if (step && step !== "any") {
+      const steps = (value - (control.min !== "" ? Number(control.min) : 0)) / Number(step);
+      if (Math.abs(steps - Math.round(steps)) > 1e-9) {
+        const decimals = (step.split(".")[1] || "").length;
+        if (step === "1") return "Vul een heel getal in.";
+        if (Number(step) === 10 ** -decimals) return `Gebruik hoogstens ${decimals} ${decimals === 1 ? "decimaal" : "decimalen"}.`;
+        return `Gebruik stappen van ${num(step)}.`;
+      }
+    }
+    return "";
+  }
+  // Een eigen melding van `reject` blijft staan; alleen de eigen getalmelding wordt bijgewerkt.
+  function checkNumber(control) {
+    if (!("number" in control.dataset) || (control.validity.customError && control.dataset.numberError !== "1")) return;
+    const problem = numberProblem(control);
+    control.setCustomValidity(problem);
+    control.dataset.numberError = problem ? "1" : "";
+  }
+
   function invalidMessage(control) {
     const v = control.validity, num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6 });
     if (v.customError) return control.validationMessage;
@@ -157,6 +198,7 @@ window.UI = (() => {
     let first = null;
     root.querySelectorAll(".error").forEach(error => error.remove());
     for (const control of root.querySelectorAll("input, select, textarea")) {
+      checkNumber(control);
       const valid = control.checkValidity();
       control.setAttribute("aria-invalid", String(!valid));
       const described = (control.getAttribute("aria-describedby") || "").split(" ").filter(id => id && !id.startsWith("fout-"));
@@ -319,8 +361,9 @@ window.UI = (() => {
       const node = document.createElementNS(SVG, tag);
       for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
       if (label) {
+        // Alleen een tooltip voor de muis: geen tabstop per punt. De grafiek is één afbeelding (role="img")
+        // en de tabel eronder geeft dezelfde waarden voor toetsenbord en schermlezer.
         const tip = document.createElementNS(SVG, "title"); tip.textContent = label; node.append(tip);
-        node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", label);
       }
       svg.append(node); return node;
     };
@@ -439,7 +482,7 @@ window.UI = (() => {
   const page = (key, definition) => pages.set(key, definition);
 
   return {
-    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, api, store, toast, busy,
+    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, plain, api, store, toast, busy,
     button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };

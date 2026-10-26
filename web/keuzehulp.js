@@ -9,13 +9,15 @@
 
   // Gedateerde indicaties uit openbare bronnen; alleen na een klik of keuze gebruikt.
   const INDICATION = {
-    import: 0.2596,
+    import: 0.2552,
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
-      "plus energiebelasting 2026 (€ 0,11085), beide per kWh inclusief btw. Vaste en dynamische contracten wijken af.",
+      "plus energiebelasting 2027 (8,80 cent, met btw € 0,1065), beide per kWh inclusief btw. Het model rekent vanaf 2027, " +
+      "dus met de belasting van 2027. Vaste en dynamische contracten wijken af.",
     importSources: [
       ["CBS: Verdeling energietarieven 2026 (september 2026)",
         "https://www.cbs.nl/nl-nl/maatwerk/2026/42/verdeling-energietarieven-2026"],
-      ["ANWB: tarieven energiebelasting 2026", "https://www.anwb.nl/huis/energie/energiebelasting"]
+      ["Rijksoverheid: fiscale sleuteltabel 2027 (versie september 2026, energiebelasting elektriciteit)",
+        "https://www.rijksfinancien.nl/sites/default/files/bestanden/belastingplan-2027/pakket-belastingplan-2027/Fiscale-sleuteltabel-2027-incl-correctie-tarieven-energiebelasting-zelfstandigenaftrek.pdf"]
     ],
     // Netto 1 cent per kWh: de mediaan van 15 leveranciers (salderingcheck.nl, 16 oktober 2026).
     export: 0.0615, exportFee: 0.0515,
@@ -642,8 +644,10 @@
       subtitle: "Vijf stappen in gewone taal. Duurt ongeveer vijf minuten.",
     render(view, actions) {
       load();
-      actions.append(button("Begin opnieuw",
-        () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }, "ghost"));
+      // Wissen is niet terug te draaien; bewaarde berekeningen blijven wel staan.
+      actions.append(button("Begin opnieuw", () => UI.confirm("Opnieuw beginnen?",
+        ["Al je antwoorden in de keuzehulp worden gewist. Bewaarde berekeningen onder Mijn berekeningen blijven staan."],
+        "Wis mijn antwoorden", () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }), "ghost"));
       flow = UI.wizard([
         { label: "Je energie", render: stepEnergy }, { label: "Je woning", render: stepHome },
           { label: "Je contract", render: stepContract },

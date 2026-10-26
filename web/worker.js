@@ -1,7 +1,8 @@
 // Webworker van de browserversie (zie local.js). Laadt de WebAssembly-module met de API en
-// SQLite (crates/browser), en bewaart de database na elke geslaagde wijziging in IndexedDB.
+// SQLite (crates/browser), en bewaart de database na elke geslaagde wijziging in IndexedDB. Een
+// verzoek dat niets in de database veranderde (een voorbeeld, adres zoeken) schrijft niets weg.
 // Alleen in de statische site; de lokale server levert dit bestand niet.
-import init, { open, request, snapshot } from "./pkg/thuisaccu_browser.js";
+import init, { changes, open, request, snapshot } from "./pkg/thuisaccu_browser.js";
 
 const DATABASE = "thuisaccu", STORE = "bestanden", KEY = "research.sqlite3";
 
@@ -35,15 +36,21 @@ self.onmessage = async ({ data }) => {
   try {
     if (data.type === "request") {
       await ready;
+      const before = changes();
       const reply = await request(data.method, data.path, data.contentType ?? undefined, new Uint8Array(data.body));
       const { status, contentType, body } = reply;
       reply.free();
       // Het antwoord volgt pas als de wijziging bewaard is; een mislukte wijziging is al teruggerold.
-      if (!["GET", "HEAD"].includes(data.method) && status < 400) await save();
+      if (!["GET", "HEAD"].includes(data.method) && status < 400 && changes() !== before) await save();
       self.postMessage({ id, status, contentType, body: body.buffer }, [body.buffer]);
     } else if (data.type === "export") {
-      await ready;
-      const bytes = snapshot();
+      // Kan de bewaarde database niet worden geopend, dan krijg je hem toch mee zoals hij in de browser
+      // staat, zodat je je gegevens niet kwijt bent; een terugzetten zou hem anders overschrijven.
+      const bytes = await ready.then(() => snapshot(), async error => {
+        const raw = await stored("readonly", store => store.get(KEY)).catch(() => null);
+        if (!raw) throw error;
+        return raw;
+      });
       self.postMessage({ id, bytes: bytes.buffer }, [bytes.buffer]);
     } else if (data.type === "restore") {
       await loaded;

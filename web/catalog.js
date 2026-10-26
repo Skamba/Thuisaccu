@@ -217,7 +217,7 @@
       await UI.busy(save, async () => {
         const get = key => f[key].value.trim(), numbersOut = [];
         for (const [key, metric, scale, unit, boundary] of [["usable_kwh", "usable_energy_wh", 1000, "kWh", "energy_boundary"], ["charge_kw", "continuous_charge_power_w", 1000, "kW", "power_boundary"], ["discharge_kw", "continuous_discharge_power_w", 1000, "kW", "power_boundary"], ["efficiency_pct", "round_trip_efficiency_pct", 1, "%", "efficiency_boundary"]]) {
-          if (get(key)) numbersOut.push({ metric, qualifier: "exact", value: Number(get(key)) * scale,
+          if (get(key)) numbersOut.push({ metric, qualifier: "exact", value: UI.parse(get(key)) * scale,
             boundary: get(boundary), reported_value: `${get(key)} ${unit}` });
         }
         const featuresOut = [["backup", "backup"], ["inverter_included", "inverter"]].filter(([, key]) => get(key) !== "unknown")
@@ -240,7 +240,7 @@
             locator: get("locator"), document_revision: get("document_revision") || null,
           published_on: null, conditions: get("conditions"), numbers: numbersOut, features: featuresOut,
           texts: get("coupling") ? [{ metric: "coupling", value: get("coupling") }] : [],
-          product_warranty_months: get("warranty_years") ? Math.round(Number(get("warranty_years")) * 12) : null, price
+          product_warranty_months: get("warranty_years") ? Math.round(UI.parse(get("warranty_years")) * 12) : null, price
         };
         const result = await UI.api("/api/v1/candidates", { method: "POST", json: payload });
         if (selected.size < 4) { selected.add(result.configuration_id); remember(); }

@@ -25,6 +25,12 @@ window.Results = (() => {
   // Naar beneden afgerond op € 10: de grens is een schatting, geen bedrag op de euro.
   const roundedLimit = value => eur0(Math.floor(value / 10) * 10);
   const limitText = value => value > 0 ? `ongeveer ${roundedLimit(value)}` : "niets: zelfs gratis niet";
+  // Wat teruglevering in de variant netto doet: met terugleverkosten en geen vergoeding kost ze geld.
+  const variantEffect = v => {
+    const net = v.export_eur_per_kwh - v.export_fee_eur_per_kwh, cents = x => UI.number(Math.abs(x) * 100, 1);
+    return net < 0 ? `geld kost (netto ${cents(net)} cent per kWh die je teruglevert)`
+      : net === 0 ? "niets meer oplevert" : `nog maar ${cents(net)} cent per kWh oplevert`;
+  };
   const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
   const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
@@ -120,7 +126,7 @@ window.Results = (() => {
     if (v && result.export_variant_recommended_key != null) {
       const alt = result.candidates.find(c => c.key === result.export_variant_recommended_key);
       const variantLimit = best.export_variant?.break_even_investment_eur;
-      lines.push(`teruglevering vanaf ${v.from_calendar_year} niets meer oplevert (‘${v.label}’): ` + (alt
+      lines.push(`teruglevering vanaf ${v.from_calendar_year} ${variantEffect(v)} (‘${v.label}’): ` + (alt
         ? `dan komt ${alt.name} wel het beste uit, met een netto voordeel van ${eur0(alt.export_variant.npv_eur)}.`
         : finite(variantLimit) && variantLimit > 0 ? `dan is ${best.name} lonend tot ongeveer ${roundedLimit(variantLimit)}.`
           : `ook dan is ${best.name} zelfs gratis niet lonend.`));
@@ -205,7 +211,7 @@ window.Results = (() => {
     if (rec && variant && variantKey != null) {
       const alt = result.candidates.find(c => c.key === variantKey);
       const same = variantKey === result.recommended_key;
-      change.append(h("li", {}, `Als teruglevering vanaf ${variant.from_calendar_year} niets meer oplevert ` +
+      change.append(h("li", {}, `Als teruglevering vanaf ${variant.from_calendar_year} ${variantEffect(variant)} ` +
         `(variant ‘${variant.label}’): ` + (alt
           ? `${same ? "dan blijft" : "dan wordt"} ${alt.name} de beste keuze, met een netto voordeel van ${eur0(alt.export_variant.npv_eur)}.`
           : "dan blijft géén accu de beste keuze.")));
@@ -223,7 +229,7 @@ window.Results = (() => {
         : `${best.name} kost je over de looptijd in geld van nu geld, ook als hij gratis zou zijn: de jaarkosten, verliezen en het sluimerverbruik wegen zwaarder dan de besparing.`) +
         (p.export_variant && finite(variantLimit)
           ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
-            (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert." : ".")
+            (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost." : ".")
           : "")));
     }
     const advice = plugAdvice(run, best, plugs, circuit);
@@ -324,22 +330,28 @@ window.Results = (() => {
     const result = run.result, out = h("div", { class: "print-keep" });
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
       { class: "callout" }, warning));
-    out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: "panel option", style: `border-top-color:${c.color}` },
-      h("h3", {}, c.name),
+    // Per accu dezelfde vier getallen en woorden als het korte antwoord; de rest ingeklapt. Geen accu is
+    // de vergelijkingsbasis en krijgt geen kaart vol nullen.
+    const card = c => c.key === "no_battery" ? [h("h3", {}, c.name),
+      c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
+      h("p", { class: "help" }, "De vergelijkingsbasis: geen investering en geen besparing. Elke accu is met deze situatie vergeleken; " +
+        "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, c.name),
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
       c.within_budget === false ? badge("Boven budget", "warning") : null,
       stats([
-        ["Startinvestering", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
-        ["Nettowinst over looptijd", eur0(c.net_profit_eur)],
-          ["ROI over looptijd", c.key === "no_battery" ? "—" : pct(c.roi_pct)],
-        ["Terugverdiend na", c.key === "no_battery" ? "—" : years(c.payback_years)],
-        c.key === "no_battery" || !breakEven(c.break_even_investment_eur) ? null
-          : ["Lonend bij een startinvestering", breakEven(c.break_even_investment_eur)],
-          ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
+        finite(c.break_even_investment_eur) ? ["Lonend tot", c.break_even_investment_eur > 0 ? roundedLimit(c.break_even_investment_eur) : "Zelfs gratis niet"] : null,
+        ["Startinvestering nu", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
+        ["Terugverdiend na", years(c.payback_years)]
+      ].filter(Boolean)),
+      h("details", { class: "fold more-figures" }, h("summary", {}, "Meer cijfers"), stats([
+        ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
+        ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
         c.export_variant && run.input.request.parameters.export_variant
           ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
             eur0(c.export_variant.npv_eur)] : null
-      ].filter(Boolean)),
+      ].filter(Boolean)))];
+    out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
+      card(c),
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
       plugs.get(c.key)?.kind === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
@@ -352,7 +364,7 @@ window.Results = (() => {
     }));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
-      out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Startinvestering", "Lonend bij een startinvestering", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
+      out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
         c.key === result.recommended_key ? h("span", {}, c.name, " ", badge("Aanbevolen", "accent")) : c.name,
         eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
@@ -362,7 +374,7 @@ window.Results = (() => {
       { caption: `Alle ${all.length} opties, op volgorde van je doel` })));
     }
     out.append(h("p", { class: "help" },
-      "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend bij een startinvestering’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
+      "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend tot’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
     return out;
   }
 

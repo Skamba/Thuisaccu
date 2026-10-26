@@ -124,3 +124,14 @@ test("describe(): de nieuwste geldige prijs inclusief btw; zonder btw of verlope
   assert.equal(excluded.offer, null);
   assert.equal(excluded.otherOffer.id, 1);
 });
+
+test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () => {
+  const { UI } = context;
+  const cases = [["3,5", 3.5], ["6.500,00", 6500], ["1.250.000", 1250000], ["0.250", 0.25], ["0.2552", 0.2552],
+    ["12.5", 12.5], ["-0,5", -0.5], ["3 500", 3500], ["", null], ["abc", null], ["1,250.50", null],
+    // Eén punt met precies drie cijfers kan 3500 of 3,5 zijn: geen getal, het formulier vraagt het na.
+    ["3.500", null], ["2.688", null]];
+  for (const [raw, expected] of cases) assert.equal(UI.parse(raw), expected, raw);
+  // Beginwaarden in een veld lezen terug als hetzelfde getal.
+  for (const value of [2.688, 0.25, 1250, 3.5]) assert.equal(UI.parse(UI.plain(value)), value);
+});

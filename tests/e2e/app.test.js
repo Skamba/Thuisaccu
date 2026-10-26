@@ -175,6 +175,13 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(await page.textContent(`[id="${describedBy.split(" ").pop()}"]`), /Vul de opwek van je panelen in, of hieronder het vermogen in kWp/);
   await production.fill("3800");
   await page.getByLabel("Waarvan warmtepomp (kWh per jaar)").fill("1500");
+  // Een punt met drie cijfers is dubbelzinnig en wordt nagevraagd; Nederlandse notatie met komma telt goed.
+  const gridImport = page.getByLabel("Stroom van het net per jaar (kWh)");
+  await gridImport.fill("4.600");
+  await next(page);
+  assert.match(await page.textContent(`[id="${(await gridImport.getAttribute("aria-describedby")).split(" ").pop()}"]`),
+    /Bedoel je 4600 of 4,600\?/);
+  await gridImport.fill("4.600,00");
   assert.match(await page.textContent(".derived"), /5\.500 kWh/);
   await next(page);
   await page.waitForSelector("text=Je woning");
@@ -183,7 +190,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.click("text=Zelf, met de stekker");
   await next(page);
   await page.click("button:has-text('Gebruik de indicatie')");
-  assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0.2596");
+  assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0.2552");
   await next(page);
   await next(page);
   // Ook een lege catalogus krijgt de onderzochte accu's: de app laadt ontbrekende sets zelf bij.
@@ -235,8 +242,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
   assert.match(summary, whatIf
-    ? /teruglevering vanaf 2030 niets meer oplevert \(‘Stresstest[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
-    : /Als teruglevering vanaf 2030 niets meer oplevert/);
+    ? /teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\) \(‘Stresstest[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
+    : /Als teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\)/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
   const saving = await page.textContent(".verdict .stats div:has(dt:text-is('Besparing in jaar 1')) dd");
@@ -250,7 +257,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(summary, /wordt de tweede regel vanaf 2030: \+ [\d.]+ kWh minder teruggeleverd × €\s*0,0515 \(vergoeding €\s*0,0000 − terugleverkosten €\s*0,0515: terugleveren kost je geld\) = €\s*[\d.]+, samen €\s*[\d.]+ per jaar/);
   assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
-  if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren niets oplevert)?|is hij zelfs gratis niet lonend)\./);
+  if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost)?|is hij zelfs gratis niet lonend)\./);
   assert.match(summary, /geschat uit jaartotalen/);
   // Met de stekker staat het veiligheidsadvies boven de som, met het vermogen waarmee is gerekend; de kaart
   // van een stekkerbatterij springt ernaartoe zonder de pagina te verlaten.
@@ -587,6 +594,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await next(page);
   await page.getByLabel("Stroomprijs, alles inbegrepen (€/kWh)").fill("0.25");
   await page.getByLabel("Terugleververgoeding (€/kWh)").fill("0.05");
+  // Terugleverkosten beginnen leeg: onbekend is geen nul.
+  assert.equal(await page.getByLabel("Terugleverkosten (€/kWh)").inputValue(), "");
+  await page.getByLabel("Terugleverkosten (€/kWh)").fill("0");
   await next(page);
   await page.click("button:has-text('+ Eigen optie')");
   const card = page.locator(".option-editor").first();
@@ -615,11 +625,10 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   // De grens waarboven de offerte niet meer lonend is: startinvestering plus NPV.
   const option = await page.locator("article.option").nth(1).textContent();
   const euros = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
-  const [, investment, npv] = option.match(/Startinvestering(.+?)Netto voordeel \(NPV\)(.+?)Nettowinst/);
-  const limit = option.match(/Lonend bij een startinvestering(Tot .+?|Zelfs gratis niet)Eigen gebruik/)[1];
+  const [, limit, investment, npv] = option.match(/Lonend tot(€.+?|Zelfs gratis niet)Startinvestering nu(.+?)Netto voordeel \(NPV\)(.+?)Terugverdiend/);
   const expected = euros(investment) + euros(npv);
   // De grens is naar beneden afgerond op € 10.
-  if (limit.startsWith("Tot")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
+  if (limit.startsWith("€")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
   else assert.ok(expected <= 1, `${expected} zou positief zijn`);
   // Geen accu wint: wat er zou moeten veranderen, en de opgegeven warmtepomp zit er al in.
   assert.match(view, /Dat verandert als:de besparing groter wordt: Eigen optie 1 is zelfs gratis niet lonend.*de warmtepomp vanaf 2028 \(2\.500 kWh per jaar erbij\) zit al in deze berekening/);

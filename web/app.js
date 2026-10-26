@@ -134,13 +134,13 @@
       const current = Data.defaults(),
         controls = Object.fromEntries(Object.keys(labels).map(key => {
           const [min, max, step = "any"] = ranges[key];
-          return [key, numberInput({ value: String(current[key]), required: true, min, max, step })];
+          return [key, numberInput({ value: UI.plain(current[key]), required: true, min, max, step })];
         }));
       const form = h("form", { class: "panel", novalidate: true, onsubmit: event => {
         event.preventDefault();
         if (!UI.validate(form)) return;
         const values = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key,
-          Number(control.value)]));
+          UI.parse(control.value)]));
         const saved = store.set("thuisaccu-standaard", values);
         toast(saved ? "Standaardaannames bewaard voor nieuwe berekeningen." : "Bewaren in deze browser is niet beschikbaar.",
           !saved);
