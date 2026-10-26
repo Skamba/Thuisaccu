@@ -91,7 +91,9 @@ window.Data = (() => {
   // DC-waarde (accu DC, DC → DC) mist de omvormer en telt daar niet mee.
   const ANY_BOUNDARY = ["system_ac", "ac_ac", "unspecified", "pv_ac", "battery_dc", "dc_dc"];
   const AC_BOUNDARY = ["system_ac", "ac_ac", "unspecified", "pv_ac"];
-  // Bij meerdere bruikbare claims met dezelfde meetgrens telt de voorzichtigste waarde.
+  // Bij meerdere bruikbare claims met dezelfde meetgrens telt de voorzichtigste waarde. Voor sluimerverbruik
+  // telt de hoogste waarde over alle AC-meetgrenzen en ‘niet vermeld’ samen: een lagere waarde aan het
+  // stopcontact (bijvoorbeeld met het apparaat uit) maakt een hoger gemeten verbruik in bedrijf niet minder waar.
   const HIGHER_IS_CAUTIOUS = new Set(["standby_power_w"]);
   // Rendementsclaims die niet als AC → AC-rendement voor de simulatie kunnen gelden; ze worden genoemd
   // maar niet gebruikt. Een bovengrens (‘tot 90%’, piekwaarde) zegt niets over de ondergrens. Een
@@ -122,14 +124,17 @@ window.Data = (() => {
       const fitting = numbers.filter(c => c.metric_key === metric && order.includes(c.boundary) && !skip(c));
       if (!fitting.length) return undefined;
       const boundary = order.find(b => fitting.some(c => c.boundary === b));
-      const same = fitting.filter(c => c.boundary === boundary);
       const higher = HIGHER_IS_CAUTIOUS.has(metric);
+      const ac = b => AC_BOUNDARY.includes(b);
+      const same = fitting.filter(c => higher ? ac(c.boundary) === ac(boundary) : c.boundary === boundary);
       const pick = same.reduce((a, b) => (higher ? b.value > a.value : b.value < a.value) ? b : a);
       if (METRIC_LABELS[metric]) {
         used.push({ label: METRIC_LABELS[metric], claim: pick });
         const values = [...new Set(fitting.map(c => c.value))];
         if (values.length > 1) notes.push(`${fitting.length} bronclaims voor ${METRIC_LABELS[metric]} (${values.map(value => shown({ ...pick, value })).join(", ")}); ` +
-          `gerekend met claim #${pick.id}: de ${same.length > 1 ? `${higher ? "hoogste" : "laagste"} waarde bij de ` : ""}meest geschikte meetgrens (${boundaries[boundary] || boundary}).`);
+          `gerekend met claim #${pick.id}: de ${higher && same.length > 1
+            ? `hoogste waarde ${ac(boundary) ? "aan de AC-kant of zonder vermelde meetgrens" : "aan de DC-kant"} (${boundaries[pick.boundary] || pick.boundary})`
+            : `${same.length > 1 ? "laagste waarde bij de " : ""}meest geschikte meetgrens (${boundaries[boundary] || boundary})`}.`);
       }
       return pick;
     };

@@ -555,21 +555,26 @@ test("eigen accu met een offerte in Nederlandse notatie rekent mee in de keuzehu
   await close();
 });
 
-test("rendement: geen bovengrens en geen rustverbruik dubbel meegeteld", async () => {
+test("rendement en sluimerverbruik uit bronclaims: voorzichtig en niet dubbel", async () => {
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/accus`);
   await page.waitForSelector("table", { timeout: 30000 });
-  const found = await page.evaluate(async () => {
+  const solarCube = await page.evaluate(async () => {
     const cmp = await UI.api("/api/v1/comparison");
-    return cmp.configurations.filter(c => c.product_name === "SolarCube Pro")
-      .map(c => Data.describe(cmp, c)).filter(p => p.standby === 9.3)
-      .map(p => ({ efficiency: p.efficiency, standby: p.standby, notes: p.notes.join(" ") }))[0];
+    return Object.fromEntries(cmp.configurations.filter(c => c.product_name === "SolarCube Pro")
+      .map(c => [c.name, Data.describe(cmp, c)])
+      .map(([name, p]) => [name, { efficiency: p.efficiency, standby: p.standby, notes: p.notes.join(" ") }]));
   });
-  // Onderzochte set 3: gesloten cyclus 81,29% aan het stopcontact, apart 9,3 W in rust; de 80,05% over
-  // dezelfde cyclus bevat dat rustverbruik al en zou het met het sluimerverbruik dubbel tellen.
-  assert.equal(found.efficiency, 81.29);
-  assert.equal(found.standby, 9.3);
-  assert.match(found.notes, /Rendement 80,05% \(claim #\d+\) bevat ook het eigen verbruik in rust/);
+  // Onderzochte set 3: gesloten cyclus 81,29% aan het stopcontact; de 80,05% over dezelfde cyclus bevat het
+  // eigen verbruik in rust al en zou het met het sluimerverbruik dubbel tellen.
+  const plug = solarCube["1 unit · 6 kWh · stekker 800 W"], circuit = solarCube["1 unit · 6 kWh · eigen groep (hogere netstand)"];
+  assert.equal(plug.efficiency, 81.29);
+  assert.match(plug.notes, /Rendement 80,05% \(claim #\d+\) bevat ook het eigen verbruik in rust/);
+  // Sluimerverbruik: 9,3 W aan het stopcontact met het apparaat uit, maar in bedrijf 50,6 W in de rustfasen
+  // (800 W-stand) en 41 tot 47 W bij 0 W vraag (3000 W-stand). De hoogste waarde aan de AC-kant telt.
+  assert.equal(plug.standby, 50.6);
+  assert.equal(circuit.standby, 41);
+  assert.match(plug.notes, /hoogste waarde aan de AC-kant of zonder vermelde meetgrens/);
   // Een bovengrens (‘tot 90%’) is geen verwachte waarde: dan geldt de voorzichtige aanname.
   const nexus = await page.evaluate(async () => {
     const cmp = await UI.api("/api/v1/comparison");
