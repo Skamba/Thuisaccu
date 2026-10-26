@@ -211,7 +211,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     : /Als teruglevering vanaf 2030 niets meer oplevert/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
-  const saving = summary.match(/bespaart in het eerste jaar ongeveer (€\s*[\d.]+)/)[1];
+  const saving = await page.textContent(".verdict .stats div:has(dt:text-is('Besparing in jaar 1')) dd");
   const receipt = await page.locator(".plain .receipt li").allTextContents();
   const [, gain] = receipt[0].match(/^\+ [\d.]+ kWh minder van het net × €\s*[\d,]+ = (€\s*[\d.]+)$/);
   const [, sign, lost] = receipt[1].match(/^([+−]) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ \(.+\) = (€\s*[\d.]+)$/);
@@ -345,8 +345,13 @@ test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste ac
   // Wat er zou moeten veranderen, met een getal uit deze berekening per regel.
   const noBattery = await page.textContent(".plain");
   assert.match(noBattery, /Dat verandert als:.*(minder kost dan ongeveer €\s*[\d.]+ \(nu €\s*[\d.]+\)|zelfs gratis niet lonend)/);
-  assert.match(noBattery, /Bewaar deze berekening .* ‘Lonend’ betekent hier/);
+  assert.match(noBattery, /Deze berekening blijft bewaard onder Mijn berekeningen.* ‘Lonend’ betekent hier/);
   assert.doesNotMatch(noBattery, /warmtepomp vanaf/);
+  // Ook als geen accu wint, tonen kostenopbouw en offertecheck de accu die het dichtst in de buurt komt.
+  await page.click(`[role=tab]:has-text("Kostenopbouw")`);
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Kostenposten van/);
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Bruikbare capaciteit.*kWh bruikbaar/);
   assert.deepEqual(problems, []);
   await close();
 });
@@ -625,6 +630,8 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
   await page.click("button:has-text('Bereken en bewaar')");
   await page.waitForFunction(old => /berekeningen\/\d+/.test(location.hash) && location.hash !== old, firstRun, { timeout: 120000 });
+  // De herkomst staat ingeklapt in de uitleg, met de oorspronkelijke berekening in de titel.
+  await page.click("summary:has-text('Uit je offerte, op basis van ‘Synthetische offerte’')");
   await page.waitForSelector("text=Herberekend met de antwoorden uit je offerte");
   const quotedView = await page.textContent("#view");
   assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; startkosten vóór teruggaven/);
@@ -671,14 +678,25 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(swapped, /Synthetische offerte · huidig model.*Synthetische offerte · offerte/);
   assert.doesNotMatch(swapped, /ouder rekenmodel/);
   await page.click("table.compare thead >> text=Synthetische offerte · huidig model");
-  await page.waitForSelector("text=Herberekend met het huidige rekenmodel");
+  // De herkomst staat ingeklapt in de uitleg; de titel zegt waar de berekening vandaan komt.
+  await page.click("summary:has-text('Herberekend uit ‘Synthetische offerte’ met het huidige rekenmodel')");
   assert.match(await page.textContent("#view"),
-    /Herberekend met het huidige rekenmodel op basis van ‘Synthetische offerte’ \(nl-self-consumption-v\d+\)\. Invoer ongewijzigd\. .+: lonend tot (€\s*[\d.]+|zelfs gratis niet) → (€\s*[\d.]+|zelfs gratis niet)\./);
+    /Herberekend met het huidige rekenmodel op basis van ‘Synthetische offerte’\. Invoer ongewijzigd, met de prijzen en tarieven van toen\. .+: lonend tot (€\s*[\d.]+|zelfs gratis niet) → (€\s*[\d.]+|zelfs gratis niet)\./);
   // De oude blijft bewaard en wijst naar de nieuwe, zodat je niet twee keer opnieuw rekent.
-  await page.click("text=‘Synthetische offerte’");
+  await page.click("#view .fold a:text-is('‘Synthetische offerte’')");
   await page.waitForSelector("text=Al opnieuw gerekend");
-  assert.match(await page.textContent("#view"), /ouder rekenmodel \(nl-self-consumption-v4\).*Al opnieuw gerekend: Synthetische offerte · huidig model/);
+  // Zonder lening raakt de enige verbetering sinds versie 4 deze berekening niet, en dat staat er.
+  assert.match(await page.textContent("#view"), /Sinds deze berekening is het rekenmodel verbeterd\. Geen van die verbeteringen raakt deze berekening.*Een lening telt als rente en aflossing.* Raakt deze berekening niet\.Al opnieuw gerekend: Synthetische offerte · huidig model/);
   assert.equal(await page.locator("button:has-text('Reken opnieuw met het huidige model')").count(), 0);
+  if (BROWSER_MODE) {
+    // Drie berekeningen alleen in deze browser: een rustige herinnering aan een back-up, tot je er een maakt.
+    await page.evaluate(() => { location.hash = "#/berekeningen"; });
+    const hint = page.locator(".backup-hint");
+    await hint.waitFor();
+    assert.match(await hint.textContent(), /Je 3 berekeningen staan alleen in deze browser/);
+    await hint.locator("button:has-text('Download back-up')").click();
+    await hint.waitFor({ state: "detached" });
+  }
   assert.deepEqual(problems, []);
   await close();
 });

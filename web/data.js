@@ -40,6 +40,28 @@ window.Data = (() => {
   // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
   // andere versie zijn met andere rekenregels gemaakt.
   const MODEL_VERSION = "nl-self-consumption-v5";
+  // Wat elke modelversie veranderde, in gewone taal (docs/roi-model.md), met een toets of het een
+  // bewaarde run raakt: true, false, of null als dat uit de run niet te zien is.
+  const MODEL_CHANGES = [
+    ["nl-self-consumption-v2", "Verbruik binnen een meetperiode volgt een dagpatroon in plaats van gelijk verdeeld te zijn.", () => null],
+    ["nl-self-consumption-v3", "Gemeten netafname en teruglevering uit je meterbestand tellen mee.", () => null],
+    ["nl-self-consumption-v4", "Bij het doel ROI wint alleen een accu die in geld van nu niet verliest.",
+      run => run.input.request.parameters.objective === "roi"],
+    ["nl-self-consumption-v5", "Een lening telt als rente en aflossing in het jaar dat je ze betaalt; met een lening kwam de accu eerder te duur uit.",
+      run => run.input.request.candidates.some(c => c.financing?.loan_amount_eur > 0)]
+  ];
+  // De veranderingen na `version`, als [{ text, affects }]; leeg bij een onbekende versie.
+  function modelChanges(version, run) {
+    const known = ["nl-self-consumption-v1", ...MODEL_CHANGES.map(([v]) => v)];
+    const index = known.indexOf(version);
+    if (index < 0) return [];
+    return MODEL_CHANGES.slice(index).map(([, text, affects]) => ({ text, affects: affects(run) }));
+  }
+  // Of geen van de veranderingen sinds de run hem raakt; dan blijft de uitkomst naar verwachting gelijk.
+  const unaffectedByModel = run => {
+    const changes = modelChanges(run.result.model_version, run);
+    return changes.length > 0 && changes.every(c => c.affects === false);
+  };
   // Begrippen in gewone taal, voor wie de uitkomst samen met iemand anders leest.
   const GLOSSARY = [
     ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, omgerekend naar geld van nu. Boven nul " +
@@ -456,7 +478,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
+    RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults

@@ -85,10 +85,10 @@ window.UI = (() => {
 
   // Voert een actie uit met een uitgeschakelde knop; fouten worden als melding getoond.
   async function busy(button, work) {
-    button.disabled = true;
+    button.disabled = true; button.setAttribute("aria-busy", "true");
     try { return await work(); }
     catch (error) { toast(error.message, true); return undefined; }
-    finally { button.disabled = false; }
+    finally { button.disabled = false; button.removeAttribute("aria-busy"); }
   }
 
   const button = (text, onclick, variant = "primary", props = {}) =>

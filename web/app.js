@@ -9,7 +9,7 @@
     battery: "M7 4h10v17H7z M10 1h4 M9 12h6 M12 9v6",
     sun: "M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0",
     sliders: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6",
-    gear: "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2"
+    gear: "M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5 M12 1.5v3.5 M12 19v3.5 M1.5 12h3.5 M19 12h3.5 M4.6 4.6l2.4 2.4 M17 17l2.4 2.4 M4.6 19.4l2.4-2.4 M17 7l2.4-2.4"
   };
   // Oude adressen uit eerdere versies blijven werken.
   const LEGACY = [[/^dashboard$/, "keuzehulp"], [/^scenarios\/nieuw$/, "zelf"], [/^scenarios\/(\d+)$/, "berekeningen/$1"], [/^scenarios$/, "berekeningen"],
@@ -57,7 +57,7 @@
           : `${chosen.size} gekozen${chosen.size === Compare.MAX ? `; meer dan ${Compare.MAX} past niet naast elkaar` : ""}.`;
         for (const box of boxes) box.disabled = !box.checked && chosen.size >= Compare.MAX;
       };
-      view.append(h("div", { class: "toolbar" }, compare, status));
+      UI.append(view, [backupHint(runs.length), h("div", { class: "toolbar" }, compare, status)]);
       view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
         const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
         const box = h("input", { type: "checkbox", "aria-label": `Vergelijk ${run.title}`,
@@ -147,6 +147,23 @@
   });
 
   // Waar de gegevens staan verschilt per manier van draaien (zie local.js).
+  // Back-up van de browserdatabase; het moment staat in deze browser, zodat Mijn berekeningen er alleen
+  // aan herinnert als er lang geen back-up is gemaakt.
+  const BACKUP_KEY = "thuisaccu-laatste-backup", BACKUP_DAYS = 14;
+  const backupButton = (after = () => {}) => button("Download back-up", async () => {
+    try { UI.downloadBlob(`thuisaccu-${new Date().toISOString().slice(0, 10)}.sqlite3`, await Local.backup());
+      store.set(BACKUP_KEY, Date.now()); after(); }
+    catch (error) { toast(`Back-up maken mislukt: ${error.message}`, true); }
+  }, "secondary");
+  // Vanaf drie bewaarde berekeningen in de browserversie, zolang er geen recente back-up is.
+  function backupHint(count) {
+    if (!Local.enabled || count < 3 || Date.now() - store.get(BACKUP_KEY, 0) < BACKUP_DAYS * 864e5) return null;
+    const hint = h("div", { class: "callout backup-hint", role: "note" }, h("p", {},
+      `Je ${count} berekeningen staan alleen in deze browser. Ruimt de browser zijn gegevens op, dan zijn ze weg. ` +
+      "Een back-up is één bestand dat je later onder Instellingen terugzet."), backupButton(() => hint.remove()));
+    return hint;
+  }
+
   function dataPanel() {
     const clear = button("Wis concepten in deze browser", () => { for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null); toast("Concepten gewist."); }, "secondary");
     if (!Local.enabled) return h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
@@ -167,10 +184,7 @@
       if (!granted) toast("De browser heeft blijvende opslag niet toegestaan. Een back-up blijft verstandig.", true);
     }, "secondary");
 
-    const download = button("Download back-up", async () => {
-      try { UI.downloadBlob(`thuisaccu-${new Date().toISOString().slice(0, 10)}.sqlite3`, await Local.backup()); }
-      catch (error) { toast(`Back-up maken mislukt: ${error.message}`, true); }
-    }, "secondary");
+    const download = backupButton();
 
     // Formulierstatus in een object; de knop werkt pas met een gekozen bestand.
     const state = { file: null };
@@ -217,8 +231,9 @@
     if (!path) { location.replace("#/keuzehulp"); return; }
     const found = match(path);
     if (!found) { location.replace("#/keuzehulp"); return; }
-    // Een dialoog hoort bij het vorige scherm, ook na Terug of een link.
+    // Een dialoog of foutmelding hoort bij het vorige scherm, ook na Terug of een link.
     document.querySelectorAll("dialog[open]").forEach(d => d.close());
+    document.querySelectorAll("#toasts .toast.error").forEach(t => t.remove());
     const run = ++generation, section = found.page.parent || found.key;
     document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.page === section) a.setAttribute("aria-current",
       "page");

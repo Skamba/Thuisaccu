@@ -57,7 +57,9 @@ window.Compare = (() => {
       link(run.title, `#/berekeningen/${run.id}`), h("br"), h("small", {}, UI.dateTime(run.created_at_unix_s)),
       Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null,
       Results.outdated(run) ? h("div", { class: "callout" },
-        h("p", {}, `Gemaakt met een ouder rekenmodel (${run.result.model_version}). Reken opnieuw om eerlijk te vergelijken.`),
+        h("p", {}, "Gemaakt met een ouder rekenmodel. Reken opnieuw om eerlijk te vergelijken" +
+          (Data.unaffectedByModel(run)
+            ? "; de verbeteringen sindsdien raken deze berekening niet." : ".")),
         // De nieuwe berekening neemt de plaats van de oude in; de andere kolommen blijven staan.
         Results.recalculation(run, id => { location.hash = `#/vergelijk/${runs.map(r => r === run ? id : r.id).join("-")}`; }))
         : null)));
@@ -86,7 +88,7 @@ window.Compare = (() => {
           link("Naar mijn berekeningen", "#/berekeningen", "button")));
         return;
       }
-      actions.append(button("Afdrukken", () => window.print(), "ghost"));
+      actions.append(button("Afdrukken", () => window.print(), "secondary"));
       render(view, runs);
     }
   });

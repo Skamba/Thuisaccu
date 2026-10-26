@@ -314,7 +314,8 @@
     // Zonder bestaande accu kan een accu hooguit vervangen wat je terugleverde én wat je afnam.
     const ceiling = Math.min(imported, exported), curveMax = points[points.length - 1].battery_to_load_kwh;
     const parts = [`Volgens je jaarafrekening gebruik je ${n(reported, 0)}% van je zonnestroom direct zelf ` +
-      `(opwek ${n(produced, 0)} kWh − teruglevering ${n(exported, 0)} kWh); het geschatte profiel gaat uit van ${n(modelled, 0)}%.`];
+      `(opwek ${n(produced, 0)} kWh − teruglevering ${n(exported, 0)} kWh); het geschatte profiel gaat uit van ${n(modelled, 0)}%. ` +
+      "De berekening rekent met dat geschatte profiel, want een jaarafrekening zegt niet op welk uur je stroom gebruikt."];
     const gap = reported - modelled;
     if (gap >= 10) parts.push("Je gebruikt overdag dus meer zelf dan het standaardprofiel. Er blijft minder over om op te slaan, " +
       "dus de besparing met een accu valt waarschijnlijk lager uit dan berekend.");

@@ -137,6 +137,14 @@ td strong, th strong { display: block; }
 .compare td { min-width: 13rem; }
 .compare thead th:first-child { position: sticky; left: 0; z-index: 1; }
 @media (max-width: 40rem) {
+  /* De paginaknoppen compact, zodat de uitkomst zelf eerder in beeld komt. */
+  #page-actions { gap: .4rem; margin: .5rem 0 0; }
+  #page-actions :is(button, .button) { padding: .4rem .7rem; font-size: .9rem; }
+  /* Tabbladen schuiven op één regel zijwaarts in plaats van vijf regels hoog te worden. */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .tabs [role="tab"] { flex: none; }
+  /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
+  .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
   .compare th[scope="row"], .compare thead th:first-child { min-width: 7.5rem; width: 7.5rem; hyphens: auto; }
   .compare td { min-width: 11rem; }
   /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
@@ -155,6 +163,10 @@ td strong, th strong { display: block; }
 
 /* Tabbladen en wizard */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
+button[aria-busy="true"] { cursor: progress; }
+button[aria-busy="true"]::after { content: " …"; }
+input[type="file"]::file-selector-button { font: inherit; font-weight: 600; margin-right: .75rem; padding: .45rem .9rem; border: 1px solid var(--accent);
+  border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--accent); cursor: pointer; }
 .tabs [role="tab"] { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: .6rem .9rem; }
 .tabs [aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1.25rem; border-bottom: 1px solid var(--line); }
@@ -169,6 +181,16 @@ td strong, th strong { display: block; }
 .product-group { margin-top: var(--gap); }
 .product-group > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--gap); }
 .verdict { background: var(--accent-soft); border-color: transparent; }
+.verdict h2 { margin-bottom: .25rem; }
+.verdict-for { margin: .5rem 0 0; color: var(--muted); }
+.verdict .stats { grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); }
+.verdict .stats dd { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 0; }
+@media (max-width: 40rem) { .verdict .stats { grid-template-columns: 1fr 1fr; } .verdict .stats dd { font-size: 1.15rem; } }
+.verdict-plug { margin: .5rem 0 0; }
+.fold { border-top: 1px solid var(--line); padding: .35rem 0; }
+.fold > summary { padding: .3rem 0; }
+.fold[open] > summary { margin-bottom: .25rem; }
+.next-step { margin: .75rem 0 0; }
 .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; font-weight: 700; color: var(--muted); margin: 0; }
 .plain { border-left: 4px solid var(--accent); }
 .plain li { margin: .35rem 0; }
@@ -207,6 +229,13 @@ td strong, th strong { display: block; }
   main { padding: 1.25rem 1rem 2rem; }
 }
 @media print {
+  /* Op papier altijd de lichte kleuren, ook als het scherm donker is. */
+  :root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+    --bg: #ffffff; --surface: #ffffff; --soft: #eaf0e8; --ink: #17332c; --muted: #56675f; --line: #d8e0d5;
+    --accent: #21604b; --accent-ink: #ffffff; --accent-soft: #dcebe2; --warn-bg: #fdf0d8; --warn-ink: #714500;
+    --ok-bg: #dcefe3; --ok-ink: #1d5a40; --danger: #a3372b; color-scheme: light;
+  }
+  .fold > :not(summary) { display: revert; }
   .sidebar, .page-head .actions, .wizard-footer, footer, .tabs { display: none !important; }
   body { display: block; }
   [role="tabpanel"] { display: block !important; }

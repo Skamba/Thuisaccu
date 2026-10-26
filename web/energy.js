@@ -13,6 +13,12 @@
     const comma = cells.some(v => /^-?\d+,\d+$/.test(v)), dot = cells.some(v => /^-?\d+\.\d+$/.test(v));
     return comma && !dot ? "comma" : dot && !comma ? "dot" : current;
   }
+  // ‘2025-01’ wordt ‘jan’; loopt de reeks over twee kalenderjaren, dan met het jaar erbij (‘jul 2025’).
+  function monthLabel(label, months) {
+    if (!/^\d{4}-\d{2}$/.test(label)) return label;
+    const month = new Date(`${label}-01T12:00:00`).toLocaleDateString("nl-NL", { month: "short" }).replace(".", "");
+    return new Set(months.map(m => m.label.slice(0, 4))).size > 1 ? `${month} ${label.slice(0, 4)}` : month;
+  }
   // Meetperiode uit de tijdstippen van de voorbeeldrijen (ISO of dag-maand-jaar met tijd). Alleen als alle
   // stappen gelijk zijn en een bekende periode vormen; de server controleert het bestand daarna volledig.
   function guessPeriod(preview, timeColumn, partColumn) {
@@ -50,7 +56,7 @@
       chart("bar",
         { title: "Maandtotalen", unit: "kWh",
           series: [{ label: "Zonne-opwek" }, ...(hasUse ? [{ label: "Verbruik" }] : [])],
-          rows: summary.months.map(m => ({ label: m.label,
+          rows: summary.months.map(m => ({ label: monthLabel(m.label, summary.months),
             values: [m.production_kwh, ...(hasUse ? [m.consumption_kwh] : [])] })) }),
       summary.warnings.length ? h("ul", { class: "warnings" }, summary.warnings.map(w => h("li", {}, w))) : null);
   }
@@ -287,7 +293,7 @@
         source.addEventListener("change",
           () => { exportField.hidden = source.value !== "net_meter";
             if (source.value !== "net_meter") options.export_column = null; });
-        body.append(h("h2", {}, "Kolommen en eenheden"), state.noProduction ? h("p", { class: "callout", role: "note" },
+        UI.append(body, [h("h2", {}, "Kolommen en eenheden"), state.noProduction ? h("p", { class: "callout", role: "note" },
           "We vinden geen kolom met zonne-opwek. Alleen netafname en teruglevering van de slimme meter is niet genoeg: " +
           "zonder opwek is niet te zien hoeveel zonnestroom je direct zelf gebruikt. Importeer eerst de export van je " +
           "omvormer en voeg dit bestand in de volgende stap toe als meterbestand. Geen omvormerdata? Gebruik dan in de " +
@@ -315,7 +321,7 @@
           field("Datumnotatie",
             opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
           field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
-          h("h3", {}, "Eerste rijen"), table(r.headers, r.preview));
+          h("h3", {}, "Eerste rijen"), table(r.headers, r.preview)]);
       }
       // Stap 3: een apart bestand van de slimme meter naast de opwek van de omvormer.
       function stepMeter(body) {

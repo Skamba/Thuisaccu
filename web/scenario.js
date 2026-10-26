@@ -476,7 +476,8 @@ window.Scenario = (() => {
         ["Naam en adres", `${state.title} · ${state.address || "geen adres"}`],
           ["Doel", Data.objectives[state.objective]],
         ["Stroomprijs / terugleververgoeding",
-          `${state.tariff.import || "?"} / ${state.tariff.export || "?"} €/kWh`],
+          [state.tariff.import, state.tariff.export].map(v => { const x = UI.parse(v);
+            return x == null ? "?" : UI.money(x, { decimals: 4 }); }).join(" / ") + " per kWh"],
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
         ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"],
         ...(request.quote_basis ? [["Uit de offerte", request.quote_basis.changes.map(Data.quoteChange).join("; ")]] : [])]),
