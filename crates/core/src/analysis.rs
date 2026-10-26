@@ -109,6 +109,11 @@ impl<'a> Profiles<'a> {
     }
 }
 
+/// Versie van het rekenmodel in elke uitkomst. Verhoog hem als de betekenis van uitkomsten
+/// verandert en documenteer dat in `docs/roi-model.md`; de interface (`MODEL_VERSION` in
+/// `web/data.js`) noemt oudere runs bij het vergelijken.
+pub const MODEL_VERSION: &str = "nl-self-consumption-v5";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Candidate {
@@ -901,7 +906,7 @@ pub fn analyze_with(
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
-        model_version: "nl-self-consumption-v5".into(),
+        model_version: MODEL_VERSION.into(),
         recommended_key: best_key,
         recommendation,
         baseline_first_year: baseline,

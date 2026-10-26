@@ -40,7 +40,8 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 | `energy.js` | Energieprofielen, detail met capaciteitscurve en de importwizard (inclusief P1) |
 | `scenario.js` | Zelf doorrekenen: alle parameters, tot twaalf opties met techniek, 26 kostenposten en financiering; PDOK-adreszoeken; overnemen van een bewaarde run |
 | `results.js` | Uitkomst: aanbeveling, samenvatting in gewone taal, zeven tabbladen (waaronder de kostenopbouw per kostenpost), CSV en afdrukken |
-| `app.js` | Router, navigatie, Mijn berekeningen en Instellingen |
+| `compare.js` | Twee tot vier bewaarde berekeningen naast elkaar (`#/vergelijk/3-5`): uitkomst, besproken accu, startinvestering, besparing in jaar 1, grensprijs, NPV, terugverdientijd en wat er aan de invoer anders is, met een melding bij een ouder rekenmodel en de begrippen uit `Data.GLOSSARY` |
+| `app.js` | Router, navigatie, Mijn berekeningen (met de keuze om te vergelijken) en Instellingen |
 
 Formulieren in de keuzehulp en Zelf doorrekenen houden hun toestand in één object en bouwen het scherm daaruit op; ze lezen geen waarden terug uit de DOM. Concepten (`thuisaccu-keuzehulp`, `thuisaccu-scenario`), de vergelijkingskeuze, standaardaannames (`thuisaccu-standaard`), thema en dichtheid staan alleen in `localStorage`. Zonder browseropslag werkt alles met de oorspronkelijke waarden. Bevestigingen worden nooit uit een concept of een overgenomen run gehaald. Fictieve gegevens uit een oudere database (`is_demo`) blijven overal herkenbaar als FICTIEF.
 

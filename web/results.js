@@ -24,6 +24,7 @@ window.Results = (() => {
   // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs.
   // Naar beneden afgerond op € 10: de grens is een schatting, geen bedrag op de euro.
   const roundedLimit = value => eur0(Math.floor(value / 10) * 10);
+  const limitText = value => value > 0 ? `ongeveer ${roundedLimit(value)}` : "niets: zelfs gratis niet";
   const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
   const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
@@ -81,6 +82,26 @@ window.Results = (() => {
     advice.scrollIntoView({ block: "center" }); advice.focus({ preventScroll: true });
   }, "ghost");
 
+  // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
+  // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
+  function batteryLimit(run, option, limit) {
+    const input = run.input.request.candidates.find(c => c.key === option.key);
+    const battery = input?.costs.find(l => l.category === "battery" && l.status === "priced");
+    if (!battery) return "";
+    const rest = option.initial_investment_eur - battery.amount_minor / 100;
+    if (Math.abs(rest) < 1) return "";
+    return limit - rest > 0
+      ? ` Voor de accu zelf (de post ‘Accu of complete pakketprijs’) is dat een prijs onder ongeveer ${roundedLimit(limit - rest)}, ` +
+        `als de overige startposten samen ${eur0(rest)} blijven.`
+      : ` De overige startposten (${eur0(rest)} samen) liggen al boven die grens.`;
+  }
+  // De besproken optie: de aanbevolen accu, anders die met de hoogste NPV.
+  function judged(run) {
+    const result = run.result;
+    return result.candidates.find(c => c.key === result.recommended_key) ||
+      [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+  }
+
   // Als geen accu wint: wat er zou moeten veranderen, uitsluitend met getallen uit deze berekening.
   function whatIf(run, best) {
     const request = run.input.request, p = request.parameters, result = run.result, lines = [];
@@ -88,7 +109,7 @@ window.Results = (() => {
     if (best.npv_eur > 0 && best.within_budget === false) lines.push(`je budget ruimer is: ${best.name} kost ` +
       `${eur0(best.initial_investment_eur)}, meer dan je budget van ${eur0(p.budget_eur)}, en levert netto ${eur0(best.npv_eur)} op in geld van nu.`);
     else if (finite(limit)) lines.push(limit > 0
-      ? `${best.name} minder kost dan ongeveer ${roundedLimit(limit)} (nu ${eur0(best.initial_investment_eur)}).`
+      ? `${best.name} minder kost dan ongeveer ${roundedLimit(limit)} (nu ${eur0(best.initial_investment_eur)}).${batteryLimit(run, best, limit)}`
       : `de besparing groter wordt: ${best.name} is zelfs gratis niet lonend, omdat de jaarkosten, verliezen en het ` +
         "sluimerverbruik zwaarder wegen dan de besparing. Een lagere prijs alleen is dus niet genoeg.");
     const v = p.export_variant;
@@ -106,7 +127,7 @@ window.Results = (() => {
     return lines;
   }
 
-  function summary(run, plugs, circuit) {
+  function summary(run, plugs, circuit, categories) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
@@ -199,7 +220,7 @@ window.Results = (() => {
     if (!changes.length && judged && finite(judged.break_even_investment_eur)) {
       const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
       list.append(h("li", {}, (limit > 0
-        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${roundedLimit(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)} (alle startposten na teruggaven, zie Kostenopbouw). Zo kun je een offerte of aanbieding zelf beoordelen. ${meaning}`
+        ? `${judged.name} is lonend zolang de startinvestering niet boven ongeveer ${roundedLimit(limit)} komt; nu is die ${eur0(judged.initial_investment_eur)} (alle startposten na teruggaven, zie Kostenopbouw). Zo kun je een offerte of aanbieding zelf beoordelen.${batteryLimit(run, judged, limit)} ${meaning}`
         : `${judged.name} kost je over de looptijd in geld van nu geld, ook als hij gratis zou zijn: de jaarkosten, verliezen en het sluimerverbruik wegen zwaarder dan de besparing.`) +
         (p.export_variant && finite(variantLimit)
           ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
@@ -208,14 +229,31 @@ window.Results = (() => {
     }
     // Herberekend vanuit de offertecheck: wat er veranderde en wat dat met de grensprijs doet.
     const quote = run.input.request.quote_basis, quotedOption = quote && result.candidates.find(c => c.key === quote.candidate_key);
+    const quotedInput = quote && run.input.request.candidates.find(c => c.key === quote.candidate_key);
+    const label = key => categories.find(c => c.key === key)?.label || key;
+    // Zo komt de totaalprijs uit de offerte op de startkosten: plus wat apart bleef en een eventuele reserve.
+    const priceSum = () => {
+      const amount = key => { const line = quotedInput.costs.find(l => l.category === key && l.status === "priced");
+        return line ? line.amount_minor / 100 : null; };
+      const kept = quote.price.separate.filter(key => amount(key) != null), reserve = amount("contingency");
+      const terms = { fixed: "vaste prijs", subject_to_survey: "onder voorbehoud van schouw", unknown: "niet bekend of de prijs vast is" };
+      const total = quote.price.total_eur + kept.reduce((sum, key) => sum + amount(key), 0) + (reserve ?? 0);
+      return h("ul", { class: "receipt" }, h("li", {}, `${eur0(quote.price.total_eur)} totaalprijs uit de offerte`),
+        kept.map(key => h("li", {}, `+ ${eur0(amount(key))} apart gehouden: ${label(key)} (geschat, niet in de offerte)`)),
+        reserve != null ? h("li", {}, `+ ${eur0(reserve)} reserve voor meerwerk (${terms[quote.price.terms]})`) : null,
+        h("li", {}, `= ${eur0(total)} startkosten vóór teruggaven`));
+    };
     if (quotedOption) list.append(h("li", {}, `Herberekend met de antwoorden uit je offerte, op basis van `,
       UI.link(`‘${quote.title}’`, `#/berekeningen/${quote.run_id}`), `: ${quote.changes.map(changeText).join("; ")}. ` +
       (finite(quotedOption.break_even_investment_eur) && finite(quote.break_even_investment_eur)
-        ? `${quotedOption.name} is nu lonend tot ongeveer ${roundedLimit(Math.max(0, quotedOption.break_even_investment_eur))}; ` +
-          `met de oorspronkelijke waarden was dat ${roundedLimit(Math.max(0, quote.break_even_investment_eur))}.`
+        ? (quotedOption.break_even_investment_eur <= 0 && quote.break_even_investment_eur <= 0
+          ? `${quotedOption.name} is ook met deze waarden zelfs gratis niet lonend.`
+          : `${quotedOption.name} is nu lonend tot ${limitText(quotedOption.break_even_investment_eur)}; ` +
+            `met de oorspronkelijke waarden was dat ${limitText(quote.break_even_investment_eur)}.`)
         : "") +
-      (quote.changes.some(c => c.field === "upfront_eur") ? ""
-        : " De startinvestering is nog de schatting uit de oorspronkelijke berekening; vergelijk de grens zelf met de prijs in je offerte.")));
+      (quote.changes.some(c => c.field === "upfront_eur") ? (quote.price && quotedInput ? " De startkosten zijn nu:" : "")
+        : " De startinvestering is nog de schatting uit de oorspronkelijke berekening; vergelijk de grens zelf met de prijs in je offerte."),
+      quote.price && quotedInput && quote.changes.some(c => c.field === "upfront_eur") ? priceSum() : null));
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
@@ -564,7 +602,8 @@ window.Results = (() => {
             return element;
           })) : null,
         UI.field("Vaste prijs of onder voorbehoud van schouw?", kind, contingency
-          ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}).` : null));
+          ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}); ` +
+            "weet je het niet, dan blijft die reserve staan." : null));
     };
     const sheet = (c, paper = false) => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
       rows(c, paper).map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
@@ -596,6 +635,7 @@ window.Results = (() => {
       const c = all.find(o => o.key === pick.value), input = request.candidates.find(v => v.key === c?.key);
       if (!input) return;
       const changes = [], wrong = [], notes = [], terms = quoted[c.key] || {};
+      let price = null;
       const copy = structuredClone(request), candidate = copy.candidates.find(v => v.key === c.key);
       for (const [field, name] of QUOTE_FIELDS) {
         const raw = answer(c, field).trim();
@@ -605,6 +645,8 @@ window.Results = (() => {
         if (value == null || value < 0) { wrong.push(name); continue; }
         if (field === "upfront_eur") {
           const separate = [...(terms.separate || [])];
+          price = { total_eur: value, separate,
+            terms: terms.price === "fixed" ? "fixed" : terms.price === "survey" ? "subject_to_survey" : "unknown" };
           Data.applyQuotePrice(candidate, field, value, { separate, fixedPrice: terms.price === "fixed" });
           notes.push(`totaalprijs ${Data.quoteUnit(field, value)}` +
             (separate.length ? `, apart gehouden: ${separate.map(label).join(", ")}` : "") +
@@ -620,7 +662,8 @@ window.Results = (() => {
       delete copy.quote_basis;
       Scenario.load(copy, { title: `${request.title} · offerte`.slice(0, 200), step: 3,
         basis: { run_id: run.id, title: request.title, candidate_key: c.key,
-          break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes } });
+          break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes,
+          ...(price && changes.some(ch => ch.field === "upfront_eur") ? { price } : {}) } });
       UI.toast("Offertewaarden overgenomen. Controleer de invoer, bevestig en reken opnieuw; de oude berekening blijft bewaard.");
       location.hash = "#/zelf";
     });
@@ -779,7 +822,7 @@ window.Results = (() => {
     // De aanbeveling noemt de optie al; een extra label herhaalt alleen de (soms lange) naam.
     view.append(h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
       h("h2", {}, result.recommendation)));
-    view.append(summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit), tabs([
+    view.append(summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
       { label: "Overzicht", content: overview(run, all, plugs) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Kostenopbouw", content: costs(run, all, categories) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
@@ -790,5 +833,5 @@ window.Results = (() => {
     ]));
   }
 
-  return { render, isFictitious, fromShare };
+  return { render, isFictitious, fromShare, judged, breakEven };
 })();

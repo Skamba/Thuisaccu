@@ -629,11 +629,28 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const quotedView = await page.textContent("#view");
   assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; startkosten vóór teruggaven/);
   assert.doesNotMatch(quotedView, /nog de schatting|raadt stekkerbatterijen/);
-  assert.match(quotedView, /is nu lonend tot ongeveer €\s*[\d.]+; met de oorspronkelijke waarden was dat €\s*[\d.]+/);
+  // De startkosten als som: de offerteprijs plus wat apart bleef; bij een vaste prijs geen reserve.
+  assert.match(quotedView, new RegExp(`De startkosten zijn nu:€\\s*8\\.750 totaalprijs uit de offerte\\+ €\\s*[\\d.]+ apart gehouden: .+ \\(geschat, niet in de offerte\\)= €\\s*${start.replace(".", "\\.")} startkosten vóór teruggaven`));
+  assert.doesNotMatch(quotedView, /reserve voor meerwerk \(/);
+  assert.match(quotedView, /is nu lonend tot (ongeveer €\s*[\d.]+|niets: zelfs gratis niet); met de oorspronkelijke waarden was dat (ongeveer €\s*[\d.]+|niets: zelfs gratis niet)\.|is ook met deze waarden zelfs gratis niet lonend\./);
   await page.click(`[role=tab]:has-text("Offertecheck")`);
   const quotedCheck = await page.textContent("[role=tabpanel]:not([hidden])");
   assert.match(quotedCheck, /9,3 kWh bruikbaar\s*offerte/);
   assert.match(quotedCheck, new RegExp(`€\\s*${start.replace(".", "\\.")} startinvestering na teruggaven`));
+  // Twee bewaarde berekeningen naast elkaar, met het verschil in woorden en de begrippen eronder.
+  await page.goto(`${base}/#/berekeningen`);
+  const compare = page.locator("button:has-text('Vergelijk')");
+  await page.getByLabel("Vergelijk Synthetische offerte", { exact: true }).check();
+  assert.equal(await compare.isDisabled(), true);
+  await page.getByLabel("Vergelijk Synthetische offerte · offerte", { exact: true }).check();
+  await compare.click();
+  await page.waitForSelector("table.compare");
+  const side = await page.textContent("table.compare");
+  assert.match(side, /Uitkomst(Advies: |Geen accu komt het beste uit)/);
+  assert.match(side, /Lonend tot.*(Zelfs gratis niet|Tot €)/);
+  assert.match(side, /Wat is anders.*offerte: bruikbare capaciteit 10 kWh → 9,3 kWh.*vaste prijs/);
+  assert.doesNotMatch(side, /ouder rekenmodel/);
+  assert.match(await page.textContent(".glossary"), /Discontovoet.*kWh en kW/);
   assert.deepEqual(problems, []);
   await close();
 });

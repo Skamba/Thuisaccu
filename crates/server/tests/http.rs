@@ -192,7 +192,10 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
         ("/catalog.js", "Accu’s vergelijken"),
         ("/energy.js", "Bestand importeren"),
         ("/scenario.js", "Zelf doorrekenen"),
+        ("/compare.js", "Berekeningen vergelijken"),
         ("/app.js", "Mijn berekeningen"),
+        // De interface noemt runs met een ander rekenmodel bij het vergelijken.
+        ("/data.js", thuisaccu_core::analysis::MODEL_VERSION),
     ] {
         assert!(
             home.contains(&format!(r#"src="{}""#, &path[1..])),

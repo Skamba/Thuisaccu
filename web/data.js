@@ -37,6 +37,21 @@ window.Data = (() => {
     return out;
   }
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
+  // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
+  // andere versie zijn met andere rekenregels gemaakt.
+  const MODEL_VERSION = "nl-self-consumption-v5";
+  // Begrippen in gewone taal, voor wie de uitkomst samen met iemand anders leest.
+  const GLOSSARY = [
+    ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, omgerekend naar geld van nu. Boven nul " +
+      "verdient de accu zich terug én levert hij meer op dan je geld elders zou doen."],
+    ["Discontovoet", "Wat je geld per jaar anders zou kunnen opbrengen, bijvoorbeeld op een spaarrekening of door minder te " +
+      "lenen. Daardoor telt een euro over tien jaar minder dan een euro nu."],
+    ["Lonend tot", "De hoogste startinvestering waarbij het netto voordeel nog nul is. Kost de accu minder, dan is hij lonend."],
+    ["Terugverdiend na", "Na hoeveel jaar de besparingen de investering hebben goedgemaakt, zonder de discontovoet."],
+    ["kWh en kW", "kWh is een hoeveelheid energie: wat er in de accu past of wat je per jaar verbruikt. kW is vermogen: hoe snel " +
+      "de accu laadt of stroom levert. Een accu met 5 kWh die 0,8 kW levert, doet ruim zes uur over leeglopen."],
+    ["Startinvestering", "Alles wat je bij aanschaf betaalt, zoals accu, installatie en aansluiting, min teruggaven en subsidie."]
+  ];
   // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern.
   const CREDITS = ["grant", "vat_refund", "residual_value"];
   // Wat de offertecheck uit een offerte kan overnemen: [veld, naam, eenheid], gelijk aan QUOTE_FIELDS in
@@ -425,7 +440,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
+    RULES, described, CREDITS, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults

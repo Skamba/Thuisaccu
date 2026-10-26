@@ -48,14 +48,28 @@
       if (!runs.length) { view.append(UI.empty("Nog geen berekeningen",
         "Doorloop de keuzehulp; je uitkomst wordt hier bewaard.", link("Start de keuzehulp", "#/keuzehulp", "button")));
         return; }
-      view.append(table(["Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
+      // Twee tot vier berekeningen kiezen om naast elkaar te zetten.
+      const chosen = new Set(), boxes = [], status = h("p", { class: "help", "aria-live": "polite" });
+      const compare = button("Vergelijk", () => { location.hash = `#/vergelijk/${[...chosen].join("-")}`; }, "secondary");
+      const refresh = () => {
+        compare.disabled = chosen.size < 2;
+        status.textContent = chosen.size < 2 ? `Kies 2 tot ${Compare.MAX} berekeningen om ze naast elkaar te zetten.`
+          : `${chosen.size} gekozen${chosen.size === Compare.MAX ? `; meer dan ${Compare.MAX} past niet naast elkaar` : ""}.`;
+        for (const box of boxes) box.disabled = !box.checked && chosen.size >= Compare.MAX;
+      };
+      view.append(h("div", { class: "toolbar" }, compare, status));
+      view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
         const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
-        return [h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
+        const box = h("input", { type: "checkbox", "aria-label": `Vergelijk ${run.title}`,
+          onchange: () => { if (box.checked) chosen.add(run.id); else chosen.delete(run.id); refresh(); } });
+        boxes.push(box);
+        return [box, h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
           Data.objectives[run.input.request.parameters.objective],
             rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
           money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", () => duplicate(run), "ghost"),
             button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title}` }))];
       }), { caption: "Laatste 100 berekeningen", stack: true }));
+      refresh();
     }
   });
 

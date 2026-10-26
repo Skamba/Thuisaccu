@@ -518,9 +518,35 @@ async fn quote_basis_is_saved_as_provenance_and_strictly_validated() {
         {"field": "upfront_eur", "before": 4000, "after": 3500},
         {"field": "subscription_eur", "before": 0, "after": 60}
     ]);
+    priced["quote_basis"]["price"] =
+        json!({"total_eur": 3365, "terms": "subject_to_survey", "separate": ["installation"]});
     let response = app
-        .oneshot(post("/api/v1/analysis/runs", priced))
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", priced.clone()))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
+    // Een prijs hoort bij een gewijzigde totaalprijs en noemt alleen bestaande kostenposten.
+    // Een onbekende soort prijs is al geen geldige JSON voor het verzoek (422).
+    for (path, value, status) in [
+        ("terms", json!("vast"), StatusCode::UNPROCESSABLE_ENTITY),
+        ("separate", json!(["meterkast"]), StatusCode::BAD_REQUEST),
+    ] {
+        let mut wrong = priced.clone();
+        wrong["quote_basis"]["price"][path] = value;
+        let response = app
+            .clone()
+            .oneshot(post("/api/v1/analysis/runs", wrong))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status, "{path}");
+    }
+    let mut unpriced = priced.clone();
+    unpriced["quote_basis"]["changes"] =
+        json!([{"field": "subscription_eur", "before": 0, "after": 60}]);
+    let response = app
+        .oneshot(post("/api/v1/analysis/runs", unpriced))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

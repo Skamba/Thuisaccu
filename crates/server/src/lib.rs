@@ -116,6 +116,7 @@ const ASSETS: &[(&str, &str, &str)] = &[
     ("/catalog.js", include_str!("../../../web/catalog.js"), JS),
     ("/energy.js", include_str!("../../../web/energy.js"), JS),
     ("/scenario.js", include_str!("../../../web/scenario.js"), JS),
+    ("/compare.js", include_str!("../../../web/compare.js"), JS),
     ("/app.js", include_str!("../../../web/app.js"), JS),
 ];
 

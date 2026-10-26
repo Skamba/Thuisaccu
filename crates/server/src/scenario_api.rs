@@ -63,6 +63,29 @@ pub struct QuoteBasis {
     #[serde(default)]
     pub break_even_investment_eur: Option<f64>,
     pub changes: Vec<QuoteChange>,
+    /// Bij een totaalprijs uit de offerte: het bedrag, hoe vast het is en welke kostenposten
+    /// apart bleven. Alleen ter uitleg van de som in de uitkomst.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<QuotePrice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuotePrice {
+    /// Totaalprijs inclusief btw zoals in de offerte.
+    pub total_eur: f64,
+    pub terms: PriceTerms,
+    /// Kostencategorieën die niet in de totaalprijs zitten en met hun schatting bleven staan.
+    #[serde(default)]
+    pub separate: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PriceTerms {
+    Fixed,
+    SubjectToSurvey,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +129,16 @@ fn validate_quote_basis(request: &RunRequest) -> Result<(), ApiError> {
         && (1..=QUOTE_FIELDS.len()).contains(&basis.changes.len())
         && basis.changes.iter().all(|c| {
             QUOTE_FIELDS.contains(&c.field.as_str()) && c.before.is_finite() && c.after.is_finite()
+        })
+        && basis.price.as_ref().is_none_or(|price| {
+            basis.changes.iter().any(|c| c.field == "upfront_eur")
+                && price.total_eur.is_finite()
+                && price.total_eur >= 0.0
+                && price.separate.len() <= thuisaccu_core::finance::COST_CATEGORIES.len()
+                && price
+                    .separate
+                    .iter()
+                    .all(|c| thuisaccu_core::finance::COST_CATEGORIES.contains(&c.as_str()))
         });
     if valid {
         Ok(())

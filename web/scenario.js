@@ -100,7 +100,9 @@ window.Scenario = (() => {
     const option = state.basis && candidates.find(o => o.key === state.basis.candidate_key);
     const changes = option ? state.basis.changes.map(c => ({ ...c, after: Data.quoteValue(option, c.field) }))
       .filter(c => Number.isFinite(c.after) && c.after !== c.before) : [];
-    return changes.length ? { ...state.basis, changes } : null;
+    // De prijsopbouw hoort bij de totaalprijs; zonder die wijziging vervalt hij.
+    const { price, ...rest } = state.basis || {};
+    return changes.length ? { ...rest, changes, ...(price && changes.some(c => c.field === "upfront_eur") ? { price } : {}) } : null;
   }
 
   function bands() {
