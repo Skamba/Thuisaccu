@@ -90,7 +90,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 - Schrijf gedragstests bij nieuwe berekeningen en API-contracten: `crates/core/tests/analysis.rs` (rekenkern), `crates/storage/tests/catalog.rs` (opslag, migraties, transacties), `crates/server/tests/*.rs` (HTTP, import, scenario).
 - Referentiegevallen voor de rekenkern controleren energiebehoud, vermogensgrenzen, verliezen, NPV/ROI, financiering en vervanging. Een nieuwe rekenregel krijgt een handmatig narekenbaar referentiegeval met de aanname in de testnaam of een comment.
 - Testdata is synthetisch en klein. Voorbeeldbestanden voor import staan in `crates/server/resources/`.
-- `tests/e2e/app.test.js` (node:test + Playwright) dekt de keuzehulp, import met meterbestand, een Nederlandse export in lokale tijd, Zelf doorrekenen met een eigen offerte, de prijswaarschuwing, instellingen en het smalle scherm. Gebruik daar ook alleen synthetische, in de test gegenereerde gegevens.
+- `tests/e2e/app.test.js` (node:test + Playwright) dekt de keuzehulp (ook zonder zonnepanelen), import met meterbestand, een Nederlandse export in lokale tijd, Zelf doorrekenen met een eigen offerte, de prijswaarschuwing, instellingen en het smalle scherm. Gebruik daar ook alleen synthetische, in de test gegenereerde gegevens.
 
 ## Ingebouwde onderzoeksdata
 

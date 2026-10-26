@@ -456,8 +456,9 @@
     const own = answers.sizing === "custom" && Number.isFinite(answers.rangeLow) && Number.isFinite(answers.rangeHigh)
       ? { low: clamp(Math.min(answers.rangeLow, answers.rangeHigh)), high: clamp(Math.max(answers.rangeLow, answers.rangeHigh)) } : null;
     if (!SIZING[answers.sizing] && !own) answers.sizing = "value";
-    // De rekenkern vergelijkt maximaal vijftig accu's tegelijk.
-    const MAX_CANDIDATES = 50;
+    // De rekenkern vergelijkt maximaal vijftig accu's tegelijk. Zonder zinvol bereik levert een accu weinig of niets
+    // op; dan rekenen we ter controle alleen de goedkoopste door, zodat de berekening niet onnodig lang duurt.
+    const MAX_CANDIDATES = 50, FEW_CANDIDATES = 5;
     let range = max > 0 && own ? own : rangeFor(answers.sizing), included = [], renderPick = () => {};
     const size1 = v => n(v, v % 1 ? 1 : 0), kwhText = v => `${size1(v)} kWh`;
     body.replaceChildren(h("h2", {}, "Je advies"));
@@ -561,11 +562,13 @@
       const fallback = filter && !inside.length;
       const chosen = !filter ? eligible : fallback
         ? [nearest(p => p.capacity < range.low), nearest(p => p.capacity > range.high)].filter(Boolean) : inside;
-      included = chosen.slice().sort((a, b) => distance(a) - distance(b) || a.capacity - b.capacity)
-        .slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
+      const price = p => p.offer.upfront_amount_minor;
+      included = chosen.slice().sort((a, b) => distance(a) - distance(b) || (range ? a.capacity - b.capacity : price(a) - price(b)))
+        .slice(0, range ? MAX_CANDIDATES : FEW_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
       const outside = eligible.filter(p => !included.includes(p)).map(p => ({ ...p, reason: filter && distance(p) > 0
         ? `${position(p)} dan ${rangeText()}.`
-        : `De berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk; ${range ? `deze ligt verder van ${rangeName()}` : "zonder zinvol bereik gaan de kleinste mee"}.` }));
+        : range ? `De berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk; deze ligt verder van ${rangeName()}.`
+          : `Een accu levert hier weinig of niets op; ter controle rekenen we alleen de ${FEW_CANDIDATES} goedkoopste door.` }));
       const excluded = [...products.filter(p => p.reason), ...outside].sort((a, b) => a.name.localeCompare(b.name, "nl"));
       const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast", circuit: "Stekker, eigen groep" };
       const where = filter ? `, binnen ${rangeText()} vallen` : "";
@@ -576,7 +579,7 @@
             ? `Geen accu met een prijs en volledige gegevens valt binnen ${rangeText()}. We rekenen de dichtstbijzijnde ` +
               `${included.length === 1 ? "accu" : "kleinere en grotere accu"} door en vergelijken met geen accu. ` +
               "Verschuif het bereik om andere accu’s mee te nemen."
-            : `We rekenen ${chosen.length > included.length ? `de ${included.length}${range ? "" : " kleinste"} van de ${chosen.length}` : `alle ${included.length}`} ` +
+            : `We rekenen ${chosen.length > included.length ? `de ${included.length}${range ? "" : " goedkoopste"} van de ${chosen.length}` : `alle ${included.length}`} ` +
               `accu’s door die bij je antwoorden passen${where}${parse(answers.budget) != null ? " en binnen je budget blijven" : ""} ` +
               "en waarvan prijs, capaciteit en vermogen bekend zijn" +
               `${chosen.length > included.length && range ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +

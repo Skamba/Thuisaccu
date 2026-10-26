@@ -251,6 +251,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(view, /De link bevat \d+ van de \d+ doorgerekende accu’s/);
   assert.equal(await other.page.locator("button:has-text('Pas aan')").count(), 0);
   assert.doesNotMatch(await other.page.textContent("#page-actions"), /null/);
+  assert.equal(await other.page.getAttribute("#page-actions a:has-text('Reken je eigen situatie door')", "href"), "#/keuzehulp");
   // Een afgebroken link geeft een melding in plaats van een fout.
   await other.page.goto(shared.slice(0, -40));
   await other.page.waitForSelector("text=Deze link werkt niet");
@@ -271,6 +272,30 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await runRow.waitFor({ state: "detached" });
   await page.goto(`${base}/${runHash}`);
   await page.waitForSelector("text=Berekening niet gevonden");
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste accu’s door", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/keuzehulp`);
+  await page.click("label:has-text('Nee') >> nth=0");
+  await page.getByLabel("Stroom van het net per jaar (kWh)").fill("2800");
+  await next(page);
+  await next(page);
+  for (const indication of await page.$$("button:has-text('Gebruik de indicatie')")) await indication.click();
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".product-group", { timeout: 30000 });
+  const advice = await page.textContent(".wizard-body");
+  assert.match(advice, /Zonder zonnepanelen is er geen zonnestroom om op te slaan/);
+  assert.match(advice, /We rekenen de 5 goedkoopste van de \d+ accu’s door/);
+  assert.doesNotMatch(advice, /zinvol bereik/);
+  assert.match(await page.textContent(".product-group:last-of-type"), /ter controle rekenen we alleen de 5 goedkoopste door/);
+  for (const box of await page.$$("fieldset .check input")) await box.check();
+  await page.click("button:has-text('Bereken mijn advies')");
+  await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 60000 });
+  assert.match(await page.textContent(".verdict"), /[Gg]een accu/);
   assert.deepEqual(problems, []);
   await close();
 });

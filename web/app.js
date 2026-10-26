@@ -81,6 +81,8 @@
         link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
       $("page-title").textContent = run.title;
       await Results.render(run, view, actions, null, { shared: true });
+      // Wie een link krijgt, kan meteen de eigen situatie doorrekenen.
+      actions.prepend(link("Reken je eigen situatie door", "#/keuzehulp", "button"));
     }
   });
 
