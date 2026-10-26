@@ -365,3 +365,38 @@ async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
     assert_eq!(imports[0].options["combined_period"], "hour");
     assert_eq!(imports[0].options["meter"]["import_column"], 1);
 }
+
+#[tokio::test]
+async fn an_inverter_and_a_meter_file_of_six_mb_each_fit_and_a_too_large_form_gets_a_dutch_message()
+{
+    let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
+    let form = |size: usize| {
+        let filler = format!(
+            "time,production\n{}",
+            "2026-06-01T10:00:00Z,1\n".repeat(size / 23)
+        );
+        ["file", "meter_file"]
+            .iter()
+            .map(|name| format!("--test-boundary\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{name}.csv\"\r\nContent-Type: text/csv\r\n\r\n{filler}\r\n"))
+            .collect::<String>()
+            + "--test-boundary--\r\n"
+    };
+    let send = |body: String| {
+        app.clone().oneshot(
+            Request::post("/api/v1/solar/inspect")
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=test-boundary",
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+    };
+    let fits = response_json(send(form(6 * 1024 * 1024)).await.unwrap()).await;
+    assert!(!fits.to_string().contains("niet worden gelezen"), "{fits}");
+    // Samen boven de 21 MiB: de multipart-lezer stopt, met een Nederlandse melding.
+    let response = send(form(11 * 1024 * 1024)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let message = response_json(response).await.to_string();
+    assert!(message.contains("niet worden gelezen"), "{message}");
+}

@@ -234,14 +234,19 @@ struct MeterUpload {
     options: MeterOptions,
 }
 
+/// Een kapot of te groot formulier; de Engelse foutmelding van de multipart-lezer blijft in het log.
+fn multipart_error(error: axum::extract::multipart::MultipartError) -> ApiError {
+    tracing::debug!(%error, "Upload niet leesbaar");
+    bad_request(
+        "Het bestand kon niet worden gelezen. Gebruik bestanden van elk hoogstens 10 MB en probeer het opnieuw.",
+    )
+}
+
 async fn file_field(
     field: axum::extract::multipart::Field<'_>,
 ) -> Result<(String, Vec<u8>), ApiError> {
     let filename = field.file_name().unwrap_or("upload.csv").to_owned();
-    let bytes = field
-        .bytes()
-        .await
-        .map_err(|e| bad_request(e.to_string()))?;
+    let bytes = field.bytes().await.map_err(multipart_error)?;
     if bytes.is_empty() || bytes.len() > 10 * 1024 * 1024 {
         return Err(bad_request("Gebruik een bestand van maximaal 10 MB."));
     }
@@ -254,11 +259,7 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
     let mut options_seen = false;
     let mut meter_file = None;
     let mut meter_options: Option<MeterOptions> = None;
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| bad_request(e.to_string()))?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(multipart_error)? {
         match field.name() {
             Some("file") => {
                 if file.is_some() {

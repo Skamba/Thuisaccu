@@ -58,7 +58,7 @@ Belangrijkste opties: profiel, werkblad, kopregelindex (nul betekent eerste rege
 
 `preview` en `imports` accepteren daarnaast samen een `meter_file` en `meter_options` (velden van `MeterOptions`: `import_column` en `export_column` in plaats van opwek en verbruik, verder dezelfde lees- en tijdinstellingen). Dan wordt het omvormerbestand gecombineerd met het meterbestand, zie [importafspraken](solar-import.md#omvormer--en-meterbestand-combineren). Het omvormerbestand mag dan geen verbruikskolom hebben. Een meterbestand inspecteren doe je met `inspect` en het meterbestand als `file`.
 
-Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfde import-ID terug. De requestlimiet is 11 MiB inclusief multipart-overhead; het bestand zelf is maximaal 10 MiB. Per bestand gelden maximaal 250.000 gegevensrijen en 200 kolommen. Lees [de importafspraken](solar-import.md) voor de betekenis van waarden en beperkingen.
+Dezelfde bestandsbytes met identieke geserialiseerde instellingen geven hetzelfde import-ID terug. De requestlimiet is 21 MiB inclusief multipart-overhead, genoeg voor een omvormer- en een meterbestand van elk maximaal 10 MiB; een te groot of onleesbaar formulier geeft een Nederlandse melding (400). Per bestand gelden maximaal 250.000 gegevensrijen en 200 kolommen. Lees [de importafspraken](solar-import.md) voor de betekenis van waarden en beperkingen.
 
 ## Geschat profiel en capaciteitscurve
 

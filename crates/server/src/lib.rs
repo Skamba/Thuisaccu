@@ -58,7 +58,8 @@ pub fn app(catalog: Catalog) -> Router {
             "/api/v1/solar/imports/{id}/capacity",
             get(scenario_api::capacity_curve),
         )
-        .layer(DefaultBodyLimit::max(11 * 1024 * 1024));
+        // Een omvormer- en een meterbestand van elk hoogstens 10 MB, plus de instellingen.
+        .layer(DefaultBodyLimit::max(21 * 1024 * 1024));
     #[cfg(not(target_family = "wasm"))]
     let router = with_assets(router).layer(axum::middleware::from_fn(same_site));
     router.fallback(not_found).with_state(catalog)
