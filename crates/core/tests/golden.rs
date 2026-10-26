@@ -126,6 +126,7 @@ fn candidate(key: &str, battery: Battery, costs: Vec<CostLine>, financing: Finan
         financing,
         assumptions: "Synthetische gouden test".into(),
         warranty_stress: None,
+        connection: None,
     }
 }
 

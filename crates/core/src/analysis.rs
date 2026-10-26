@@ -128,6 +128,21 @@ pub struct Candidate {
     /// accu die stopt na de garantie. Ontbreekt in runs van vóór 26 oktober 2026.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warranty_stress: Option<BatteryStress>,
+    /// Hoe de accu wordt aangesloten, als label voor de weergave; de rekenkern rekent er niet mee
+    /// (vermogen en kosten staan al in `battery` en `costs`). Ontbreekt in runs van vóór 26 oktober 2026
+    /// en bij een onbekende soort.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<Connection>,
+}
+
+/// Soort aansluiting: een stekkerbatterij in een gewoon stopcontact, een vaste installatie, of een
+/// stekkerbatterij op een eigen groep door een elektricien.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Connection {
+    Plug,
+    Fixed,
+    Circuit,
 }
 
 /// Andere levensduur- en verouderingsaannames voor dezelfde accu; al het andere blijft gelijk.

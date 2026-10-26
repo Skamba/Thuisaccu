@@ -78,6 +78,7 @@ fn candidate(key: &str, capacity: f64, price_minor: i64) -> Candidate {
         financing: Financing::default(),
         assumptions: "Fictitious reference model for numerical verification".into(),
         warranty_stress: None,
+        connection: None,
     }
 }
 

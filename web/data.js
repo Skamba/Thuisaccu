@@ -34,13 +34,19 @@ window.Data = (() => {
     const cmp = await catalog(), out = new Map();
     for (const c of candidates) {
       const config = cmp.configurations.find(x => x.id === c.configuration_id);
-      if (!config || !(c.name === describe(cmp, config).name || c.name.includes(config.product_name))) continue;
-      // Een afgeleide uitvoering op een eigen groep heeft hetzelfde nummer als de stekkeruitvoering.
-      const variant = circuitVariant(cmp, describe(cmp, config));
-      out.set(c.key, variant && c.name === variant.name ? variant : describe(cmp, config));
+      if (!config) continue;
+      // Een uitvoering kan als zichzelf, begrensd op 800 W of als afgeleide uitvoering op een eigen groep (met hetzelfde
+      // nummer) zijn doorgerekend. Eerst de exacte naam; anders moet de naam het product noemen en kiest de soort
+      // aansluiting uit de run (een run van vóór 26 oktober 2026 heeft die niet).
+      const base = describe(cmp, config), forms = [plugLimit(base), base, circuitVariant(cmp, base)].filter(Boolean);
+      const p = forms.find(f => f.name === c.name) || (!c.name.includes(config.product_name) ? null
+        : c.connection ? forms.find(f => connectionOf(f) === c.connection) : base);
+      if (p) out.set(c.key, p);
     }
     return out;
   }
+  // Soort aansluiting van een beschreven uitvoering, zoals `connection` in een berekening: `plug`, `fixed`, `circuit` of null.
+  const connectionOf = p => !p ? null : p.circuit ? "circuit" : p.kind ?? null;
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
   // andere versie zijn met andere rekenregels gemaakt.
@@ -393,12 +399,17 @@ window.Data = (() => {
     // telt niet naast een AC-claim. ‘Minder dan 5 W’ telt als 5 W.
     let standbyClaim = claim("standby_power_w");
     const sourceOf = c => c.source_url || c.source_title;
-    const ownDc = standbyClaim && AC_BOUNDARY.includes(standbyClaim.boundary) ? numbers.filter(c => c.metric_key === "standby_power_w" &&
-      c.boundary === "battery_dc" && sourceOf(c) === sourceOf(standbyClaim) && c.value > standbyClaim.value) : [];
-    if (ownDc.length) {
-      const dc = ownDc.reduce((a, b) => b.value > a.value ? b : a), w = v => n(v, Number.isInteger(v) ? 0 : 1);
-      notes.push(`Sluimerverbruik ${w(dc.value)} W uit de accu (claim #${dc.id}) in plaats van ${w(standbyClaim.value)} W aan de netkant ` +
-        `(claim #${standbyClaim.id}): dezelfde bron meet aan de netkant minder dan de accu zelf verbruikt` +
+    // Per bron: meet dezelfde bron aan de accukant meer dan aan de netkant, dan telt de accukant. Daarna de hoogste,
+    // los van de volgorde van de claims.
+    const standbyOf = boundary => numbers.filter(c => c.metric_key === "standby_power_w" && boundary(c.boundary));
+    const raised = standbyClaim && AC_BOUNDARY.includes(standbyClaim.boundary) ? standbyOf(b => AC_BOUNDARY.includes(b))
+      .map(ac => ({ ac, dc: standbyOf(b => b === "battery_dc").filter(c => sourceOf(c) === sourceOf(ac) && c.value > ac.value)
+        .reduce((a, b) => a && a.value >= b.value ? a : b, null) }))
+      .filter(x => x.dc && x.dc.value > standbyClaim.value).reduce((a, b) => a && a.dc.value >= b.dc.value ? a : b, null) : null;
+    if (raised) {
+      const { ac, dc } = raised, w = v => n(v, Number.isInteger(v) ? 0 : 1);
+      notes.push(`Sluimerverbruik ${w(dc.value)} W uit de accu (claim #${dc.id}) in plaats van ${w(ac.value)} W aan de netkant ` +
+        `(claim #${ac.id}): dezelfde bron meet aan de netkant minder dan de accu zelf verbruikt` +
         `${dc.qualifier === "less_than" ? `; ‘minder dan ${w(dc.value)} W’ telt als ${w(dc.value)} W` : ""}.`);
       used.push({ label: METRIC_LABELS.standby_power_w, claim: dc });
       standbyClaim = dc;
@@ -430,11 +441,12 @@ window.Data = (() => {
       sources.set(c.source_title, [...(sources.get(c.source_title) || []), `${label} #${c.id}`]);
     }
     if (sources.size) notes.push(`Gebruikte bronclaims: ${[...sources].map(([title, list]) => `${title} (${list.join(", ")})`).join("; ")}.`);
-    // De kortste geldige productgarantie: voor een stresstest de voorzichtigste claim.
     // Het hoogste AC-vermogen uit de bronnen, voor een afgeleide uitvoering op een eigen groep (circuitVariant).
+    // Ook een claim ‘maximaal X kW’ (at_most) telt: zo noemen de bronnen het nominale vermogen.
     const highest = metric => numbers.filter(c => c.metric_key === metric && AC_BOUNDARY.includes(c.boundary))
       .reduce((a, b) => a && a.value >= b.value ? a : b, null);
     const fullPower = { discharge: highest("continuous_discharge_power_w"), charge: highest("continuous_charge_power_w") };
+    // De kortste geldige productgarantie: voor een stresstest de voorzichtigste claim.
     const warranty = cmp.warranties.filter(w => live(w) && w.product_months != null).map(w => w.product_months);
     const warrantyYears = warranty.length ? Math.min(...warranty) / 12 : null;
     return {
@@ -626,6 +638,13 @@ window.Data = (() => {
 
   // Een stroomprijs onder de energiebelasting plus een paar cent levering is vrijwel zeker alleen het leveringstarief;
   // dan valt de besparing van een accu veel te laag uit. Een waarschuwing, geen fout: het blijft je eigen invoer.
+  // Vergoeding min terugleverkosten boven het gunstigste vaste contract uit het overzicht (exportText): vaak is dan een
+  // vast bedrag per jaar als 0 ingevuld. Een vast bedrag hangt van de hoeveelheid af en is geen 0 per kWh.
+  const EXPORT_NET_MAX = 0.044;
+  const exportCheck = (vergoeding, kosten) => vergoeding == null || kosten == null || vergoeding - kosten <= EXPORT_NET_MAX + 1e-9 ? null :
+    `Vergoeding min terugleverkosten is ${n((vergoeding - kosten) * 100, 1)} cent per kWh, meer dan de 4,4 cent van het ` +
+    "gunstigste vaste contract voor 2027 in het overzicht hierboven. Rekent je leverancier nu een vast bedrag per jaar? Dat is " +
+    "geen 0: vraag wat teruglevering vanaf 2027 per kWh kost, kies de indicatie, of reken met staffels in Zelf doorrekenen.";
   const importPriceCheck = value => value == null || value >= INDICATION.energyTax + 0.05 ? null :
     `Dat is minder dan de energiebelasting van 2027 (€ 0,1065 per kWh) plus een gangbaar leveringstarief. Is dit alleen ` +
     "het leveringstarief? Tel de energiebelasting erbij op, anders valt de besparing van een accu veel te laag uit.";
@@ -656,6 +675,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, connectionOf, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();

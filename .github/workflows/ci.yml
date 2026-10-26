@@ -8,11 +8,13 @@ on:
 permissions:
   contents: read
 
-# Een nieuwere push op dezelfde branch maakt een lopende controle overbodig. De publicatie op
-# GitHub Pages staat los hiervan in pages.yml.
+# Een nieuwere push op dezelfde branch maakt een lopende controle overbodig, behalve op main: daar
+# publiceert pages.yml elke push zonder op de controle te wachten, dus een gestarte controle loopt
+# af. GitHub laat per groep één wachtende run staan; bij snel opeenvolgende pushes vervalt een
+# wachtende run nog wel voor de nieuwste.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   checks:

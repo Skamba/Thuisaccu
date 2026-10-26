@@ -137,6 +137,17 @@ const RULES = [
       assert.equal(d.standby, 5);
       assert.ok(d.notes.some(note => /uit de accu \(claim #2\) in plaats van 0 W aan de netkant/.test(note)), d.notes.join(" | "));
     }],
+  // De volgorde van de claims maakt niet uit: per bron telt de hogere waarde uit de accu, daarna de hoogste.
+  ...[[0, 1, 2], [2, 1, 0], [1, 2, 0]].map(order => [`sluimerverbruik: per bron de accukant, los van de volgorde (${order})`,
+    order.map(i => [claim(1, "standby_power_w", 0, "system_ac", { source_title: "Bron A" }),
+      claim(2, "standby_power_w", 6, "battery_dc", { source_title: "Bron A" }),
+      claim(3, "standby_power_w", 0, "system_ac", { source_title: "Bron B" })][i]), d => assert.equal(d.standby, 6)]),
+  ["sluimerverbruik: de accukant van bron A wint van een lagere netkant van bron B",
+    [claim(1, "standby_power_w", 0, "system_ac", { source_title: "Bron A" }), claim(2, "standby_power_w", 6, "battery_dc", { source_title: "Bron A" }),
+      claim(3, "standby_power_w", 4, "system_ac", { source_title: "Bron B" })], d => {
+      assert.equal(d.standby, 6);
+      assert.ok(d.notes.some(note => /6 W uit de accu \(claim #2\) in plaats van 0 W aan de netkant \(claim #1\)/.test(note)), d.notes.join(" | "));
+    }],
   ["bruikbaar is nominaal × ontlaaddiepte als de bron geen bruikbare capaciteit noemt",
     [claim(1, "nominal_energy_wh", 10000), claim(2, "depth_of_discharge_pct", 90)], d => assert.equal(d.capacity, 9)],
   ["zonder ontlaaddiepte geldt de aanname voor het bruikbare deel", [claim(1, "nominal_energy_wh", 10000)],
@@ -225,4 +236,37 @@ test("costLinesFor(): een aanbieding inclusief installatie telt de installatie n
   const battery = Data.costLinesFor(costs, described(true)).find(l => l.category === "battery");
   assert.equal(battery.amount_minor, 500000);
   assert.match(battery.notes, /inclusief installatie/);
+});
+
+test("exportCheck(): waarschuwt boven 4,4 cent netto per kWh, niet bij de indicatie", () => {
+  assert.match(Data.exportCheck(0.10, 0), /10,0 cent per kWh, meer dan de 4,4 cent/);
+  assert.equal(Data.exportCheck(0.0615, 0.0515), null);
+  assert.equal(Data.exportCheck(0.05, 0.006), null, "precies 4,4 cent is nog gangbaar");
+  assert.equal(Data.exportCheck(null, 0), null);
+});
+
+test("described(): de uitvoering achter een optie, op naam en soort aansluiting", async () => {
+  // Een eigen context met een nep-API, zodat Data.catalog() deze synthetische catalogus teruggeeft.
+  const stekker = { ...config, name: "1 unit · 5 kWh · stekker" };
+  const cmp = { ...catalog([claim(1, "usable_energy_wh", 5000), claim(2, "continuous_discharge_power_w", 2500, "system_ac")]),
+    texts: [{ id: 3, configuration_id: 1, review_status: "unreviewed", metric_key: "coupling", value: "AC-gekoppeld (stekker)" }],
+    configurations: [stekker] };
+  const own = { console, Intl, Map, Set };
+  own.window = own;
+  vm.createContext(own);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", "ui.js"), "utf8"), own, { filename: "ui.js" });
+  own.UI.api = async url => url === "/api/v1/comparison" ? cmp : {};
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", "data.js"), "utf8"), own, { filename: "data.js" });
+  const base = own.Data.describe(cmp, stekker), plug = own.Data.plugLimit(base), variant = own.Data.circuitVariant(cmp, base);
+  const found = await own.Data.described([
+    { key: "c1", name: plug.name, configuration_id: 1, connection: "plug" },
+    { key: "g1", name: variant.name, configuration_id: 1, connection: "circuit" },
+    { key: "renamed", name: "Testaccu via installateur", configuration_id: 1, connection: "circuit" },
+    { key: "old", name: "Fictief Testaccu · oude naam", configuration_id: 1 },
+    { key: "other", name: "Een andere accu", configuration_id: 1, connection: "plug" },
+    { key: "missing", name: plug.name, configuration_id: 2 }]);
+  const kinds = Object.fromEntries([...found].map(([key, p]) => [key, own.Data.connectionOf(p)]));
+  assert.deepEqual(kinds, { c1: "plug", g1: "circuit", renamed: "circuit", old: "plug" });
+  assert.equal(found.get("c1").battery.discharge_power_kw, 0.8, "de stekkeruitvoering is begrensd op 800 W");
+  assert.equal(found.get("g1").battery.discharge_power_kw, 2.5);
 });

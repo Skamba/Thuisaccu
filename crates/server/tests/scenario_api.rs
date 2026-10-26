@@ -204,6 +204,52 @@ async fn warranty_stress_is_optional_per_candidate_and_strictly_validated() {
 }
 
 #[tokio::test]
+async fn the_connection_is_an_optional_label_that_is_stored_and_does_not_change_the_outcome() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let without = body(
+        app.clone()
+            .oneshot(post("/api/v1/analysis/runs", input(id)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let mut request = input(id);
+    request["candidates"][0]["connection"] = json!("circuit");
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let with = body(response).await;
+    assert_eq!(
+        with["result"]["candidates"][0]["npv_eur"],
+        without["result"]["candidates"][0]["npv_eur"]
+    );
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(
+        saved[0].input["request"]["candidates"][0]["connection"],
+        "circuit"
+    );
+    // Een run zonder soort bewaart ook geen leeg veld.
+    assert!(
+        saved[1].input["request"]["candidates"][0]
+            .get("connection")
+            .is_none()
+    );
+    request["candidates"][0]["connection"] = json!("wall");
+    assert_eq!(
+        app.oneshot(post("/api/v1/analysis/runs", request))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
 async fn cost_catalog_covers_every_cost_category() {
     let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
     let response = app

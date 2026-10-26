@@ -81,8 +81,9 @@ window.Scenario = (() => {
       changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: plain(c.from_calendar_year),
         kwh: plain(c.annual_kwh), charging: c.charging || "evening" })),
       options: request.candidates.map((c, i) => ({
-        // De soort staat niet in de run; stap 3 leidt hem af uit de catalogus (`resolveKinds`).
-        key: c.key, name: c.name, configuration_id: c.configuration_id, kind: c.configuration_id == null ? "fixed" : null,
+        // De soort aansluiting staat sinds 26 oktober 2026 in de run; anders leidt stap 3 hem af uit de catalogus (`resolveKinds`).
+        key: c.key, name: c.name, configuration_id: c.configuration_id,
+          kind: c.connection ?? (c.configuration_id == null ? "fixed" : null),
           assumptions: c.assumptions,
         battery: Object.fromEntries(TECH.map(([key]) => [key, plain(c.battery[key])])),
         costs: Object.fromEntries(c.costs.map(l => [l.category,
@@ -208,7 +209,7 @@ window.Scenario = (() => {
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
         financing: { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
           annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") },
-        assumptions: option.assumptions, warranty_stress };
+        assumptions: option.assumptions, warranty_stress, connection: option.kind || undefined };
     });
     // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
     const site = state.site && state.site.address === state.address ? state.site
@@ -391,7 +392,7 @@ window.Scenario = (() => {
     const config = cmp.configurations.find(c => String(c.id) === id);
     if (!config) throw new Error("Kies eerst een uitvoering uit de catalogus.");
     const p = Data.plugLimit(Data.describe(cmp, config));
-    const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: p.kind || "fixed",
+    const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: Data.connectionOf(p) || "fixed",
       assumptions: `Overgenomen uit de catalogus. ${p.notes.join(" ")}${p.missing.length ? ` Nog in te vullen: ${p.missing.join(", ")}.` : ""}` });
     if (p.battery) for (const [key] of TECH) option.battery[key] = plain(p.battery[key]);
     else {
@@ -408,11 +409,14 @@ window.Scenario = (() => {
     state.options.push(option); persist();
   }
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
+  // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
+  // extra groep, zoals in de keuzehulp.
   function fillEstimates(option, costCatalog, described) {
-    option.kind ??= described?.kind || "fixed";
-    const lines = described ? Data.costLinesFor(costCatalog, described, {}, option.kind)
-      : Data.estimateCosts(costCatalog, { kind: option.kind, circuit: false, manufacturer: "", phases: null,
-        inverterIncluded: option.kind === "plug" }, {});
+    option.kind ??= Data.connectionOf(described) || "fixed";
+    const circuit = option.kind === "circuit", kind = circuit ? "fixed" : option.kind;
+    const lines = described ? Data.costLinesFor(costCatalog, { ...described, circuit }, {}, kind)
+      : Data.estimateCosts(costCatalog, { kind, circuit, manufacturer: "", phases: null,
+        inverterIncluded: option.kind !== "fixed" }, {});
     let filled = 0;
     for (const line of lines) {
       const current = option.costs[line.category];
@@ -475,7 +479,8 @@ window.Scenario = (() => {
       return h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), h("small", {}, c.note)),
         h("div", { class: "cost-controls" }, field("Status", status), field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount), year ? field("Einde van jaar", year) : h("span"), field("Bron of aanname", source)));
     });
-    const kind = select([["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij"]], option.kind,
+    const kind = select([["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij"],
+      ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind,
       { onchange: event => { option.kind = event.target.value; persist(); } });
     const estimate = button("Vul open posten met indicaties", async () => {
       const [cmp, costCatalog] = await Promise.all([Data.catalog(), Data.costs()]);
@@ -504,7 +509,7 @@ window.Scenario = (() => {
   function resolveKinds(cmp) {
     for (const option of state.options.filter(o => o.kind == null)) {
       const config = cmp.configurations.find(c => c.id === option.configuration_id);
-      option.kind = (config && Data.describe(cmp, config).kind) || "fixed";
+      option.kind = (config && Data.connectionOf(Data.describe(cmp, config))) || "fixed";
     }
   }
 

@@ -288,6 +288,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // van een stekkerbatterij springt ernaartoe zonder de pagina te verlaten.
   assert.match(summary, /Milieu Centraal raadt stekkerbatterijen op dit moment af\. Dit gaat over: .+\. De reden.*ten hoogste 800 W in het stopcontact.*Voor .+ is gerekend met [\d,]+ kW ontladen.*energieleveren\.nl/);
   assert.ok(summary.indexOf("raadt stekkerbatterijen op dit moment af") < summary.indexOf("Zo reken je de besparing"));
+  // Elke kaart noemt aansluiting, bruikbare capaciteit en vermogen; de grafiek gebruikt korte namen met dezelfde gegevens.
+  assert.match(await page.locator("article.option").nth(1).textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);
+  assert.match(await page.locator("figure.chart").first().textContent(), / · [\d,]+ kWh · stekker 0,8 kW/);
   await page.locator("button:has-text('Milieu Centraal raadt stekkerbatterijen af: lees waarom')").first().click();
   assert.equal(await page.evaluate(() => document.activeElement.id), "stekkeradvies");
   assert.equal(await page.evaluate(() => location.hash), runHash);
@@ -654,6 +657,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await row("Accu of complete pakketprijs").getByLabel("Bron of aanname").fill("Synthetische offerte");
   await row("Extra/hybride omvormer").getByLabel("Status").selectOption("included");
   await row("Extra/hybride omvormer").getByLabel("Bron of aanname").fill("Synthetische offerte");
+  // Als stekkerbatterij met 5 kW laden en ontladen: het advies noemt dat beide boven de 800 W liggen. Na het vullen
+  // gekozen, dus de kosten blijven die van een vaste installatie.
+  await card.getByLabel("Soort accu (voor de indicaties)").selectOption("plug");
   await next(page);
   await page.waitForSelector("text=De invoer is compleet.");
   for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
@@ -667,6 +673,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(view, /ROI over looptijd−\d/);
   // De grens waarboven de offerte niet meer lonend is: startinvestering plus NPV.
   const option = await page.locator("article.option").nth(1).textContent();
+  // De kaart zegt waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen.
+  assert.match(option, /Stekker · 10 kWh bruikbaar · 5 kW ontladen, 5 kW laden/);
+  assert.match(view, /Voor Eigen optie 1 is gerekend met [\d,]+ kW ontladen: meer dan 800 W.*en met [\d,]+ kW laden: ook dat is meer dan 800 W/);
   const euros = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
   const [, limit, investment, npv] = option.match(/Lonend tot(€.+?|Zelfs gratis niet)Startinvestering nu(.+?)Netto voordeel \(NPV\)(.+?)Terugverdiend/);
   const expected = euros(investment) + euros(npv);
@@ -738,7 +747,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.waitForSelector("text=Herberekend met de antwoorden uit je offerte");
   const quotedView = await page.textContent("#view");
   assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; startkosten vóór teruggaven/);
-  assert.doesNotMatch(quotedView, /nog de schatting|raadt stekkerbatterijen/);
+  assert.doesNotMatch(quotedView, /nog de schatting/);
+  // De soort aansluiting gaat mee naar de herberekening: nog steeds een stekkerbatterij.
+  assert.match(quotedView, /Voor Eigen optie 1 is gerekend met/);
   // De startkosten als som: de offerteprijs plus wat apart bleef; bij een vaste prijs geen reserve.
   assert.match(quotedView, new RegExp(`De startkosten zijn nu:€\\s*8\\.750 totaalprijs uit de offerte\\+ €\\s*[\\d.]+ apart gehouden: .+ \\(geschat, niet in de offerte\\)= €\\s*${start.replace(".", "\\.")} startkosten vóór teruggaven`));
   assert.doesNotMatch(quotedView, /reserve voor meerwerk \(/);
@@ -965,6 +976,7 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
     return JSON.parse(localStorage.getItem("thuisaccu-scenario")).options.find(o => o.configuration_id === config.id);
   });
   assert.equal(plug.battery.discharge_power_kw, "0,8");
+  assert.equal(plug.kind, "plug");
   assert.match(plug.assumptions, /ontladen ingesteld op 800 W/);
   assert.deepEqual(problems, []);
   await close();

@@ -61,20 +61,40 @@ window.Results = (() => {
   };
   // Grafieken en kaarten tonen geen accu en de beste vijf; tabellen tonen alles.
   const TOP = 5;
+  // Capaciteit en vermogen in labels: hele getallen zonder decimaal, anders één.
+  const n1 = value => n(value, Number.isInteger(value) ? 0 : 1);
+  // Soort aansluiting in woorden, voor kaarten en tabellen.
+  const CONNECTION = { plug: "Stekker", fixed: "Vast", circuit: "Eigen groep" };
+  const connectionText = (c, kinds) => !kinds.get(c.key) ? "Onbekend"
+    : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Eigen groep, afgeleid" : CONNECTION[kinds.get(c.key)];
+  // Korte naam voor grafieken en keuzelijsten: merk en product, bruikbare capaciteit en aansluiting met vermogen, zodat
+  // het verschil tussen twee uitvoeringen niet wegvalt als een lange naam wordt afgekort. Alleen voor namen uit de
+  // catalogus (met ‘ · ’); een eigen naam blijft staan. Zouden twee korte namen gelijk zijn, dan houden die opties hun volle naam.
+  function shortNames(run, all, kinds) {
+    const inputs = new Map(run.input.request.candidates.map(o => [o.key, o]));
+    const how = { plug: "stekker", fixed: "vast", circuit: "eigen groep" };
+    const short = new Map(all.filter(c => inputs.has(c.key) && c.name.includes(" · ")).map(c => {
+      const b = inputs.get(c.key).battery, kind = how[kinds.get(c.key)];
+      return [c.key, `${c.name.split(" · ")[0]} · ${n1(b.usable_capacity_kwh)} kWh · ${kind ? `${kind} ` : ""}` +
+        `${n1(b.discharge_power_kw)} kW${/\(afgeleid\)$/.test(c.name) ? " (afgeleid)" : ""}`];
+    }));
+    const count = new Map([...short.values()].map(s => [s, [...short.values()].filter(t => t === s).length]));
+    for (const c of all) c.short = short.has(c.key) && count.get(short.get(c.key)) === 1 ? short.get(c.key) : c.name;
+  }
   const shown = all => all.slice(0, TOP + 1);
   const more = all => all.length > TOP + 1;
   // Lange lijsten tonen eerst geen accu en de beste vijf; de rest staat ingeklapt en gaat niet mee op papier.
   const rest = (title, ...content) => h("details", { class: "fold all-options" }, h("summary", {}, title), ...content);
 
-  // Veiligheidsadvies boven de som als een doorgerekende accu een stekkerbatterij is. `plugs`: optie → uitvoering
-  // (Data.described), `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
+  // Veiligheidsadvies boven de som als een doorgerekende accu een stekkerbatterij is. `kinds`: optie → soort aansluiting
+  // (`plug`, `fixed`, `circuit` of onbekend; zie `render`), `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
   const PLUG_ADVICE = "stekkeradvies";
-  function plugAdvice(run, judged, plugs, circuit) {
+  function plugAdvice(run, judged, kinds, circuit) {
     const candidates = run.input.request.candidates;
-    const plugged = candidates.filter(c => plugs.get(c.key)?.kind === "plug");
+    const plugged = candidates.filter(c => kinds.get(c.key) === "plug");
     if (!plugged.length) return null;
     const about = plugged.find(c => c.key === judged?.key) || plugged[0];
-    const kw = about.battery.discharge_power_kw, charge = about.battery.charge_power_kw, grouped = candidates.find(c => plugs.get(c.key)?.circuit);
+    const kw = about.battery.discharge_power_kw, charge = about.battery.charge_power_kw, grouped = candidates.find(c => kinds.get(c.key) === "circuit");
     const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
     // Bij veel stekkerbatterijen een telling in plaats van een lange rij productnamen.
     const names = plugged.length <= 3 ? plugged.map(c => c.name).join(", ")
@@ -87,7 +107,8 @@ window.Results = (() => {
         "en laat de accu ten hoogste 800 W in het stopcontact leveren (dat advies geeft Milieu Centraal voor stekkerzonnepanelen). " +
         `Voor ${about.name} is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
         "dus stel de accu lager in of kies een vaste aansluiting"}` +
-        (charge <= 0.8 ? `, en met ${n(charge, 2)} kW laden: ook meer laadvermogen hoort bij een eigen groep. ` : `, en met ${n(charge, 2)} kW laden. `) +
+        (charge <= 0.8 ? `, en met ${n(charge, 2)} kW laden; ook meer laadvermogen hoort bij een eigen groep. `
+          : `, en met ${n(charge, 2)} kW laden: ook dat is meer dan 800 W, dus stel ook het laden lager in of kies een vaste aansluiting. `) +
         `Veiliger is een eigen groep in de meterkast door een installateur` +
         (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
         (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’` : "") +
@@ -175,11 +196,12 @@ window.Results = (() => {
       "Dat verschil valt binnen de onzekerheid; kies tussen die twee op prijs, veiligheid, aansluiting of garantie.");
   }
 
-  function verdict(run, plugs) {
+  function verdict(run, kinds) {
     const result = run.result, option = judged(run), rec = option?.key === result.recommended_key;
-    const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => plugs.get(c.key)?.kind === "plug");
-    const fixed = option && plugs.get(option.key)?.kind === "plug" ? result.candidates.filter(c => plugs.has(c.key) &&
-      plugs.get(c.key).kind !== "plug").sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
+    const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
+    const isPlug = option && kinds.get(option.key) === "plug";
+    const fixed = isPlug ? result.candidates.filter(c => kinds.get(c.key) && kinds.get(c.key) !== "plug")
+      .sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
       h("h2", {}, result.recommendation),
       option ? [h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
@@ -190,7 +212,10 @@ window.Results = (() => {
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
         ].filter(Boolean)), closeCall(run, option)] : null,
-      plugged ? h("p", { class: "verdict-plug" }, h("strong", {}, "Milieu Centraal raadt stekkerbatterijen af. "),
+      // Is de besproken accu zelf geen stekkerbatterij, dan gaat het advies over de andere opties.
+      plugged ? h("p", { class: "verdict-plug" }, h("strong", {}, option && !isPlug
+        ? "Er zitten ook stekkerbatterijen in een gewoon stopcontact in deze berekening; Milieu Centraal raadt die af. "
+        : "Milieu Centraal raadt stekkerbatterijen af. "),
         fixed ? `De beste vaste aansluiting in deze berekening is ${fixed.name}: netto ${eur0(fixed.npv_eur)} in geld van nu. ` : "",
         toAdvice("Lees waarom en wat veiliger is")) : null);
   }
@@ -198,13 +223,13 @@ window.Results = (() => {
   // Een inklapbaar onderdeel van de uitleg; de titel zegt wat erin staat.
   const fold = (title, ...content) => h("details", { class: "fold" }, h("summary", {}, title), ...content);
 
-  function summary(run, plugs, circuit, categories) {
+  function summary(run, kinds, circuit, categories) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
     const best = judged(run);
     // Een stekkerbatterij ‘op een eigen groep’ werkt alleen als een installateur hem vast wil aansluiten: in een
     // stopcontact steekt hij de stekker volgens de NEN 1010 niet (Milieu Centraal).
-    if (best && plugs.get(best.key)?.circuit) list.append(h("li", {}, `${best.name} is een stekkerbatterij die een elektricien op ` +
+    if (best && kinds.get(best.key) === "circuit") list.append(h("li", {}, `${best.name} is een stekkerbatterij die een elektricien op ` +
       "een eigen groep aansluit. Een installateur steekt de stekker volgens de NEN 1010 niet in een stopcontact (Milieu Centraal): " +
       "vraag vooraf of hij dit product vast wil aansluiten en of de fabrikant dat toestaat zonder dat de garantie vervalt." +
       (circuit ? ` De richtprijs van ${eur0(circuit.amount_eur)} is voor een extra groep met aansluiting in de meterkast; ` +
@@ -274,7 +299,7 @@ window.Results = (() => {
         `${kwh(delivered)} aan je huis, ongeveer ${n(delivered / 365, 1)} kWh per dag. Wat je zelf verschuift, hoeft niet meer ` +
         "via de accu; die levert dan wat minder op."));
     }
-    const advice = plugAdvice(run, best, plugs, circuit);
+    const advice = plugAdvice(run, best, kinds, circuit);
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
     // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
     // minder netafname × stroomprijs min minder teruglevering × netto vergoeding (de vaste kosten vallen weg).
@@ -398,8 +423,27 @@ window.Results = (() => {
         "maar een defect daarna betaal je zelf. Het advies verandert er niet door.") : null);
   }
 
-  function overview(run, all, plugs) {
+  function overview(run, all, kinds) {
     const result = run.result, out = h("div", { class: "print-keep" });
+    const inputs = new Map(run.input.request.candidates.map(o => [o.key, o]));
+    // Waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen. De naam noemt vaak de nominale capaciteit.
+    const spec = c => {
+      const b = inputs.get(c.key)?.battery;
+      return b ? h("p", { class: "help option-spec" }, [kinds.get(c.key) ? connectionText(c, kinds) : null,
+        `${n1(b.usable_capacity_kwh)} kWh bruikbaar`, `${n1(b.discharge_power_kw)} kW ontladen, ${n1(b.charge_power_kw)} kW laden`]
+        .filter(Boolean).join(" · ")) : null;
+    };
+    // Dezelfde uitvoering met een andere aansluiting (stekker en eigen groep): het verschil in één zin.
+    const sibling = c => {
+      const id = inputs.get(c.key)?.configuration_id, kind = kinds.get(c.key);
+      const other = id == null || !kind ? null : all.find(o => o.key !== c.key && inputs.get(o.key)?.configuration_id === id &&
+        kinds.get(o.key) && kinds.get(o.key) !== kind);
+      if (!other) return null;
+      const kw = n1(inputs.get(other.key).battery.discharge_power_kw), diff = other.initial_investment_eur - c.initial_investment_eur;
+      const how = { plug: `in een gewoon stopcontact (${kw} kW)`, circuit: `op een eigen groep (${kw} kW)`, fixed: "als vaste installatie" }[kinds.get(other.key)];
+      return h("p", { class: "help" }, `Dezelfde accu ${how}: netto voordeel ${eur0(other.npv_eur)}, ` +
+        (Math.round(diff) === 0 ? "even duur in aanschaf." : `${eur0(Math.abs(diff))} ${diff < 0 ? "goedkoper" : "duurder"} in aanschaf.`));
+    };
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
       { class: "callout" }, warning));
     // Per accu dezelfde vier getallen en woorden als het korte antwoord; de rest ingeklapt. Geen accu is
@@ -409,12 +453,12 @@ window.Results = (() => {
       h("p", { class: "help" }, "De vergelijkingsbasis: geen investering en geen besparing. Elke accu is met deze situatie vergeleken; " +
         "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, c.name),
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
-      c.within_budget === false ? badge("Boven budget", "warning") : null,
+      c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
       stats([
         finite(c.break_even_investment_eur) ? ["Lonend tot", c.break_even_investment_eur > 0 ? roundedLimit(c.break_even_investment_eur) : "Zelfs gratis niet"] : null,
         ["Startinvestering nu", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
         ["Terugverdiend na", years(c.payback_years)]
-      ].filter(Boolean)),
+      ].filter(Boolean)), sibling(c),
       h("details", { class: "fold more-figures" }, h("summary", {}, "Meer cijfers"), stats([
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
         ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
@@ -427,21 +471,21 @@ window.Results = (() => {
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
       card(c),
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
-      plugs.get(c.key)?.kind === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
+      kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; onder de grafiek staan ze allemaal.`));
     out.append(chart("range", {
       title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP} en geen accu)` : ""}`, unit: "€",
-      rows: shown(all).map(c => ({ label: c.name, color: c.color,
+      rows: shown(all).map(c => ({ label: c.short, color: c.color,
         values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
       series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
     }));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
-      out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
+      out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Aansluiting", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
         c.key === result.recommended_key ? h("span", {}, c.name, " ", badge("Aanbevolen", "accent")) : c.name,
-        eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
+        c.key === "no_battery" ? "—" : connectionText(c, kinds), eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
         eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
         ...(variant ? [eur0(c.export_variant?.npv_eur)] : [])]),
@@ -464,16 +508,16 @@ window.Results = (() => {
     const marks = [];
     for (const c of top.slice(1)) {
       if (c.payback_years != null) marks.push({ at: String(p.start_year + c.payback_years - 1), symbol: "✓",
-        label: `${c.name}: blijvend terugverdiend na jaar ${c.payback_years}` });
+        label: `${c.short}: blijvend terugverdiend na jaar ${c.payback_years}` });
       for (const cost of request.candidates.find(v => v.key === c.key)?.costs || []) {
         if (cost.status === "priced" && ["battery_replacement",
           "inverter_replacement"].includes(cost.category)) marks.push({ at: String(p.start_year + cost.year - 1),
-          symbol: "↧", label: `${c.name}: vervanging einde jaar ${cost.year}` });
+          symbol: "↧", label: `${c.short}: vervanging einde jaar ${cost.year}` });
       }
     }
-    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.name, color: c.color })), marks }),
+    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.short, color: c.color })), marks }),
       h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging."));
-    const pick = UI.select(all.map(c => [c.key, c.name]), run.result.recommended_key), target = h("div");
+    const pick = UI.select(all.map(c => [c.key, c.short]), run.result.recommended_key), target = h("div");
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       const yearRows = c.key === "no_battery"
@@ -518,12 +562,12 @@ window.Results = (() => {
     if (keys.length) {
       out.append(chart("stacked", {
         title: `Startinvestering per kostenpost${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€",
-        rows: top.map(c => ({ label: c.name, values: keys.map(k => linesOf(c)
+        rows: top.map(c => ({ label: c.short, values: keys.map(k => linesOf(c)
           .filter(l => l.timing === "upfront" && l.category === k).reduce((sum, l) => sum + amount(l), 0)) })),
         series: keys.map(k => ({ label: label(k) }))
       }));
     }
-    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), judged(run)?.key), target = h("div");
+    const pick = UI.select(all.slice(1).map(c => [c.key, c.short]), judged(run)?.key), target = h("div");
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       if (!c) { target.replaceChildren(); return; }
@@ -569,7 +613,7 @@ window.Results = (() => {
     const demand = top.map(c => {
       const e = c.first_year || {},
         known = [e.consumption_kwh, e.direct_solar_kwh, e.battery_to_load_kwh].every(finite);
-      return { label: c.name,
+      return { label: c.short,
         values: [e.direct_solar_kwh, e.battery_to_load_kwh,
           known ? Math.max(0, e.consumption_kwh - e.direct_solar_kwh - e.battery_to_load_kwh) : null] };
     });
@@ -578,7 +622,7 @@ window.Results = (() => {
     const destination = top.map(c => {
       const e = c.first_year || {},
         known = [e.production_kwh, e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh].every(finite);
-      return { label: c.name,
+      return { label: c.short,
         values: [e.direct_solar_kwh, e.battery_charge_kwh, e.grid_export_kwh,
           known ? Math.max(0,
             e.production_kwh - e.direct_solar_kwh - e.battery_charge_kwh - e.grid_export_kwh) : null] };
@@ -587,7 +631,7 @@ window.Results = (() => {
       { title: `Waar gaat je zonnestroom heen? (jaar 1${suffix})`, unit: "kWh", rows: destination,
         series: [{ label: "Direct gebruikt" }, { label: "Naar de accu (incl. laadverlies)" },
           { label: "Teruggeleverd" }, { label: "Overig (o.a. sluimerverbruik)" }] }));
-    const pick = UI.select(all.map(c => [c.key, c.name]), all[1]?.key), target = h("div");
+    const pick = UI.select(all.map(c => [c.key, c.short]), all[1]?.key), target = h("div");
     const render = () => {
       const e = all.find(o => o.key === pick.value)?.first_year || {};
       target.replaceChildren(stats([
@@ -615,7 +659,7 @@ window.Results = (() => {
     for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "€"], ["roi_pct", "ROI over de looptijd", "%"]]) {
       out.append(chart("range",
         { title: `${title}${more(all) ? ` (beste ${TOP})` : ""}`, unit,
-          rows: shown(all).filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.name, color: c.color,
+          rows: shown(all).filter(c => key !== "roi_pct" || c.key !== "no_battery").map(c => ({ label: c.short, color: c.color,
             values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })),
           series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }] }));
     }
@@ -675,7 +719,7 @@ window.Results = (() => {
     // Standaard je eigen offerte als die er is, anders de besproken accu. Wint geen accu, dan is
     // `recommended_key` ‘no_battery’; die staat niet in de keuzelijst.
     const first = request.candidates.find(own)?.key ?? judged(run)?.key;
-    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), first);
+    const pick = UI.select(all.slice(1).map(c => [c.key, c.short]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
     const basis = request.quote_basis;
     // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3), en welke regels kloppen.
@@ -1053,8 +1097,12 @@ window.Results = (() => {
   async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
     const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
     const costCatalog = await Data.costs(), categories = costCatalog.categories;
-    // Zonder catalogus (of bij een gedeelde run met onbekende accu's) blijft het stekkeradvies weg.
-    const plugs = await Data.described(request.candidates).catch(() => new Map());
+    // De soort aansluiting staat sinds 26 oktober 2026 in de run; bij oudere runs uit de catalogus. Zonder catalogus
+    // (of bij een oude gedeelde run met onbekende accu's) blijft de soort onbekend en het stekkeradvies weg.
+    const described = request.candidates.every(c => c.connection) ? new Map()
+      : await Data.described(request.candidates).catch(() => new Map());
+    const kinds = new Map(request.candidates.map(c => [c.key, c.connection ?? Data.connectionOf(described.get(c.key))]));
+    shortNames(run, all, kinds);
     UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
       shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),
       button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "secondary"),
@@ -1082,8 +1130,8 @@ window.Results = (() => {
     const warnings = warningItems(result.warnings);
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
-    view.append(verdict(run, plugs), meta, summary(run, plugs, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
-      { label: "Overzicht", content: overview(run, all, plugs) },
+    view.append(verdict(run, kinds), meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
+      { label: "Overzicht", content: overview(run, all, kinds) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },

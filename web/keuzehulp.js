@@ -112,10 +112,11 @@
     const grid = h("div", { class: "grid" }, total()
       ? amount("Totaal verbruik per jaar (kWh)", "consumption", { min: "1", max: "100000", required: true },
         "Van het net én direct van je panelen, inclusief warmtepomp en auto.", update)
-      : amount("Stroom van het net per jaar (kWh)", "gridImport", { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘levering’ of ‘verbruik’. Bij een dag/nacht-meter tel je beide op.", update));
+      : amount("Stroom van het net per jaar (kWh)", "gridImport", { min: "0", max: "100000", required: true },
+        "Op je jaarafrekening: ‘levering’ (normaal plus dal bij een dag/nacht-meter), niet het verbruik na aftrek van teruglevering.", update));
     if (answers.panels === "yes") {
       if (!total()) grid.append(amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport",
-        { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’.", update));
+        { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’. Bij een dag/nacht-meter tel je normaal en dal op.", update));
       grid.append(
         amount("Opwek van je panelen per jaar (kWh)", "production", { min: "0", max: "100000" },
           "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
@@ -203,11 +204,15 @@
           "€ 0,0615 vergoeding en € 0,0515 terugleverkosten per kWh."]
       ]));
     if (answers.feedin === "known") {
+      const feeCheck = h("p", { class: "warning live-check", "aria-live": "polite" });
+      const checkFee = () => { feeCheck.textContent = Data.exportCheck(parse(answers.tariffExport), parse(answers.exportFee)) ?? ""; };
+      checkFee();
       body.append(h("div", { class: "grid" },
         amount("Terugleververgoeding vanaf 2027 (€ per kWh)", "tariffExport", { min: "-1", max: "2", step: "0.0001", required: true },
-          "Bij een vast contract dat doorloopt na 2027: de vergoeding die in je contract staat."),
+          "Bij een vast contract dat doorloopt na 2027: de vergoeding die in je contract staat.", checkFee),
         amount("Terugleverkosten vanaf 2027 (€ per kWh)", "exportFee", { min: "0", max: "2", step: "0.0001", required: true },
-          "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger.")));
+          "Per kWh die je teruglevert. Een vast bedrag per jaar is geen 0: vraag wat het vanaf 2027 per kWh kost, of kies de " +
+          "indicatie. Alleen zonder terugleverkosten vul je 0 in. Hogere terugleverkosten maken een accu gunstiger.", checkFee)), feeCheck);
     }
     body.append(h("p", { class: "help" }, INDICATION.exportText), sourceList(INDICATION.exportSources),
       pick("variant", `Ook doorrekenen: vanaf ${INDICATION.variantYear} geen terugleververgoeding meer?`, [
@@ -232,7 +237,8 @@
           "Alle startkosten samen: accu, installatie en eventuele extra’s."),
         field("Hoe ver wil je vooruitkijken?", select([...new Set(["10", "15", "20", horizon()])].sort((a, b) => a - b)
           .map(years => [years, `${years} jaar`]), horizon(), { onchange: event => { answers.horizon = event.target.value; save(); } }),
-          "Kies hoe lang je verwacht in dit huis te blijven. Jaren daarna tellen niet mee en de accu heeft dan geen restwaarde; een kortere looptijd valt dus ongunstiger uit.")));
+          "Kies hoe lang je verwacht in dit huis te blijven. Jaren daarna tellen niet mee en de accu heeft dan geen restwaarde; een kortere looptijd valt dus ongunstiger uit. " +
+          "Een stekkerbatterij neem je mee als je verhuist; kijk voor die accu’s eerder naar de langere looptijd.")));
   }
 
   // Past een uitvoering bij de antwoorden? Harde bezwaren blokkeren, opmerkingen informeren.
@@ -335,7 +341,7 @@
     } : undefined;
     const candidates = chosen.map(p => ({ key: `${p.derived ? "g" : "c"}${p.config.id}`, name: p.name, configuration_id: p.config.id,
       battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
-      warranty_stress: p.warrantyStress ?? undefined,
+      warranty_stress: p.warrantyStress ?? undefined, connection: Data.connectionOf(p) ?? undefined,
       assumptions: [Data.KEUZEHULP_PREFIX, check?.text, ...p.notes].filter(Boolean).join(" ") }));
     // De titel zegt waarmee is gerekend; de datum staat al bij elke berekening.
     const usage = answers.data === "file" ? null : gross(), solar = answers.panels === "yes" ? production() : null;
@@ -565,6 +571,10 @@
     // Het stekkeradvies staat al bij de woningvragen en komt terug op de uitkomst; hier ingeklapt.
     const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht en veiligheid"),
       h("p", {}, RULES.placement), h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
+      // Tot 2027 geldt de salderingsregeling nog; de berekening begint daarom op 1 januari 2027.
+      new Date() < new Date(2027, 0, 1) ? h("p", {}, "Tot en met 31 december 2026 geldt de salderingsregeling nog. Een accu " +
+        "levert dan niets op en kost alleen laadverlies en sluimerverbruik; de berekening begint daarom in 2027. Eerder kopen " +
+        "is alleen zinvol voor een betere prijs.") : null,
       h("p", { class: "help" },
         "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
       sourceList(RULES.sources));
