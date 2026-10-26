@@ -66,7 +66,10 @@ window.Results = (() => {
   // Soort aansluiting in woorden, voor kaarten en tabellen.
   const CONNECTION = { plug: "Stekker", fixed: "Vast", circuit: "Stekker op eigen groep" };
   const connectionText = (c, kinds) => !kinds.get(c.key) ? "Onbekend"
-    : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Stekker op eigen groep, afgeleid" : CONNECTION[kinds.get(c.key)];
+    : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Stekker op eigen groep, afgeleid van de stekkeruitvoering"
+      : CONNECTION[kinds.get(c.key)];
+  // Netto voordeel als woord: een negatief bedrag is een verlies, geen ‘netto −€ …’.
+  const netText = value => value >= 0 ? `netto ${eur0(value)} voordeel` : `netto ${eur0(-value)} verlies`;
   // Korte namen voor grafieken en keuzelijsten (Data.shortLabels).
   function shortNames(run, all, kinds) {
     const labels = Data.shortLabels(run.input.request.candidates, kinds);
@@ -85,7 +88,12 @@ window.Results = (() => {
     const plugged = candidates.filter(c => kinds.get(c.key) === "plug");
     if (!plugged.length) return null;
     const about = plugged.find(c => c.key === judged?.key) || plugged[0];
-    const kw = about.battery.discharge_power_kw, charge = about.battery.charge_power_kw, grouped = candidates.find(c => kinds.get(c.key) === "circuit");
+    const kw = about.battery.discharge_power_kw, charge = about.battery.charge_power_kw;
+    // De eigen-groepuitvoering van deze accu: dezelfde uitvoering, anders hetzelfde product (merk en product vóór ‘ · ’).
+    // Een eigen groep voor een ander product heet niet ‘die variant’.
+    const head = c => c.name.split(" · ")[0], circuits = candidates.filter(c => kinds.get(c.key) === "circuit");
+    const grouped = circuits.find(c => about.configuration_id != null && c.configuration_id === about.configuration_id)
+      || circuits.find(c => about.configuration_id != null && c.configuration_id != null && about.name.includes(" · ") && head(c) === head(about));
     const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
     // Bij veel stekkerbatterijen een telling in plaats van een lange rij productnamen.
     const names = plugged.length <= 3 ? plugged.map(c => c.name).join(", ")
@@ -102,7 +110,8 @@ window.Results = (() => {
           : `, en met ${n(charge, 2)} kW laden: ook dat is meer dan 800 W, dus stel ook het laden lager in of kies een vaste aansluiting. `) +
         `Veiliger is een eigen groep in de meterkast door een installateur` +
         (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
-        (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’` : "") +
+        (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’`
+          : circuits.length ? "; er zitten ook stekkerbatterijen op een eigen groep in deze berekening, van een ander product" : "") +
         ". Meld de accu aan op energieleveren.nl, zoals Netbeheer Nederland voorschrijft. Twijfel je of je woonverzekering een " +
         "stekkerbatterij dekt, vraag het dan na bij je verzekeraar. Bronnen: ",
       UI.external(mc[0], mc[1]), ", ", UI.external(mcPlug[0], mcPlug[1]), ", ", UI.external(nbnl[0], nbnl[1]),
@@ -206,15 +215,16 @@ window.Results = (() => {
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
         ].filter(Boolean)), closeCall(run, option)] : null,
-      isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Een stekkerbatterij op een eigen groep. "),
-        "Vraag vooraf of een installateur hem vast wil aansluiten en of de fabrikant dat toestaat. " +
-        (installed ? `De beste vaste installatie in deze berekening is ${installed.name}: netto ${eur0(installed.npv_eur)} in geld van nu.`
+      isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
+        "eigen groep aansluit, geen vaste thuisaccu. "),
+        "Vraag vooraf of een installateur hem zo wil aansluiten en of de fabrikant dat toestaat. " +
+        (installed ? `De beste vaste thuisaccu in deze berekening is ${installed.name}: ${netText(installed.npv_eur)} in geld van nu.`
           : "Er zit geen vaste installatie in deze berekening.")) : null,
       // Is de besproken accu zelf geen stekkerbatterij, dan gaat het advies over de andere opties.
       plugged ? h("p", { class: "verdict-plug" }, h("strong", {}, option && !isPlug
         ? "Er zitten ook stekkerbatterijen in een gewoon stopcontact in deze berekening; Milieu Centraal raadt die af. "
         : "Milieu Centraal raadt stekkerbatterijen af. "),
-        fixed ? `De beste optie met een installateur in deze berekening is ${fixed.name}: netto ${eur0(fixed.npv_eur)} in geld van nu. ` : "",
+        fixed ? `De beste optie met een installateur in deze berekening is ${fixed.name}: ${netText(fixed.npv_eur)} in geld van nu. ` : "",
         toAdvice("Lees waarom en wat veiliger is")) : null);
   }
 
@@ -296,6 +306,18 @@ window.Results = (() => {
         `oplevert, zonder aanschaf en zonder laadverlies. Ter vergelijking: ${best.name} levert in het eerste jaar ` +
         `${kwh(delivered)} aan je huis, ongeveer ${n(delivered / 365, 1)} kWh per dag. Wat je zelf verschuift, hoeft niet meer ` +
         "via de accu; die levert dan wat minder op."));
+    }
+    // Boven 10.000 kWh netafname per jaar is de energiebelasting lager. De rekenkern kent één stroomprijs, dus een vermeden
+    // kWh boven die grens telt te hoog mee. Geschat voor het jaar met de meeste vermeden kWh boven de grens.
+    const band = Data.INDICATION.energyTaxBand, above = best && Data.energyTaxBandExcess(best, base, p);
+    if (above) {
+      const { y, without, kwh: high, eur } = above;
+      change.append(h("li", {}, `Zonder accu haalt het huis in ${y.calendar_year} ${kwh(without)} van het net. Boven ` +
+        `${kwh(band.above_kwh)} per jaar is de energiebelasting lager: in 2027 ${n(band.cents[1], 2)} in plaats van ` +
+        `${n(band.cents[0], 2)} cent per kWh zonder btw (voorlopige tarieven). Deze berekening rekent elke kWh met dezelfde ` +
+        `stroomprijs. Van wat ${best.name} dat jaar minder van het net haalt, valt ${kwh(high)} boven die grens; de besparing is ` +
+        `daardoor ongeveer ${eur0(eur)} per jaar te hoog. Valt vrijwel alles boven de grens, ` +
+        `reken dan in Zelf doorrekenen met een stroomprijs die ${money(band.lower_eur_per_kwh, { decimals: 4 })} per kWh lager is.`));
     }
     const advice = plugAdvice(run, best, kinds, circuit);
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
@@ -1150,5 +1172,7 @@ window.Results = (() => {
     ]));
   }
 
-  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation };
+  // De doorgerekende accu's op volgorde van het doel, zonder geen accu.
+  const ranked = run => options(run).slice(1);
+  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation, ranked };
 })();

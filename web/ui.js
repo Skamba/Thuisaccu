@@ -342,13 +342,16 @@ window.UI = (() => {
   // Bouwt het huidige scherm opnieuw op, bijvoorbeeld na het verwijderen van een rij.
   const reload = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 
+  // Een cel die met =, +, -, @, tab of regeleinde begint, krijgt een apostrof zodat een spreadsheet hem niet als formule
+  // leest; een getal in nl-NL-notatie (ook negatief, zoals -1.234,57) blijft een getal.
+  const CSV_NUMBER = /^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?$/;
+  const csvCell = value => {
+    let text = String(value ?? "Onbekend");
+    if (/^[=+@\-\t\r]/.test(text) && !CSV_NUMBER.test(text)) text = `'${text}`;
+    return `"${text.replaceAll('"', '""')}"`;
+  };
   function downloadCsv(filename, rows) {
-    const cell = value => {
-      let text = String(value ?? "Onbekend");
-      if (/^[=+@-]/.test(text)) text = `'${text}`;
-      return `"${text.replaceAll('"', '""')}"`;
-    };
-    const blob = new Blob(["﻿" + rows.map(row => row.map(cell).join(";")).join("\r\n")],
+    const blob = new Blob(["﻿" + rows.map(row => row.map(csvCell).join(";")).join("\r\n")],
       { type: "text/csv;charset=utf-8" });
     downloadBlob(filename, blob);
   }
@@ -363,6 +366,17 @@ window.UI = (() => {
     "#7a6a5e"];
   // `unit` is de eenheid van de waarden: bij liggende balken onder de waardeas rechts, anders linksboven bij de
   // verticale as. `xLabel` benoemt de liggende as van een lijn- of staafgrafiek.
+  // Een te lange naam wordt in het midden ingekort: bij ‘aansluiting · product · capaciteit’ blijven het eerste en het
+  // laatste deel staan, zodat aansluiting en capaciteit niet wegvallen. De volle naam staat in de tooltip en de tabel.
+  function clip(name, max) {
+    if (name.length <= max) return name;
+    const parts = name.split(" · ");
+    if (parts.length >= 3) {
+      const head = parts[0], tail = parts[parts.length - 1], room = max - head.length - tail.length - 7;
+      if (room >= 4) return `${head} · ${parts.slice(1, -1).join(" · ").slice(0, room).trimEnd()}… · ${tail}`;
+    }
+    return `${name.slice(0, max - 1)}…`;
+  }
   function chart(type, { title, rows, series, unit = "", xLabel = "", format = v => number(v, 0), marks = [] }) {
     // Op een smal scherm een smallere tekening met grotere letters (styles.css), zodat de tekst na het schalen
     // leesbaar blijft; de namen van liggende balken staan dan op een eigen regel boven de balk, voluit.
@@ -370,9 +384,9 @@ window.UI = (() => {
     const width = narrow ? 400 : 880, horizontal = type === "range" || type === "stacked", above = narrow && horizontal;
     const height = horizontal ? Math.max(220, rows.length * (above ? 64 : 56) + 80) : 320;
     const longest = Math.max(0, ...rows.map(r => String(r.label).length));
-    const left = above ? 40 : horizontal ? Math.min(330, Math.max(110, Math.min(longest, 48) * 6.6 + 24)) : 80, right = 24,
+    const left = above ? 40 : horizontal ? Math.min(380, Math.max(110, Math.min(longest, 56) * 6.6 + 24)) : 80, right = 24,
       top = !horizontal && unit ? 32 : 20, bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
-    const maxLabel = above ? Math.floor(plotW / 7.7) : 48;
+    const maxLabel = above ? Math.floor(plotW / 7.7) : 56;
     const svg = document.createElementNS(SVG, "svg");
     if (narrow) svg.classList.add("narrow");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img");
@@ -387,8 +401,10 @@ window.UI = (() => {
       }
       svg.append(node); return node;
     };
-    const text = (x, y, value,
-      anchor = "start") => { draw("text", { x, y, "text-anchor": anchor, class: "chart-text" }).textContent = value; };
+    const text = (x, y, value, anchor = "start", tip) => {
+      const node = draw("text", { x, y, "text-anchor": anchor, class: "chart-text" }, tip);
+      node.insertBefore(document.createTextNode(value), node.firstChild);
+    };
     const colour = (i, s) => s?.color || palette[i % palette.length];
     const values = rows.flatMap(r => type === "stacked" ? [r.values.reduce((a, b) => a + (b ?? 0),
       0)] : r.values).filter(finite);
@@ -451,8 +467,8 @@ window.UI = (() => {
       rows.forEach((r, ri) => {
         if (horizontal) {
           const cy = top + (ri + 0.5) / rows.length * plotH;
-          const name = String(r.label), short = name.length > maxLabel ? `${name.slice(0, maxLabel - 1)}…` : name;
-          if (above) text(left, cy - 18, short); else text(left - 12, cy + 4, short, "end");
+          const name = String(r.label), short = clip(name, maxLabel), tip = short === name ? undefined : name;
+          if (above) text(left, cy - 18, short, "start", tip); else text(left - 12, cy + 4, short, "end", tip);
           if (type === "stacked") {
             let start = 0;
             r.values.forEach((v, si) => {
@@ -504,7 +520,7 @@ window.UI = (() => {
 
   return {
     h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
-    button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
+    csvCell, clip, button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

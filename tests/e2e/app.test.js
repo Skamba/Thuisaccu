@@ -267,7 +267,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
   assert.match(summary, whatIf
-    ? /teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\) \(‘Stresstest[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
+    ? /teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\) \(‘Geen terugleververgoeding[^’]*’\): (dan komt .+ wel het beste uit|dan is .+ lonend tot ongeveer €\s*[\d.]+0|ook dan is .+ zelfs gratis niet lonend)\./
     : /Als teruglevering vanaf 2030 geld kost \(netto [\d,]+ cent per kWh die je teruglevert\)/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
@@ -282,7 +282,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(summary, /wordt de tweede regel vanaf 2030: \+ [\d.]+ kWh minder teruggeleverd × €\s*0,0515 \(vergoeding €\s*0,0000 − terugleverkosten €\s*0,0515: terugleveren kost je geld\) = €\s*[\d.]+, samen €\s*[\d.]+ per jaar/);
   assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
-  if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Stresstest: geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost)?|is hij zelfs gratis niet lonend)\./);
+  if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost)?|is hij zelfs gratis niet lonend)\./);
   assert.match(summary, /geschat uit jaartotalen/);
   // Met de stekker staat het veiligheidsadvies boven de som, met het vermogen waarmee is gerekend; de kaart
   // van een stekkerbatterij springt ernaartoe zonder de pagina te verlaten.
@@ -357,6 +357,18 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     assert.ok(over <= 0, `${tab}: ${over}px te breed`);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
+
+  // ‘Pas aan en reken opnieuw’ neemt bij meer dan twaalf opties de beste over, zodat er nog een eigen optie bij past.
+  const candidates = await page.evaluate(async hash => (await UI.api(`/api/v1/analysis/runs/${hash.split("/").pop()}`)).input.request.candidates.length, runHash);
+  await page.click("text=Pas aan en reken opnieuw");
+  await page.waitForSelector("text=Profiel en doel");
+  const copied = (await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")))).options.length;
+  if (candidates > 12) {
+    assert.ok(copied >= 5 && copied <= 7, `${copied} van ${candidates}`);
+    assert.match(await page.textContent(".toast"), new RegExp(`Kopie geladen met de ${copied} beste van ${candidates} opties`));
+  } else assert.equal(copied, candidates);
+  await page.goto(`${base}/${runHash}`);
+  await page.waitForSelector(".verdict", { timeout: 30000 });
 
   // Delen: de link bevat de uitkomst zonder adres en opent ook in een browser zonder deze gegevens.
   await page.click("button:has-text('Deel als link')");
@@ -866,6 +878,18 @@ test("eigen accu met een offerte in Nederlandse notatie rekent mee in de keuzehu
   await page.waitForSelector(".product-group", { timeout: 30000 });
   const row = page.locator(".product-group:first-of-type tr", { hasText: "Fictief Merk Voorbeeldaccu 10" });
   assert.match(await row.textContent(), /Vast.*9,6 kWh.*5,0 kW.*€\s6\.500/);
+  // Overnemen in Zelf doorrekenen houdt de aansluiting; een uitvoering zonder bekende koppeling wordt niet ‘vast’.
+  const kinds = await page.evaluate(async () => {
+    const cmp = await Data.catalog(), mine = cmp.configurations.find(c => c.manufacturer_name === "Fictief Merk");
+    await Scenario.addConfigurations([mine.id]);
+    // Elke onderzochte uitvoering heeft een koppeling; zonder (zoals een eigen accu met ‘Niet bekend’) blijft hij onbekend.
+    const unknown = cmp.configurations.find(c => c.id !== mine.id), connectionOf = Data.connectionOf;
+    Data.connectionOf = () => null;
+    try { await Scenario.addConfigurations([unknown.id]); } finally { Data.connectionOf = connectionOf; }
+    const options = JSON.parse(localStorage.getItem("thuisaccu-scenario")).options;
+    return [mine, unknown].map(c => options.find(o => o.configuration_id === c.id).kind);
+  });
+  assert.deepEqual(kinds, ["fixed", "unknown"]);
   assert.deepEqual(problems, []);
   await close();
 });
@@ -980,6 +1004,26 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   assert.equal(plug.battery.discharge_power_kw, "0,8");
   assert.equal(plug.kind, "plug");
   assert.match(plug.assumptions, /ontladen ingesteld op 800 W/);
+  // Op een eigen groep volgt het volle vermogen uit de bronnen, met naam, aannames en de kosten van een extra groep;
+  // terug naar de stekker weer 800 W. Eigen invoer blijft staan.
+  const switched = await page.evaluate(async option => {
+    const steps = [];
+    option.kind = "circuit"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
+    option.kind = "plug"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
+    option.battery.discharge_power_kw = "1,5"; steps.push({ message: await Scenario.followConnection(option), ...structuredClone(option) });
+    return steps;
+  }, plug);
+  assert.ok(Number(switched[0].battery.discharge_power_kw.replace(",", ".")) > 0.8, switched[0].battery.discharge_power_kw);
+  assert.match(switched[0].message, /Vermogen aangepast aan de aansluiting/);
+  assert.doesNotMatch(switched[0].name, /begrensd op 800 W/);
+  assert.doesNotMatch(switched[0].assumptions, /ontladen ingesteld op 800 W/);
+  assert.equal(switched[0].costs.installation.status, "priced");
+  assert.notDeepEqual(switched[0].costs.installation, plug.costs.installation);
+  assert.equal(switched[1].battery.discharge_power_kw, "0,8");
+  assert.equal(switched[1].name, plug.name);
+  assert.deepEqual(switched[1].costs, plug.costs);
+  assert.equal(switched[2].battery.discharge_power_kw, "1,5");
+  assert.match(switched[2].message, /meer dan 800 W/);
   assert.deepEqual(problems, []);
   await close();
 });

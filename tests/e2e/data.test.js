@@ -300,3 +300,48 @@ test("costLinesFor(): een stekkeraccu op een eigen groep krijgt de extra groep a
   assert.equal(group.status, "priced");
   assert.equal(group.amount_minor, Math.round(costs.estimates.amounts.dedicated_circuit.amount_eur * 100));
 });
+
+test("CSV: negatieve getallen blijven getallen, formules worden tekst", () => {
+  const { UI } = context;
+  assert.equal(UI.csvCell(UI.number(-1234.567, 2)), '"-1.234,57"');
+  assert.equal(UI.csvCell("-50,00"), '"-50,00"');
+  assert.equal(UI.csvCell("-5"), '"-5"');
+  assert.equal(UI.csvCell("1.234,5"), '"1.234,5"');
+  for (const text of ["=SUM(A1)", "+1+1", "-1+1", "@cmd", "\tx", "\rx", "-", "-1.23.4"]) {
+    assert.equal(UI.csvCell(text), `"'${text}"`, text);
+  }
+  assert.equal(UI.csvCell('zeg "hoi"'), '"zeg ""hoi"""');
+  assert.equal(UI.csvCell(null), '"Onbekend"');
+});
+
+test("tweede belastingschijf: alleen vermeden netafname boven 10.000 kWh telt, in het jaar met de meeste", () => {
+  const year = (n, without, withBattery) => ({ year: n, calendar_year: 2026 + n, baseline_grid_import_kwh: without,
+    energy: { grid_import_kwh: withBattery } });
+  const p = { start_year: 2027, tariff: { annual_price_change_pct: 0 } };
+  // Zonder accu 9.000 kWh: alles valt in de eerste schijf.
+  assert.equal(Data.energyTaxBandExcess({ years: [year(1, 9000, 7000)] }, { grid_import_kwh: 9000 }, p), null);
+  // 11.000 → 9.500: alleen de 1.000 kWh boven de grens; 12.500 → 10.500: 2.000 kWh, dat jaar wint.
+  const found = Data.energyTaxBandExcess({ years: [year(1, 11000, 9500), year(2, 12500, 10500)] }, { grid_import_kwh: 11000 }, p);
+  assert.equal(found.y.year, 2);
+  assert.equal(found.kwh, 2000);
+  // (8,80 − 6,78) cent × 1,21 = 2,4442 cent per kWh.
+  assert.ok(Math.abs(found.eur - 2000 * 0.024442) < 1e-9, found.eur);
+  // Met 2% prijsverandering in jaar 2 een factor 1,02; vóór 2027 geen melding (saldering).
+  assert.ok(Math.abs(Data.energyTaxBandExcess({ years: [year(2, 12500, 10500)] }, {}, { ...p, tariff: { annual_price_change_pct: 2 } }).eur
+    - 2000 * 0.024442 * 1.02) < 1e-9);
+  assert.equal(Data.energyTaxBandExcess({ years: [year(1, 12000, 9000)] }, {}, { ...p, start_year: 2026 }), null);
+  // Een run zonder netafname per jaar valt voor jaar 1 terug op het eerste jaar zonder accu.
+  assert.equal(Data.energyTaxBandExcess({ years: [{ year: 1, energy: { grid_import_kwh: 9000 } }] }, { grid_import_kwh: 10600 }, p).kwh, 600);
+});
+
+test("grafieknamen worden in het midden ingekort: aansluiting en capaciteit blijven staan", () => {
+  const { UI } = context;
+  assert.equal(UI.clip("Stekker 0,8 kW · Kort · 5 kWh", 56), "Stekker 0,8 kW · Kort · 5 kWh");
+  const long = "Eigen groep 2,4 kW (afgeleid) · Fictief Merk Een Heel Lang Productnaam Met Veel Woorden · 1-fase · 9,5 kWh";
+  const short = UI.clip(long, 56);
+  assert.ok(short.length <= 56 && short.length >= 50, short);
+  assert.ok(short.startsWith("Eigen groep 2,4 kW (afgeleid) · Fictief"), short);
+  assert.ok(short.endsWith("… · 9,5 kWh"), short);
+  // Zonder genoeg ruimte voor het midden gewoon aan het eind afgekort.
+  assert.equal(UI.clip("abcdefghij", 5), "abcd…");
+});

@@ -48,7 +48,7 @@ window.Scenario = (() => {
       title: "Mijn berekening", address: "", site: null, profile: "", objective: "net_present_value", budget: "",
       params: Object.fromEntries(PARAMS.map(([key]) => [key, plain(d[key])])),
       tariff: { import: "", export: "", fee: "", change: plain(d.annual_price_change_pct), bands: "", fixed: 0 },
-      variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
+      variant: { on: false, label: "Geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
         changes: [], basis: null, options: []
     };
   }
@@ -394,7 +394,7 @@ window.Scenario = (() => {
     const config = cmp.configurations.find(c => String(c.id) === id);
     if (!config) throw new Error("Kies eerst een uitvoering uit de catalogus.");
     const p = Data.plugLimit(Data.describe(cmp, config));
-    const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: Data.connectionOf(p) || "fixed",
+    const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: Data.connectionOf(p) || "unknown",
       assumptions: `Overgenomen uit de catalogus. ${p.notes.join(" ")}${p.missing.length ? ` Nog in te vullen: ${p.missing.join(", ")}.` : ""}` });
     if (p.battery) for (const [key] of TECH) option.battery[key] = plain(p.battery[key]);
     else {
@@ -410,28 +410,72 @@ window.Scenario = (() => {
     fillEstimates(option, costCatalog, p);
     state.options.push(option); persist();
   }
+  // Zelf doorrekenen houdt het overzichtelijk: meer opties passen in een berekening van de keuzehulp, niet hier.
+  const MAX_OPTIONS = 12;
+  const full = () => `Er passen twaalf opties in een berekening; je hebt er nu ${state.options.length}. Verwijder er eerst een paar.`;
+  // Een stekkerbatterij uit de catalogus volgt bij een andere aansluiting het vermogen van de keuzehulp: in een stopcontact
+  // hoogstens 800 W (plugLimit), op een eigen groep het volle vermogen uit de bronnen (circuitVariant, of de bronwaarden
+  // als de catalogus zelf een eigen-groepuitvoering heeft). Alleen als laad- en ontlaadvermogen nog op een van die twee
+  // staan; eigen invoer blijft staan, met een waarschuwing als die niet bij een stopcontact past. Naam, aannames en
+  // kostenposten volgen alleen als ze nog de tekst of indicatie van de vorige aansluiting zijn. Geeft de melding terug,
+  // of null als er niets veranderde.
+  async function followConnection(option) {
+    if (option.configuration_id == null || !["plug", "circuit"].includes(option.kind)) return null;
+    const cmp = await Data.catalog(), config = cmp.configurations.find(c => c.id === option.configuration_id);
+    const base = config && Data.describe(cmp, config);
+    if (!base || base.kind !== "plug" || !base.battery) return null;
+    const forms = { plug: Data.plugLimit(base), circuit: Data.circuitVariant(cmp, base) || base };
+    const target = forms[option.kind], power = ["charge_power_kw", "discharge_power_kw"];
+    const at = form => power.every(key => Math.abs((parse(option.battery[key]) ?? NaN) - form.battery[key]) < 1e-9);
+    if (at(target)) return null;
+    const from = Object.keys(forms).find(kind => at(forms[kind]));
+    if (!from) return option.kind === "plug" && power.some(key => parse(option.battery[key]) > 0.8)
+      ? "Let op: het ingevulde vermogen is meer dan 800 W. In een gewoon stopcontact rekent de keuzehulp met hoogstens 800 W." : null;
+    for (const key of power) option.battery[key] = plain(target.battery[key]);
+    if (Object.values(forms).some(form => form.name === option.name)) option.name = target.name;
+    const text = form => `Overgenomen uit de catalogus. ${form.notes.join(" ")}`;
+    const written = Object.values(forms).find(form => option.assumptions.startsWith(text(form)));
+    if (written) option.assumptions = text(target) + option.assumptions.slice(text(written).length);
+    const costCatalog = await Data.costs(), before = estimates(from, costCatalog, base), after = estimates(option.kind, costCatalog, base);
+    const same = (a, b) => a?.status === b?.status && a?.amount === b?.amount && a?.source === b?.source;
+    let costs = 0;
+    for (const category of new Set([...before.keys(), ...after.keys()])) {
+      const current = option.costs[category];
+      if (!(before.has(category) ? same(current, before.get(category)) : !current || current.status === "unknown")) continue;
+      if (same(current, after.get(category))) continue;
+      if (after.has(category)) option.costs[category] = after.get(category); else delete option.costs[category];
+      costs++;
+    }
+    const n1 = v => n(v, Number.isInteger(v) ? 0 : 1);
+    return `Vermogen aangepast aan de aansluiting: ${n1(target.battery.discharge_power_kw)} kW ontladen, ` +
+      `${n1(target.battery.charge_power_kw)} kW laden` + (costs ? `, en ${costs} kostenposten met indicaties aangepast.` : ".");
+  }
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
   // extra groep, zoals in de keuzehulp.
   // Bij een onbekende soort de posten van de catalogus, of anders die van een vaste installatie; de soort zelf blijft onbekend.
   function fillEstimates(option, costCatalog, described) {
-    const chosen = CONNECTIONS.includes(option.kind) ? option.kind : Data.connectionOf(described) || "fixed";
+    let filled = 0;
+    for (const [category, line] of estimates(option.kind, costCatalog, described)) {
+      const current = option.costs[category];
+      if (current && current.status !== "unknown") continue;
+      option.costs[category] = line;
+      filled++;
+    }
+    return filled;
+  }
+  // De kostenindicaties voor een soort aansluiting, als post → bewaarde regel; posten zonder indicatie ontbreken.
+  function estimates(connection, costCatalog, described) {
+    const chosen = CONNECTIONS.includes(connection) ? connection : Data.connectionOf(described) || "fixed";
     const circuit = chosen === "circuit", kind = circuit ? "fixed" : chosen;
     // Zonder product is een ingebouwde omvormer bij een stekkerbatterij een aanname, geen bronclaim.
     const lines = described ? Data.costLinesFor(costCatalog, { ...described, circuit }, {}, kind)
       : Data.estimateCosts(costCatalog, { kind, circuit, manufacturer: "", phases: null,
         inverterIncluded: chosen !== "fixed" }, {}).map(line => line.category !== "inverter" || line.status !== "included" ? line
           : { ...line, source: "Aanname", notes: "Aanname: een stekkerbatterij heeft een ingebouwde omvormer; controleer dat in de offerte." });
-    let filled = 0;
-    for (const line of lines) {
-      const current = option.costs[line.category];
-      if ((current && current.status !== "unknown") || line.status === "unknown") continue;
-      option.costs[line.category] = { status: line.status,
-        amount: line.status === "priced" ? (line.amount_minor / 100).toFixed(2).replace(".", ",") : "", year: "", source: line.source,
-        notes: line.notes };
-      filled++;
-    }
-    return filled;
+    return new Map(lines.filter(line => line.status !== "unknown").map(line => [line.category, { status: line.status,
+      amount: line.status === "priced" ? (line.amount_minor / 100).toFixed(2).replace(".", ",") : "", year: "", source: line.source,
+      notes: line.notes }]));
   }
 
   function optionCard(option, index, categories, catalogData) {
@@ -488,7 +532,12 @@ window.Scenario = (() => {
     });
     const kind = select([["unknown", "Onbekend"], ["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij in een stopcontact"],
       ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind ?? "unknown",
-      { onchange: event => { option.kind = event.target.value; persist(); } });
+      { onchange: async event => {
+        option.kind = event.target.value; persist();
+        const followed = await followConnection(option);
+        if (!followed) return;
+        persist(); toast(followed); flow.rerender();
+      } });
     const estimate = button("Vul open posten met indicaties", async () => {
       const [cmp, costCatalog] = await Promise.all([Data.catalog(), Data.costs()]);
       const config = cmp.configurations.find(c => c.id === option.configuration_id);
@@ -538,11 +587,11 @@ window.Scenario = (() => {
         "");
       const fromCatalog = button("Neem over",
         () => UI.busy(fromCatalog,
-          async () => { if (state.options.length >= 12) throw new Error("Maximaal twaalf opties.");
+          async () => { if (state.options.length >= MAX_OPTIONS) throw new Error(full());
             await addFromCatalog(pickConfig.value); flow.rerender(); }),
         "secondary");
       const own = button("+ Eigen optie",
-        () => { if (state.options.length >= 12) { toast("Maximaal twaalf opties.", true);
+        () => { if (state.options.length >= MAX_OPTIONS) { toast(full(), true);
           return; } state.options.push(blankOption(state.options.length + 1));
           persist(); flow.rerender(); },
         "secondary");
@@ -612,7 +661,9 @@ window.Scenario = (() => {
           [state.tariff.import, state.tariff.export].map(v => { const x = UI.parse(v);
             return x == null ? "?" : UI.money(x, { decimals: 4 }); }).join(" / ") + " per kWh"],
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
-        ["Accu-opties", state.options.map(o => o.name).join(", ") || "Geen"],
+        ["Accu-opties", state.options.length <= 3 ? state.options.map(o => o.name).join(", ") || "Geen"
+          : h("details", { class: "fold" }, h("summary", {}, `${state.options.length} opties`),
+            h("ul", { class: "compact" }, state.options.map(o => h("li", {}, o.name))))],
         ...(request.quote_basis ? [["Uit de offerte", request.quote_basis.changes.map(Data.quoteChange).join("; ")]] : [])]),
         count ? reviewProblems(problems, optionProblems, costCatalog) : h("p", { class: "derived" }, "De invoer is compleet."),
         h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),
@@ -654,7 +705,7 @@ window.Scenario = (() => {
     let added = 0, already = 0;
     for (const id of ids) {
       if (present.has(id)) { already++; continue; }
-      if (state.options.length >= 12) break;
+      if (state.options.length >= MAX_OPTIONS) break;
       await addFromCatalog(String(id)); added++;
     }
     clearTimeout(saveTimer);
@@ -664,5 +715,5 @@ window.Scenario = (() => {
   // Een concept met minstens één accu-optie; dat gooi je niet zonder te vragen weg.
   const hasDraft = () => (store.get(STORE, {})?.options || []).length > 0;
 
-  return { load, hasDraft, addConfigurations, PARAMS };
+  return { load, hasDraft, addConfigurations, followConnection, PARAMS, MAX_OPTIONS };
 })();

@@ -21,10 +21,18 @@
       path.setAttribute("d", ICONS[name] || ""); svg.append(path); return svg;
   };
 
+  // Een kopie in Zelf doorrekenen houdt bij meer dan twaalf opties de beste vijf op het doel, de beste in de
+  // terugleveringsvariant en de optie uit een offerte; de rest blijft in de oorspronkelijke berekening.
   function duplicate(run) {
+    const request = run.input.request, all = request.candidates.length;
+    const keep = all <= Scenario.MAX_OPTIONS ? null : new Set([...Results.ranked(run).slice(0, 5).map(c => c.key),
+      run.result.export_variant_recommended_key, request.quote_basis?.candidate_key].filter(Boolean));
+    const copy = keep ? { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) } : request;
     const open = () => {
-      Scenario.load(run.input.request);
-      toast("Kopie geladen. Controleer de invoer en bevestig opnieuw.");
+      Scenario.load(copy);
+      toast(keep ? `Kopie geladen met de ${copy.candidates.length} beste van ${all} opties; de andere ${all - copy.candidates.length} ` +
+        "blijven in de oorspronkelijke berekening staan. Controleer de invoer en bevestig opnieuw."
+        : "Kopie geladen. Controleer de invoer en bevestig opnieuw.");
       location.hash = "#/zelf";
     };
     if (!Scenario.hasDraft()) { open(); return; }

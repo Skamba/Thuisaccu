@@ -39,7 +39,7 @@ window.Compare = (() => {
       ["discontovoet", pct(p.discount_pct)],
       ...ASSUMPTIONS.map(([key, label]) => [label, pct(p[key])]),
       ["budget", p.budget_eur == null ? "geen" : eur0(p.budget_eur)],
-      ["stresstest", variant ? `${variant.label} (vanaf ${variant.from_calendar_year}: vergoeding ${price(variant.export_eur_per_kwh)}, ` +
+      ["terugleveringsvariant", variant ? `${variant.label} (vanaf ${variant.from_calendar_year}: vergoeding ${price(variant.export_eur_per_kwh)}, ` +
         `kosten ${price(variant.export_fee_eur_per_kwh)} per kWh)` : "geen"],
       ["extra verbruik", (request.load_changes || []).map(c => `${c.kind === "ev" ? "elektrische auto" : "warmtepomp"} vanaf ` +
         `${c.from_calendar_year} (${kwh(c.annual_kwh)} per jaar)`).join(", ") || "geen"],
@@ -95,9 +95,10 @@ window.Compare = (() => {
     ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, in geld van nu",
       (run, rec, c) => c && eur0(c.npv_eur)],
     ["Terugverdiend na", null, (run, rec, c) => c && years(c.payback_years)],
-    // Alleen als minstens één berekening een stresstest heeft; zie render.
-    ["Netto voordeel bij de stresstest", "Met de lagere terugleverprijs uit de stresstest", (run, rec, c) =>
-      !run.input.request.parameters.export_variant ? "Geen stresstest" : c?.export_variant && eur0(c.export_variant.npv_eur)],
+    // Alleen als minstens één berekening een terugleveringsvariant heeft; zie render. Een accu wordt daarin meestal meer
+    // waard, dus het woord ‘stresstest’ (een slechter geval) staat er niet.
+    ["Netto voordeel als teruglevering minder oplevert", "In de terugleveringsvariant van de berekening; zelf opslaan wordt dan meer waard", (run, rec, c) =>
+      !run.input.request.parameters.export_variant ? "Geen variant" : c?.export_variant && eur0(c.export_variant.npv_eur)],
     // Alleen als minstens één besproken accu een garantiestresstest heeft.
     ["Lonend tot als hij stopt na de garantie", "Kortere levensduur en sneller capaciteitsverlies", (run, rec, c) => {
       const w = Results.warranty(run, c);
@@ -124,7 +125,7 @@ window.Compare = (() => {
         : null)));
     const stress = runs.some(run => run.input.request.parameters.export_variant);
     const guarantee = columns.some(({ run, option }) => Results.warranty(run, option));
-    const body = ROWS.filter(([label]) => (stress || label !== "Netto voordeel bij de stresstest") &&
+    const body = ROWS.filter(([label]) => (stress || label !== "Netto voordeel als teruglevering minder oplevert") &&
       (guarantee || label !== "Lonend tot als hij stopt na de garantie")).map(([label, hint, value]) => h("tr", {},
       h("th", { scope: "row" }, label, hint ? [h("br"), h("small", {}, hint)] : null),
       columns.map(({ run, rec, option }) => h("td", {}, value(run, rec, option) ?? "—"))));

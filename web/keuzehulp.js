@@ -165,7 +165,7 @@
           "Meer vermogen en capaciteit, hogere kosten."],
         ["any", "Weet ik nog niet", "We laten alle soorten zien: stekker, vast en stekker op een eigen groep."]]),
       answers.install === "fixed" ? null : h("div", { class: "callout" }, h("p", {}, RULES.plug)),
-      pick("phases", "Wat voor aansluiting heb je?", [
+      pick("phases", "Hoeveel fasen heeft je meterkast?", [
         ["1", "1-fase", "Eén hoofdschakelaar in de meterkast, vaak 1×35 A of 1×40 A."],
         ["3", "3-fase", "Drie hoofdschakelaars of een brede driepolige schakelaar, vaak 3×25 A."],
         ["unknown", "Weet ik niet"]], "Een paar accu’s werken alleen op 3-fase. Stekkerbatterijen werken op beide."),
@@ -338,7 +338,7 @@
     // binnen de looptijd begint.
     const variantYear = Math.min(Math.max(INDICATION.variantYear, d.start_year), d.start_year + Number(horizon()) - 1);
     const variant = answers.variant === "yes" ? {
-      label: `Stresstest: geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
+      label: `Geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
       export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
     } : undefined;
     const candidates = chosen.map(p => ({ key: `${p.derived ? "g" : "c"}${p.config.id}`, name: p.name, configuration_id: p.config.id,

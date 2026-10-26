@@ -111,6 +111,9 @@ window.Data = (() => {
       "december 2026). Vaste en dynamische contracten wijken af.",
     // Energiebelasting 2027 per kWh met btw (fiscale sleuteltabel 2027, zie importSources).
     energyTax: 0.1065,
+    // Boven 10.000 kWh netafname per jaar: 6,78 in plaats van 8,80 cent zonder btw (zelfde sleuteltabel), met 21% btw
+    // € 0,0244 per kWh minder. Voorlopig, net als het tarief zelf.
+    energyTaxBand: { above_kwh: 10000, cents: [8.80, 6.78], lower_eur_per_kwh: (0.0880 - 0.0678) * 1.21 },
     importHelp: "Leveringstarief plus energiebelasting (in 2027 € 0,1065 per kWh), inclusief btw, zonder vaste kosten " +
       "per maand. Staan ze apart op je tariefoverzicht, tel ze dan op. Heb je normaal en dal en zijn ze (bijna) gelijk, neem dan " +
       "het normaaltarief. Is dal duidelijk lager, neem dan een prijs ertussenin: een accu levert ook ’s nachts en in het " +
@@ -143,7 +146,8 @@ window.Data = (() => {
     variantYear: 2030,
     variantText: "Volgens de ACM krijg je een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief. Voor daarna " +
       "is geen minimum aangekondigd, en terugleverkosten kunnen nu al hoger zijn dan de vergoeding. Deze variant rekent vanaf 2030 " +
-      "met € 0 vergoeding en dezelfde terugleverkosten. Het is een stresstest, geen voorspelling of aangekondigde regel."
+      "met € 0 vergoeding en dezelfde terugleverkosten. Het is een variant om mee te vergelijken, geen voorspelling of aangekondigde " +
+      "regel. Een accu wordt daarin meestal meer waard, omdat zelf opslaan dan meer oplevert dan terugleveren."
   };
   // Wat elke aanname doet, in gewone taal (docs/roi-model.md); bij Instellingen en Zelf doorrekenen.
   const ASSUMPTION_HELP = {
@@ -670,6 +674,20 @@ window.Data = (() => {
     `Vergoeding min terugleverkosten is ${n((vergoeding - kosten) * 100, 1)} cent per kWh, meer dan de 4,4 cent van het ` +
     "gunstigste vaste contract voor 2027 in het overzicht hierboven. Rekent je leverancier nu een vast bedrag per jaar? Dat is " +
     "geen 0: vraag wat teruglevering vanaf 2027 per kWh kost, kies de indicatie, of reken met staffels in Zelf doorrekenen.";
+  // Vermeden netafname boven de grens van de tweede belastingschijf, voor het jaar waarin die het grootst is: { y, without,
+  // kwh, eur } met `eur` de besparing die de ene stroomprijs dat jaar te hoog rekent, of null. `candidate` uit het
+  // resultaat, `base` het eerste jaar zonder accu, `p` de parameters. Pas vanaf 2027 telt de belasting over alle netafname.
+  function energyTaxBandExcess(candidate, base, p) {
+    const band = INDICATION.energyTaxBand;
+    if (p.start_year < 2027) return null;
+    const above = (candidate.years || []).map(y => {
+      const without = y.baseline_grid_import_kwh ?? (y.year === 1 ? base.grid_import_kwh : null);
+      return { y, without, kwh: without == null ? 0 : Math.max(0, without - Math.max(y.energy.grid_import_kwh, band.above_kwh)) };
+    }).filter(a => a.kwh > 0).sort((a, b) => b.kwh - a.kwh)[0];
+    if (!above) return null;
+    const factor = (1 + p.tariff.annual_price_change_pct / 100) ** (above.y.year - 1);
+    return { ...above, eur: above.kwh * band.lower_eur_per_kwh * factor };
+  }
   const importPriceCheck = value => value == null || value >= INDICATION.energyTax + 0.05 ? null :
     `Dat is minder dan de energiebelasting van 2027 (€ 0,1065 per kWh) plus een gangbaar leveringstarief. Is dit alleen ` +
     "het leveringstarief? Tel de energiebelasting erbij op, anders valt de besparing van een accu veel te laag uit.";
@@ -700,6 +718,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();
