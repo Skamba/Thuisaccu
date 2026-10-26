@@ -501,8 +501,63 @@ fn year_ranges(years: &[u32]) -> String {
         .join(", ")
 }
 
+/// Groei- en degradatiefactoren van verbruik en PV-opwek in looptijdjaar `year` (vanaf 1).
+fn factors(p: &Parameters, year: u32) -> (f64, f64) {
+    (
+        (1.0 - p.annual_pv_loss_pct / 100.0).powi((year - 1) as i32),
+        (1.0 + p.annual_load_growth_pct / 100.0).powi((year - 1) as i32),
+    )
+}
+
+/// Energiestromen zonder accu per looptijdjaar; gelijk voor alle opties en varianten.
+fn simulate_baseline(profiles: &Profiles, p: &Parameters) -> Vec<EnergyYear> {
+    (1..=p.horizon_years)
+        .map(|year| {
+            let (pv_factor, load_factor) = factors(p, year);
+            sizing::simulate_year(
+                profiles.year(p.start_year + year - 1),
+                None,
+                0,
+                pv_factor,
+                load_factor,
+                0.0,
+                p.load_variation,
+            )
+        })
+        .collect()
+}
+
+/// Energiestromen met accu per looptijdjaar. Prijzen en kosten beïnvloeden de simulatie niet,
+/// dus gevoeligheids- en terugleveringsvarianten delen deze uitkomst.
+fn simulate_battery(profiles: &Profiles, p: &Parameters, c: &Candidate) -> Vec<EnergyYear> {
+    let ages = battery_ages(c, p.horizon_years);
+    let mut state = 0.0;
+    let mut years = Vec::new();
+    for year in 1..=p.horizon_years {
+        let (pv_factor, load_factor) = factors(p, year);
+        let energy = sizing::simulate_year(
+            profiles.year(p.start_year + year - 1),
+            Some(&c.battery),
+            ages[(year - 1) as usize],
+            pv_factor,
+            load_factor,
+            state,
+            p.load_variation,
+        );
+        // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
+        state = if ages.get(year as usize) == Some(&0) {
+            0.0
+        } else {
+            energy.end_storage_kwh
+        };
+        years.push(energy);
+    }
+    years
+}
+
 fn project(
-    profiles: &Profiles,
+    baselines: &[EnergyYear],
+    energies: &[EnergyYear],
     p: &Parameters,
     c: &Candidate,
     stress: i32,
@@ -538,32 +593,9 @@ fn project(
     let mut years = Vec::new();
     let mut total_costs = upfront;
     let mut total_savings = 0.0;
-    let mut state = 0.0;
-    let ages = battery_ages(c, p.horizon_years);
-    for year in 1..=p.horizon_years {
-        let pv_factor = (1.0 - p.annual_pv_loss_pct / 100.0).powi((year - 1) as i32);
-        let load_factor = (1.0 + p.annual_load_growth_pct / 100.0).powi((year - 1) as i32);
+    for (index, (baseline, energy)) in baselines.iter().zip(energies).enumerate() {
+        let year = index as u32 + 1;
         let calendar_year = p.start_year + year - 1;
-        let profile = profiles.year(calendar_year);
-        let baseline = sizing::simulate_year(
-            profile,
-            None,
-            0,
-            pv_factor,
-            load_factor,
-            0.0,
-            p.load_variation,
-        );
-        let energy = sizing::simulate_year(
-            profile,
-            Some(&c.battery),
-            ages[(year - 1) as usize],
-            pv_factor,
-            load_factor,
-            state,
-            p.load_variation,
-        );
-        state = energy.end_storage_kwh;
         let price_factor = (1.0 + p.tariff.annual_price_change_pct / 100.0).powi((year - 1) as i32);
         let tariff = match variant {
             Some(v) if calendar_year >= v.from_calendar_year => &varied,
@@ -603,7 +635,7 @@ fn project(
         years.push(YearResult {
             year,
             calendar_year,
-            energy,
+            energy: energy.clone(),
             baseline_grid_import_kwh: Some(baseline.grid_import_kwh),
             baseline_grid_export_kwh: Some(baseline.grid_export_kwh),
             baseline_bill_eur: baseline_bill,
@@ -615,10 +647,6 @@ fn project(
             net_cashflow_eur: saving - costs - interest - principal,
             cumulative_eur: cumulative,
         });
-        if ages.get(year as usize) == Some(&0) {
-            // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
-            state = 0.0;
-        }
     }
     let profit: f64 = cashflows.iter().sum();
     let npv: f64 = cashflows
@@ -711,13 +739,17 @@ pub fn analyze_with(
     validate(profile, parameters, candidates)?;
     validate_additions(profile, parameters, additions)?;
     let profiles = Profiles::new(profile, additions);
+    let baselines = simulate_baseline(&profiles, parameters);
     let mut results = Vec::new();
     for c in candidates {
-        let mut base = project(&profiles, parameters, c, 0, None);
-        let low = project(&profiles, parameters, c, -1, None);
-        let high = project(&profiles, parameters, c, 1, None);
+        let energies = simulate_battery(&profiles, parameters, c);
+        let project =
+            |stress, variant| project(&baselines, &energies, parameters, c, stress, variant);
+        let mut base = project(0, None);
+        let low = project(-1, None);
+        let high = project(1, None);
         if let Some(v) = &parameters.export_variant {
-            let varied = project(&profiles, parameters, c, 0, Some(v));
+            let varied = project(0, Some(v));
             base.export_variant = Some(ExportVariantResult {
                 npv_eur: varied.npv_eur,
                 net_profit_eur: varied.net_profit_eur,
@@ -738,15 +770,7 @@ pub fn analyze_with(
         };
         results.push(base);
     }
-    let baseline = sizing::simulate_year(
-        profiles.year(parameters.start_year),
-        None,
-        0,
-        1.0,
-        1.0,
-        0.0,
-        parameters.load_variation,
-    );
+    let baseline = baselines[0].clone();
     let best_key = choose(
         parameters.objective,
         baseline.self_consumption_pct,
