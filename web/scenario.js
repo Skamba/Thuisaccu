@@ -24,6 +24,8 @@ window.Scenario = (() => {
       ["price_uncertainty_pct", "Tariefvariatie gevoeligheid (%)", "0", "80", "1"],
     ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", "0", "80", "1"]
   ];
+  // Omschrijving zonder adres, hier en in de keuzehulp; een kopie begint dan met een leeg adresveld.
+  const NO_ADDRESS = /^Nederland \((keuzehulp, )?geen adres opgegeven\)$/;
   const blankOption = (index, extra = {}) => ({
     key: `optie-${Date.now().toString(36)}-${index}`, name: `Eigen optie ${index}`, configuration_id: null,
       kind: "fixed",
@@ -49,7 +51,7 @@ window.Scenario = (() => {
   function load(request) {
     const money2 = minor => (minor / 100).toFixed(2);
     state = {
-      title: `${request.title} (kopie)`, address: request.site.address,
+      title: `${request.title} (kopie)`, address: NO_ADDRESS.test(request.site.address) ? "" : request.site.address,
         site: request.site.latitude != null ? request.site : null, profile: String(request.solar_import_id),
       objective: request.parameters.objective,
         budget: request.parameters.budget_eur == null ? "" : String(request.parameters.budget_eur),
@@ -97,7 +99,6 @@ window.Scenario = (() => {
       number = (raw, what) => { const v = parse(raw); if (v == null) problems.push(`${what} ontbreekt.`);
         return v ?? 0; };
     if (!state.title.trim()) problems.push("Geef de berekening een naam.");
-    if (!state.address.trim()) problems.push("Vul een adres of locatieomschrijving in.");
     if (!state.profile) problems.push("Kies een energieprofiel.");
     if (!state.options.length) problems.push("Voeg minstens één accu-optie toe.");
     let exportBands = [];
@@ -143,15 +144,16 @@ window.Scenario = (() => {
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
         financing: { loan_amount_eur: parse(option.loan.amount) ?? 0, annual_interest_pct: parse(option.loan.interest) ?? 0, years: parse(option.loan.years) ?? 0 }, assumptions: option.assumptions };
     });
-    const site = state.site && state.site.address === state.address ? state.site : { address: state.address.trim(),
-      latitude: null, longitude: null, bag_id: null };
+    // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
+    const site = state.site && state.site.address === state.address ? state.site
+      : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
     return { problems,
       request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates } };
   }
 
   function stepProfile(body) {
     const results = h("div"),
-      address = bindValue(input({ required: true, maxlength: "500",
+      address = bindValue(input({ maxlength: "500",
         placeholder: "Postcode + huisnummer of straat en plaats" }),
         () => state.address, v => { state.address = v; });
     const lookup = button("Zoek adres via PDOK", () => UI.busy(lookup, async () => {
@@ -175,7 +177,7 @@ window.Scenario = (() => {
     body.append(h("h2", {}, "Profiel en doel"), h("div", { class: "grid" },
       field("Naam van de berekening",
         bindValue(input({ required: true, maxlength: "200" }), () => state.title, v => { state.title = v; })),
-      field("Adres in Nederland", address, "Alleen de zoekknop stuurt je zoekterm naar PDOK. Aansluiting en contract worden niet uit het adres afgeleid.")),
+      field("Adres in Nederland (optioneel)", address, "Alleen een label bij de berekening. Alleen de zoekknop stuurt je zoekterm naar PDOK; aansluiting en contract worden niet uit het adres afgeleid.")),
       h("div", { class: "actions" }, lookup), results,
       h("div", { class: "grid" },
         field("Energieprofiel (volledig jaar met opwek en verbruik)", profile,

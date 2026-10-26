@@ -40,7 +40,8 @@ window.UI = (() => {
     ? `${Number(value) < 0 ? "−\u2060" : ""}€\u00a0${number(Math.abs(value), decimals)}`
     : "Onbekend";
   const kwh = (value, decimals = 0) => finite(value) ? `${number(value, decimals)} kWh` : "Onbekend";
-  const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals)}%` : "Niet bepaald";
+  // Een echt minteken, zoals bij bedragen; de CSV-export gebruikt number() en houdt het streepje.
+  const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals).replace(/^-/, "−")}%` : "Niet bepaald";
   const years = value => value == null ? "Niet binnen de looptijd" : `${number(value, 0)} jaar`;
   const dateTime = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleString("nl-NL");
   const dateOnly = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleDateString("nl-NL");

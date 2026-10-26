@@ -412,6 +412,59 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await close();
 });
 
+test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
+  const file = dutchLocalYear(workdir);
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", file);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  await next(page);
+  await page.click("button:has-text('Bewaar energieprofiel')");
+  await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+
+  await page.goto(`${base}/#/zelf`);
+  await page.getByLabel("Naam van de berekening").fill("Synthetische offerte");
+  // Het adres is optioneel: alleen een label bij de berekening.
+  await page.getByLabel(/Energieprofiel/).selectOption({ index: 1 });
+  await next(page);
+  await page.getByLabel("Stroomprijs, alles inbegrepen (€/kWh)").fill("0.25");
+  await page.getByLabel("Terugleververgoeding (€/kWh)").fill("0.05");
+  await next(page);
+  await page.click("button:has-text('+ Eigen optie')");
+  const card = page.locator(".option-editor").first();
+  for (const [label, value] of [["Bruikbare capaciteit (kWh)", "10"], ["Laden AC (kW)", "5"], ["Ontladen AC (kW)", "5"],
+    ["Rendement AC → AC (%)", "88"], ["Sluimerverbruik (W)", "10"], ["Capaciteitsverlies per jaar (%)", "2"],
+    ["Levensduur (jaar)", "15"]]) await card.getByLabel(label, { exact: true }).fill(value);
+  await card.getByLabel("Bron en aannames van de techniek").fill("Synthetische testinvoer.");
+  await card.locator("button:has-text('Vul open posten met indicaties')").click();
+  const row = title => card.locator(".cost-row", { hasText: title });
+  await row("Accu of complete pakketprijs").getByLabel("Status").selectOption("priced");
+  await row("Accu of complete pakketprijs").getByLabel("Bedrag (€)").fill("9000");
+  await row("Accu of complete pakketprijs").getByLabel("Bron of aanname").fill("Synthetische offerte");
+  await row("Extra/hybride omvormer").getByLabel("Status").selectOption("included");
+  await row("Extra/hybride omvormer").getByLabel("Bron of aanname").fill("Synthetische offerte");
+  await next(page);
+  await page.waitForSelector("text=De invoer is compleet.");
+  for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
+  await page.click("button:has-text('Bereken en bewaar')");
+  await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
+  await page.waitForSelector("text=Wat betekent dit voor jou?");
+  const view = await page.textContent("#view");
+  assert.match(view, /Nederland \(geen adres opgegeven\)/);
+  // Een dure offerte verdient zich niet terug; een negatieve ROI krijgt een echt minteken.
+  assert.match(view, /ROI over looptijd−\d/);
+  // Een kopie begint met een leeg adresveld, niet met de omschrijving.
+  await page.click("text=Pas aan en reken opnieuw");
+  await page.waitForSelector("text=Profiel en doel");
+  assert.equal(await page.getByLabel("Adres in Nederland (optioneel)").inputValue(), "");
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async () => {
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
