@@ -89,14 +89,24 @@ window.Results = (() => {
     if (first && p.start_year >= 2027 && !tariff.export_fee_bands?.length) {
       const fewerImport = base.grid_import_kwh - first.energy.grid_import_kwh;
       const fewerExport = base.grid_export_kwh - first.energy.grid_export_kwh;
-      const net = tariff.export_eur_per_kwh - tariff.export_fee_eur_per_kwh, price = v => money(v, { decimals: 4 });
-      const gain = fewerImport * tariff.import_eur_per_kwh, lost = fewerExport * net;
-      list.append(h("li", {}, `Zo reken je de besparing van ${judged.name} in het eerste jaar na: ` +
-        `${kwh(fewerImport)} minder van het net × ${price(tariff.import_eur_per_kwh)} = ${eur0(gain)}, ` +
-        `${lost >= 0 ? "min" : "plus"} ${kwh(fewerExport)} minder teruggeleverd × ${price(Math.abs(net))} ` +
-        `(vergoeding ${price(tariff.export_eur_per_kwh)} ${net >= 0 ? "min" : "is lager dan"} terugleverkosten ${price(tariff.export_fee_eur_per_kwh)}) = ${eur0(Math.abs(lost))}. ` +
-        `Samen ${eur0(gain - lost)} per jaar. Dat de teruglevering meer daalt dan de netafname, komt door ` +
-        `${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.`));
+      const price = v => money(v, { decimals: 4 }), gain = fewerImport * tariff.import_eur_per_kwh;
+      // Minder teruglevering kost de netto vergoeding; zijn de terugleverkosten hoger, dan levert het juist op.
+      const exported = (compensation, fee) => {
+        const net = compensation - fee, value = -fewerExport * net;
+        return { value, text: `${value > 0 ? "+" : "−"} ${kwh(fewerExport)} minder teruggeleverd × ${price(Math.abs(net))} ` +
+          `(vergoeding ${price(compensation)} − terugleverkosten ${price(fee)}${net < 0 ? ": terugleveren kost je geld" : ""}) = ${eur0(Math.abs(value))}` };
+      };
+      const now = exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh), v = p.export_variant;
+      const later = v ? exported(v.export_eur_per_kwh, v.export_fee_eur_per_kwh) : null;
+      list.append(h("li", {}, `Zo reken je de besparing van ${judged.name} in het eerste jaar na:`,
+        h("ul", { class: "receipt" },
+          h("li", {}, `+ ${kwh(fewerImport)} minder van het net × ${price(tariff.import_eur_per_kwh)} = ${eur0(gain)}`),
+          h("li", {}, now.text),
+          h("li", {}, `= ${eur0(gain + now.value)} per jaar`)),
+        `Dat de teruglevering meer daalt dan de netafname, komt door ${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en ` +
+          `omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.` +
+          (later ? ` In de variant ‘${v.label}’ wordt de tweede regel vanaf ${v.from_calendar_year}: ${later.text}, samen ${eur0(gain + later.value)} per jaar ` +
+            "(met de hoeveelheden en prijzen van jaar 1)." : "")));
     }
     if (judged && finite(judged.break_even_investment_eur)) {
       const limit = judged.break_even_investment_eur, variantLimit = judged.export_variant?.break_even_investment_eur;
