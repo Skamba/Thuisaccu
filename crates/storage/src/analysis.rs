@@ -3,7 +3,7 @@ use crate::{
     solar::{SolarInterval, json},
 };
 use rusqlite::{OptionalExtension, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct SavedAnalysis {
@@ -12,6 +12,68 @@ pub struct SavedAnalysis {
     pub created_at_unix_s: i64,
     pub input: serde_json::Value,
     pub result: serde_json::Value,
+}
+
+/// Overzichtsregel van een bewaarde berekening: dezelfde vorm als [`SavedAnalysis`], maar alleen met
+/// wat de lijst nodig heeft (doel, profiel, herkomst, aanbeveling en per optie naam en NPV). De
+/// jaartabellen, het grootste deel van een uitkomst, blijven in de database.
+#[derive(Debug, Serialize)]
+pub struct AnalysisSummary {
+    pub id: i64,
+    pub title: String,
+    pub created_at_unix_s: i64,
+    pub input: SummaryInput,
+    pub result: SummaryResult,
+}
+
+// Elk veld heeft een standaardwaarde: één afwijkende oude run mag de lijst niet onleesbaar maken.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryInput {
+    #[serde(default)]
+    pub request: SummaryRequest,
+    #[serde(default)]
+    pub profile: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recalculated_from: Option<SummaryOrigin>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct SummaryRequest {
+    #[serde(default)]
+    pub parameters: SummaryParameters,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct SummaryParameters {
+    #[serde(default)]
+    pub objective: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryOrigin {
+    pub run_id: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryResult {
+    #[serde(default)]
+    pub model_version: String,
+    #[serde(default)]
+    pub recommended_key: String,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
+    pub candidates: Vec<SummaryCandidate>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryCandidate {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub npv_eur: Option<f64>,
 }
 
 pub struct NewAnalysis<'a> {
@@ -48,7 +110,9 @@ impl Catalog {
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
-        Ok(serde_json::json!({"filename":filename, "sha256":sha256, "options":json(&options)?}))
+        Ok(
+            serde_json::json!({"filename":filename, "sha256":sha256, "options":json::<serde_json::Value>(&options)?}),
+        )
     }
 
     pub async fn save_analysis(&self, data: &NewAnalysis<'_>) -> Result<i64> {
@@ -106,6 +170,43 @@ impl Catalog {
             > 0)
     }
 
+    /// De laatste 100 berekeningen als overzichtsregels, nieuwste eerst.
+    pub async fn analysis_summaries(&self) -> Result<Vec<AnalysisSummary>> {
+        let connection = self.connection();
+        let rows = connection
+            .prepare("SELECT id, title, created_at_unix_s, input_json, result_json FROM analysis_runs ORDER BY id DESC LIMIT 100")?
+            .query_map([], |r| {
+                Ok((
+                    r.get("id")?,
+                    r.get("title")?,
+                    r.get("created_at_unix_s")?,
+                    r.get::<_, String>("input_json")?,
+                    r.get::<_, String>("result_json")?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(
+                |(id, title, created_at_unix_s, input, result): (
+                    i64,
+                    String,
+                    i64,
+                    String,
+                    String,
+                )| {
+                    Ok(AnalysisSummary {
+                        id,
+                        title,
+                        created_at_unix_s,
+                        input: json(&input)?,
+                        result: json(&result)?,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    /// De laatste 100 berekeningen volledig, met invoer en uitkomst.
     pub async fn list_analyses(&self) -> Result<Vec<SavedAnalysis>> {
         let connection = self.connection();
         let rows = connection

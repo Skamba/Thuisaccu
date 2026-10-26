@@ -454,17 +454,17 @@ window.Scenario = (() => {
 
   function stepReview(body) {
     body.append(h("h2", {}, "Controle en berekenen"));
-    const host = h("div"); body.append(host);
+    const host = h("div"), step = flow.current; body.append(host);
     Data.costs().then(costCatalog => {
       const { problems, request } = build(costCatalog.categories);
       const confirmations = [
         "Het profiel bevat bruto huishoudelijk verbruik en AC-zonneproductie, geen netafname of teruglevering als vervanging daarvan.",
         "De technische invoer is gecontroleerd of expliciet als aanname beschreven; geschiktheid voor de installatie is daarmee nog niet gegarandeerd.",
         "Alle kostenposten zijn beoordeeld; bedragen, inbegrepen of niet-toepasselijke posten en aftrekposten zijn offertegegevens of expliciete aannames."
-      ].map(text => checkbox(text));
+      ].map(text => checkbox(text, { required: true }));
       const run = button("Bereken en bewaar", () => UI.busy(run, async () => {
         if (problems.length) throw new Error("Los eerst de punten hierboven op.");
-        if (!confirmations.every(c => c.box.checked)) throw new Error("Vink de drie bevestigingen aan.");
+        if (!UI.validate(host)) return;
         const response = await UI.api("/api/v1/analysis/runs",
           { method: "POST",
             json: { ...request, costs_confirmed: true, technical_assumptions_confirmed: true,
@@ -487,7 +487,9 @@ window.Scenario = (() => {
           "De invoer is compleet."),
         h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),
         request.quote_basis ? h("p", { class: "help" }, "Je vinkt de bevestigingen bewust opnieuw aan: zo bevestig je dat de " +
-          "waarden uit de offerte kloppen.") : null, run]);
+          "waarden uit de offerte kloppen.") : null]);
+      // De knop staat in de vaste balk onderaan, vlak onder de bevestigingen.
+      if (flow.current === step) flow.action(run);
     });
   }
 

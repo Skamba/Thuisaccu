@@ -29,6 +29,9 @@ pub enum StorageError {
     EmptyPath,
     #[error("Invalid research input: {0}")]
     InvalidInput(String),
+    /// Opgeslagen JSON die niet meer te lezen is: een serverfout, geen invoerfout.
+    #[error("Stored data could not be read: {0}")]
+    Corrupt(String),
 }
 
 impl StorageError {

@@ -82,7 +82,7 @@ window.Compare = (() => {
     title: "Berekeningen vergelijken", subtitle: "Bewaarde uitkomsten naast elkaar, elk met de eigen invoer.", parent: "berekeningen",
     async render(view, actions, { data }) {
       const ids = [...new Set(data.split("-").map(Number).filter(Number.isInteger))].slice(0, MAX);
-      const all = await Data.runs(), runs = ids.map(id => all.find(r => r.id === id)).filter(Boolean);
+      const runs = (await Promise.all(ids.map(id => Data.run(id).catch(() => null)))).filter(Boolean);
       if (runs.length < 2) {
         view.append(UI.empty("Te weinig berekeningen", "Kies onder Mijn berekeningen 2 tot 4 bewaarde berekeningen om te vergelijken.",
           link("Naar mijn berekeningen", "#/berekeningen", "button")));

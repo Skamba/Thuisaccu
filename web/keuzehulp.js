@@ -94,7 +94,7 @@
   const pick = (key, legend, options, help) => choice(legend, `kh-${key}`, options, answers[key],
     v => { answers[key] = v; save(); rerender(); }, help);
   function amount(label, key, props, help, onInput) {
-    const control = numberInput({ value: answers[key], ...props,
+    const control = numberInput({ value: answers[key], name: `kh-${key}`, ...props,
       oninput: event => { answers[key] = event.target.value; save(); onInput?.(); } });
     return field(label, control, help);
   }
@@ -379,8 +379,12 @@
     const candidates = chosen.map(p => ({ key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id,
       battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
       assumptions: [Data.KEUZEHULP_PREFIX, check?.text, ...p.notes].filter(Boolean).join(" ") }));
+    // De titel zegt waarmee is gerekend; de datum staat al bij elke berekening.
+    const usage = answers.data === "file" ? null : gross(), solar = answers.panels === "yes" ? production() : null;
+    const about = answers.data === "file" ? ["eigen meetbestand"] : [usage == null ? null : `${n(usage, 0)} kWh verbruik`,
+      answers.panels === "no" ? "geen zonnepanelen" : solar == null ? null : `${n(solar, 0)} kWh opwek`];
     return {
-      title: `Keuzehulp ${new Date().toLocaleDateString("nl-NL")}`, solar_import_id: importId,
+      title: ["Keuzehulp", about.filter(Boolean).join(", ")].filter(Boolean).join(": "), solar_import_id: importId,
       site: { address: "Nederland (keuzehulp, geen adres opgegeven)", latitude: null, longitude: null, bag_id: null },
       parameters: {
         start_year: d.start_year, horizon_years: Number(horizon()), discount_pct: d.discount_pct,
@@ -400,12 +404,13 @@
   }
 
   function stepAdvice(body) {
-    body.append(h("h2", {}, "Je advies"),
-      h("p", { class: "help", "aria-live": "polite" }, "Je advies wordt voorbereid…"));
-    advice(body).catch(error => body.replaceChildren(h("h2", {}, "Je advies"),
+    body.append(h("h2", {}, "Controleren en berekenen"),
+      h("p", { class: "help", "aria-live": "polite" }, "De berekening wordt voorbereid…"));
+    advice(body, flow.current).catch(error => body.replaceChildren(h("h2", {}, "Controleren en berekenen"),
       h("p", { class: "warning" }, error.message), button("← Terug naar de vragen", () => flow.show(0), "secondary")));
   }
-  async function advice(body) {
+  // `step` is de stap waarvoor dit begon; is de gebruiker intussen verder, dan komt de knop niet in de balk.
+  async function advice(body, step) {
     const [importId, cmp, costCatalog] = await Promise.all([ensureProfile(), Data.catalog(true), Data.costs()]);
     const curve = await UI.api(`/api/v1/solar/imports/${importId}/capacity`);
     const points = curve.points, max = points[points.length - 1].battery_to_load_kwh;
@@ -442,7 +447,7 @@
     const MAX_CANDIDATES = 50, FEW_CANDIDATES = 5;
     let range = max > 0 && own ? own : rangeFor(answers.sizing), included = [], renderPick = () => {};
     const size1 = v => n(v, v % 1 ? 1 : 0), kwhText = v => `${size1(v)} kWh`;
-    body.replaceChildren(h("h2", {}, "Je advies"));
+    body.replaceChildren(h("h2", {}, "Controleren en berekenen"));
 
     const check = profileCheck(points);
     const size = h("section", { class: "panel" }, h("h3", {}, "1. Hoe groot moet een accu zijn?"),
@@ -583,45 +588,49 @@
     const confirmations = [
       answers.data === "file" ? "Mijn bestand bevat de opwek van mijn omvormer en het totale verbruik van het huis (of P1-afname en -teruglevering waaruit dat is afgeleid), zonder bestaande accu." : "Ik begrijp dat mijn verbruik en opwek zijn geschat uit jaartotalen met standaardprofielen.",
       "Ik begrijp dat de accugegevens uit de bronnen komen, aangevuld met de genoemde aannames, en dat de keuzehulp niet controleert of een accu in mijn meterkast past.",
-      "Ik begrijp dat de kosten indicaties zijn uit de genoemde bronnen en aannames, en dat een offerte voor mijn woning daarvoor in de plaats komt."
-    ].map(text => checkbox(text));
+      "Ik begrijp dat de kostenindicaties zijn uit de genoemde bronnen en aannames, en dat een offerte voor mijn woning daarvoor in de plaats komt."
+    ].map(text => checkbox(text, { required: true }));
     const status = h("p", { class: "help", "aria-live": "polite" });
     const go = button("Bereken mijn advies", () => UI.busy(go, async () => {
-      if (!confirmations.every(c => c.box.checked)) throw new Error("Vink de drie bevestigingen aan.");
+      if (!UI.validate(run)) return;
       if (!included.length) throw new Error("Er is geen accu om door te rekenen; reken een offerte door met Zelf doorrekenen.");
       status.textContent = `Bezig met rekenen aan ${included.length} ${included.length === 1 ? "accu" : "accu’s"}…`;
       const response = await UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included, check) });
       location.hash = `#/berekeningen/${response.id}`;
     }).finally(() => { status.textContent = ""; }));
-    const run = h("section", { class: "panel" }, h("h3", {}, "3. Reken het door"),
+    // De knop staat in de vaste balk onderaan; de bevestigingen staan er vlak boven.
+    const run = h("section", { class: "panel" }, h("h3", {}, "3. Controleer en reken het door"),
       h("p", {},
         "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
-      h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), go, status);
-    const rules = h("section", { class: "panel" }, h("h3", {}, "4. Voordat je koopt"),
+      h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), status);
+    // Het stekkeradvies staat al bij de woningvragen en komt terug op de uitkomst; hier ingeklapt.
+    const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht en veiligheid"),
       h("p", {}, RULES.register), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
       h("p", { class: "help" },
         "Dit is een samenvatting van openbare informatie, geen juridisch of installatieadvies."),
       sourceList(RULES.sources));
-    body.append(size, pickSection, run, rules);
+    body.append(size, pickSection, rules, run);
+    if (flow.current === step) flow.action(go);
   }
 
   function check(index, body) {
     if (!UI.validate(body)) return false;
+    const reject = (key, message) => UI.reject(body.querySelector(`[name="kh-${key}"]`), message, body);
     if (index === 0 && answers.data === "file" && !answers.importId) { UI.toast("Kies een bewaard energieprofiel of kies ‘Jaartotalen’.",
       true);
       return false; }
     if (index === 0 && answers.data === "totals") {
-      if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) { UI.toast("Vul de opwek van je panelen of het vermogen in kWp in.",
-        true);
-        return false; }
+      if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) {
+        return reject("production", "Vul de opwek van je panelen in, of hieronder het vermogen in kWp.");
+      }
       const value = gross();
-      if (value != null && !(value > 0)) { UI.toast("Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.",
-        true);
-        return false; }
+      if (value != null && !(value > 0)) {
+        return reject("gridExport", "Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.");
+      }
       const extra = (parse(answers.heatPump) || 0) + (parse(answers.ev) || 0);
       if (value != null && extra > 0 && value - extra < 100) {
-        UI.toast("Warmtepomp en auto zijn een deel van je totale verbruik en kunnen daar niet boven uitkomen.", true);
-        return false;
+        return reject(parse(answers.heatPump) ? "heatPump" : "ev",
+          "Warmtepomp en auto zijn een deel van je totale verbruik en kunnen daar niet boven uitkomen.");
       }
     }
     return true;
@@ -637,7 +646,7 @@
       flow = UI.wizard([
         { label: "Je energie", render: stepEnergy }, { label: "Je woning", render: stepHome },
           { label: "Je contract", render: stepContract },
-        { label: "Wat je belangrijk vindt", render: stepGoal }, { label: "Advies", render: stepAdvice }
+        { label: "Wat je belangrijk vindt", render: stepGoal }, { label: "Controleren en berekenen", render: stepAdvice }
       ], { validate: check, onShow: () => window.scrollTo(0, 0) });
       view.append(flow.element); flow.show(0);
     }

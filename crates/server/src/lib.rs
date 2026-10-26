@@ -27,7 +27,7 @@ pub fn app(catalog: Catalog) -> Router {
         )
         .route(
             "/api/v1/analysis/runs/{id}",
-            delete(scenario_api::delete_run),
+            get(scenario_api::saved_run).delete(scenario_api::delete_run),
         )
         .route(
             "/api/v1/analysis/runs/{id}/recalculate",

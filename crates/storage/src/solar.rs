@@ -56,8 +56,8 @@ pub struct SavedSolar {
     pub analysis_runs: i64,
 }
 
-pub(crate) fn json(text: &str) -> Result<serde_json::Value> {
-    serde_json::from_str(text).map_err(|e| StorageError::InvalidInput(e.to_string()))
+pub(crate) fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    serde_json::from_str(text).map_err(|e| StorageError::Corrupt(e.to_string()))
 }
 
 impl Catalog {

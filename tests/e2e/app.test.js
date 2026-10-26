@@ -167,11 +167,19 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.goto(`${base}/#/keuzehulp`);
   await page.getByLabel("Stroom van het net per jaar (kWh)").fill("4600");
   await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").fill("2900");
-  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("3800");
+  // Zonder opwek staat de fout bij het veld waar je hem oplost, met de focus daar, en wordt hij voorgelezen.
+  await next(page);
+  const production = page.getByLabel("Opwek van je panelen per jaar (kWh)");
+  assert.equal(await production.evaluate(el => el === document.activeElement), true);
+  const describedBy = await production.getAttribute("aria-describedby");
+  assert.match(await page.textContent(`[id="${describedBy.split(" ").pop()}"]`), /Vul de opwek van je panelen in, of hieronder het vermogen in kWp/);
+  await production.fill("3800");
   await page.getByLabel("Waarvan warmtepomp (kWh per jaar)").fill("1500");
   assert.match(await page.textContent(".derived"), /5\.500 kWh/);
   await next(page);
   await page.waitForSelector("text=Je woning");
+  // Na Volgende staat de focus op de kop van de nieuwe stap.
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "Je woning");
   await page.click("text=Zelf, met de stekker");
   await next(page);
   await page.click("button:has-text('Gebruik de indicatie')");
@@ -198,11 +206,18 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.keyboard.press("Home");
   await page.getByLabel("Grootste accu (bruikbaar)").focus();
   await page.keyboard.press("End");
+  // De knop staat in de vaste balk; zonder bevestigingen gaat de focus naar de eerste, met de melding erbij.
+  const calculate = page.locator(".wizard-footer button:has-text('Bereken mijn advies')");
+  await calculate.click();
+  assert.equal(await page.evaluate(() => document.activeElement.closest(".check") !== null), true);
+  assert.match(await page.textContent(".wizard-body fieldset .error"), /Vink elke bevestiging aan/);
   for (const box of await page.$$("fieldset .check input")) await box.check();
-  await page.click("button:has-text('Bereken mijn advies')");
+  await calculate.click();
   // Vijftig accu's doorrekenen duurt met de debug-build in CI zo'n 20 tot ruim 30 seconden.
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
   const runHash = await page.evaluate(() => location.hash);
+  // De titel zegt waarmee is gerekend, zodat berekeningen van dezelfde dag uit elkaar te houden zijn.
+  await page.waitForSelector("#page-title:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek')");
   const summary = await page.textContent(".plain");
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
@@ -318,7 +333,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await runRow.waitFor({ state: "detached" });
   await page.goto(`${base}/${runHash}`);
   await page.waitForSelector("text=Berekening niet gevonden");
-  assert.deepEqual(problems, []);
+  // De verwijderde berekening geeft bewust een 404 van de server; de browser meldt dat in de console.
+  assert.deepEqual(problems.filter(p => !/status of 404/.test(p)), []);
   await close();
 });
 
@@ -661,9 +677,11 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   // Een berekening van een ouder rekenmodel nabootsen (alleen in de pagina): met één klik opnieuw, met
   // dezelfde invoer, en de nieuwe neemt in de vergelijking de plaats van de oude in.
   const compareHash = await page.evaluate(() => {
-    const runs = Data.runs;
-    Data.runs = async () => (await runs()).map(r => r.title === "Synthetische offerte"
-      ? { ...r, result: { ...r.result, model_version: "nl-self-consumption-v4" } } : r);
+    const run = Data.run;
+    Data.run = async id => {
+      const r = await run(id);
+      return r.title === "Synthetische offerte" ? { ...r, result: { ...r.result, model_version: "nl-self-consumption-v4" } } : r;
+    };
     const hash = location.hash;
     location.hash = "#/berekeningen";
     return hash;

@@ -427,10 +427,22 @@ pub async fn delete_run(
     Ok(Json(json!({})))
 }
 
+/// Overzicht van de laatste 100 berekeningen, zonder jaartabellen; één berekening haal je op met
+/// [`saved_run`].
 pub async fn history(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiError> {
     Ok(Json(
-        json!({"runs":catalog.list_analyses().await.map_err(database_error)?}),
+        json!({"runs":catalog.analysis_summaries().await.map_err(database_error)?}),
     ))
+}
+
+/// Eén bewaarde berekening met de volledige invoer en uitkomst, ook als ze ouder is dan de laatste 100.
+pub async fn saved_run(
+    State(catalog): State<Catalog>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    let run = catalog.analysis(id).await.map_err(database_error)?;
+    let run = run.ok_or_else(|| crate::api::missing("Deze berekening bestaat niet (meer)."))?;
+    Ok(Json(json!(run)))
 }
 
 #[derive(Deserialize)]

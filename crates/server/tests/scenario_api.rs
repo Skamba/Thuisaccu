@@ -688,3 +688,83 @@ async fn titles_count_characters_not_bytes_and_the_research_date_comes_from_the_
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_100() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", input(id)))
+        .await
+        .unwrap();
+    let first = body(response).await["id"].as_i64().unwrap();
+    let saved = catalog.analysis(first).await.unwrap().unwrap();
+    // Honderd goedkope kopieën duwen de eerste run uit de lijst; één afwijkende oude run mag niets breken.
+    for n in 0..100 {
+        let result = if n == 0 {
+            json!({})
+        } else {
+            saved.result.clone()
+        };
+        catalog
+            .save_analysis(&thuisaccu_storage::analysis::NewAnalysis {
+                import_id: id,
+                title: "Kopie",
+                model_version: "nl-self-consumption-v5",
+                profile_sha256: saved.input["profile_sha256"].as_str().unwrap(),
+                input_json: &saved.input.to_string(),
+                result_json: &result.to_string(),
+                now: n,
+            })
+            .await
+            .unwrap();
+    }
+    let get = |path: String| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            (response.status(), body(response).await)
+        }
+    };
+    let (status, list) = get("/api/v1/analysis/runs".into()).await;
+    assert_eq!(status, StatusCode::OK);
+    let runs = list["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 100);
+    assert!(runs.iter().all(|r| r["id"] != first));
+    let newest = &runs[0];
+    assert_eq!(
+        newest["input"]["request"]["parameters"]["objective"],
+        "net_present_value"
+    );
+    assert_eq!(newest["input"]["profile"]["options"]["is_demo"], true);
+    assert!(newest["input"]["request"].get("candidates").is_none());
+    let candidate = &newest["result"]["candidates"][0];
+    assert_eq!(candidate["key"], "test");
+    assert!(candidate["npv_eur"].is_number());
+    assert!(candidate.get("years").is_none());
+    assert_eq!(
+        newest["result"]["model_version"],
+        saved.result["model_version"]
+    );
+    assert!(
+        newest["result"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("FICTIEF"))
+    );
+    assert_eq!(runs[99]["result"]["candidates"], json!([]));
+
+    let (status, run) = get(format!("/api/v1/analysis/runs/{first}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(run["input"], saved.input);
+    assert_eq!(run["result"], saved.result);
+    let (status, error) = get("/api/v1/analysis/runs/999999".into()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["error"], "not_found");
+}

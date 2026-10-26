@@ -150,6 +150,22 @@ fn pv_shape(orientation: &str) -> Option<Vec<f64>> {
     as_f64(orientation)
 }
 
+/// Hele kWh in Nederlandse notatie met een punt per duizendtal, zoals de interface: 5500 wordt ‘5.500’.
+fn whole(kwh: f64) -> String {
+    let digits = format!("{:.0}", kwh.abs());
+    let mut grouped = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            grouped.push('.');
+        }
+        grouped.push(digit);
+    }
+    if kwh.round() < 0.0 {
+        grouped.insert(0, '−');
+    }
+    grouped
+}
+
 fn label_orientation(orientation: &str) -> &'static str {
     match orientation {
         "south" => "zuid",
@@ -199,7 +215,7 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     if heat_pump > 0.0 {
         warnings.push(format!(
             "Warmtepomp: {} kWh van het jaarverbruik. {:.0}% volgt de graaduren onder {} °C van het weerjaar 2023 in De Bilt (ruimteverwarming), {:.0}% is gelijkmatig over het jaar verdeeld (warm tapwater, verhouding uit een voorbeeld van CE Delft). Een lager rendement bij vorst en de regeling van je eigen warmtepomp zijn niet meegenomen.",
-            heat_pump.round(),
+            whole(heat_pump),
             (1.0 - TAP_WATER_SHARE) * 100.0,
             r.heating.base_c,
             TAP_WATER_SHARE * 100.0
@@ -208,7 +224,7 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     if let (Some(start), Some(request_ev)) = (ev_start, &request.ev) {
         warnings.push(format!(
             "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {} kW vanaf {start:02}.00 uur ({}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
-            ev.round(),
+            whole(ev),
             EV_CHARGE_KW.to_string().replace('.', ","),
             match request_ev.charging.as_str() {
                 "evening" => "’s avonds",
@@ -321,19 +337,19 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
         .map_or("geen zonnepanelen".to_owned(), |s| {
             format!(
                 "{} kWh opwek {}",
-                production_kwh.round(),
+                whole(production_kwh),
                 label_orientation(&s.orientation)
             )
         });
     let extras: String = [(heat_pump, "warmtepomp"), (ev, "auto")]
         .iter()
         .filter(|(kwh, _)| *kwh > 0.0)
-        .map(|(kwh, label)| format!(" ({} kWh {label})", kwh.round()))
+        .map(|(kwh, label)| format!(" ({} kWh {label})", whole(*kwh)))
         .collect();
     Ok(TypicalProfile {
         title: format!(
             "Geschat profiel · {} kWh verbruik{extras} · {solar_label}",
-            consumption.round()
+            whole(consumption)
         ),
         options: json!({
             "generator": GENERATOR,

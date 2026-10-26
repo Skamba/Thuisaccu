@@ -17,8 +17,10 @@ for (const file of ["ui.js", "data.js"]) {
 const { Data } = context;
 
 const config = { id: 1, name: "FICTIEF 5 kWh", manufacturer_name: "Fictief", product_name: "Testaccu" };
+const UNITS = { _wh: "Wh", _w: "W", _pct: "%", _va: "VA" };
 const claim = (id, metric_key, value, boundary = "ac_ac", extra = {}) => ({
   id, configuration_id: 1, review_status: "unreviewed", metric_key, value, boundary,
+  unit: Object.entries(UNITS).find(([suffix]) => metric_key.endsWith(suffix))?.[1],
   qualifier: "exact", conditions: "", source_title: "Synthetische bron", ...extra
 });
 const catalog = numbers => ({ numbers, features: [], texts: [], offers: [], warranties: [] });
@@ -52,4 +54,73 @@ test("de 800 W-begrenzing uit de keuzehulp wordt herkend", () => {
   assert.equal(Data.isAssumed("discharge_power_kw", "Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact."), true);
   assert.equal(Data.fromKeuzehulp({ assumptions: `${Data.KEUZEHULP_PREFIX} Aanname: …` }), true);
   assert.equal(Data.fromKeuzehulp({ assumptions: "Offerte van de installateur" }), false);
+});
+
+// Regels van describe(): welke bronclaim wordt een rekengegeven. Eén synthetische claimset per regel.
+const offer = (id, extra = {}) => ({
+  id, configuration_id: 1, review_status: "unreviewed", currency: "EUR", minor_unit_exponent: 2, tax_basis: "included",
+  amount_minor: 100000 * id, observed_at_unix_s: 1_700_000_000 + id, valid_until_unix_s: null, ...extra
+});
+const RULES = [
+  ["vermogen telt alleen aan de AC-kant", [claim(1, "continuous_discharge_power_w", 3000, "battery_dc"),
+    claim(2, "continuous_discharge_power_w", 2500, "ac_ac")], d => assert.equal(d.dischargeKw, 2.5)],
+  ["alleen een DC-vermogen: ontlaadvermogen ontbreekt en de accu is niet door te rekenen",
+    [claim(1, "usable_energy_wh", 5000), claim(2, "continuous_discharge_power_w", 3000, "dc_dc")], d => {
+      assert.equal(d.dischargeKw, null);
+      assert.equal(d.battery, null);
+      assert.ok(d.missing.includes("ontlaadvermogen aan de AC-kant (de bron noemt alleen DC)"));
+    }],
+  ["kVA wordt nooit kW", [claim(1, "usable_energy_wh", 5000), claim(2, "apparent_power_va", 3000)], d => {
+    assert.equal(d.dischargeKw, null);
+    assert.ok(d.missing.includes("werkelijk ontlaadvermogen in kW (kVA telt niet)"));
+  }],
+  ["zonder laadvermogen geldt het ontlaadvermogen, als aanname", [claim(1, "continuous_discharge_power_w", 2000),
+    claim(2, "continuous_charge_power_w", 4000, "battery_dc")], d => {
+      assert.equal(d.chargeKw, 2);
+      assert.match(d.notes.join(" "), /Aanname: laadvermogen gelijk.*alleen 4,0 kW laadvermogen aan de DC-kant/);
+    }],
+  ["een bovengrens voor het rendement telt niet", [claim(1, "round_trip_efficiency_pct", 95, "ac_ac", { qualifier: "at_most" })],
+    d => { assert.equal(d.efficiency, Data.FALLBACK.efficiency); assert.match(d.notes.join(" "), /bovengrens/); }],
+  ["een rendement inclusief sluimerverbruik telt niet dubbel",
+    [claim(1, "round_trip_efficiency_pct", 85, "ac_ac", { conditions: "Inclusief eigen verbruik in rust" })],
+    d => assert.equal(d.efficiency, Data.FALLBACK.efficiency)],
+  ["een DC-rendement is geen AC-rendement", [claim(1, "round_trip_efficiency_pct", 95, "battery_dc")], d => {
+    assert.equal(d.efficiency, Data.FALLBACK.efficiency);
+    assert.match(d.notes.join(" "), /alleen 95,0% rendement aan de DC-kant/);
+  }],
+  ["een bereik rekent met de ondergrens", [claim(1, "round_trip_efficiency_pct", 85, "ac_ac", { qualifier: "range", upper_value: 92 })],
+    d => assert.equal(d.efficiency, 85)],
+  ["de beste meetgrens wint, daarbinnen de voorzichtigste waarde", [claim(1, "round_trip_efficiency_pct", 80, "unspecified"),
+    claim(2, "round_trip_efficiency_pct", 90, "ac_ac"), claim(3, "round_trip_efficiency_pct", 86, "ac_ac")], d => {
+      assert.equal(d.efficiency, 86);
+      assert.match(d.notes.join(" "), /gerekend met claim #3/);
+    }],
+  ["sluimerverbruik: de hoogste waarde aan de AC-kant of zonder meetgrens, niet DC",
+    [claim(1, "standby_power_w", 5, "ac_ac"), claim(2, "standby_power_w", 12, "unspecified"), claim(3, "standby_power_w", 20, "battery_dc")],
+    d => assert.equal(d.standby, 12)],
+  ["bruikbaar is nominaal × ontlaaddiepte als de bron geen bruikbare capaciteit noemt",
+    [claim(1, "nominal_energy_wh", 10000), claim(2, "depth_of_discharge_pct", 90)], d => assert.equal(d.capacity, 9)],
+  ["zonder ontlaaddiepte geldt de aanname voor het bruikbare deel", [claim(1, "nominal_energy_wh", 10000)],
+    d => assert.equal(d.capacity, 10 * Data.FALLBACK.usableShare / 100)],
+  ["bruikbare capaciteit gaat voor nominaal", [claim(1, "nominal_energy_wh", 10000), claim(2, "usable_energy_wh", 9500)],
+    d => assert.equal(d.capacity, 9.5)],
+  ["betwiste en vervangen claims tellen niet", [claim(1, "usable_energy_wh", 5000, "ac_ac", { review_status: "disputed" }),
+    claim(2, "usable_energy_wh", 6000, "ac_ac", { review_status: "superseded" }), claim(3, "usable_energy_wh", 4000)],
+    d => assert.equal(d.capacity, 4)],
+  ["claims van een andere uitvoering tellen niet", [claim(1, "usable_energy_wh", 5000, "ac_ac", { configuration_id: 2 })], d => {
+    assert.equal(d.capacity, null);
+    assert.ok(d.missing.includes("bruikbare capaciteit"));
+  }]
+];
+for (const [name, numbers, check] of RULES) {
+  test(`describe(): ${name}`, () => check(Data.describe(catalog(numbers), config)));
+}
+
+test("describe(): de nieuwste geldige prijs inclusief btw; zonder btw of verlopen telt niet als aanschafprijs", () => {
+  const withOffers = offers => Data.describe({ ...catalog([]), offers }, config);
+  assert.equal(withOffers([offer(1), offer(2), offer(3, { review_status: "disputed" })]).offer.id, 2);
+  assert.equal(withOffers([offer(1), offer(2, { valid_until_unix_s: 1 })]).offer.id, 1);
+  const excluded = withOffers([offer(1, { tax_basis: "excluded" })]);
+  assert.equal(excluded.offer, null);
+  assert.equal(excluded.otherOffer.id, 1);
 });

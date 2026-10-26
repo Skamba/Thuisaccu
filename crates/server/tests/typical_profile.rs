@@ -117,6 +117,19 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
     )
     .await;
     let id = created["id"].as_i64().unwrap();
+    let (_, imports) = send(
+        &app,
+        Request::get("/api/v1/solar/imports")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    // Getallen in de naam zoals in de interface: een punt per duizendtal.
+    let name = imports["imports"][0]["filename"].as_str().unwrap();
+    assert!(
+        name.starts_with("Geschat profiel · 3.500 kWh verbruik · 4.000 kWh opwek"),
+        "{name}"
+    );
     let (status, curve) = send(
         &app,
         Request::get(format!("/api/v1/solar/imports/{id}/capacity"))

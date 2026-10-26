@@ -66,7 +66,7 @@
         return [box, h("span", {}, link(run.title, `#/berekeningen/${run.id}`), Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null), UI.dateTime(run.created_at_unix_s),
           Data.objectives[run.input.request.parameters.objective],
             rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
-          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", () => duplicate(run), "ghost"),
+          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost"),
             button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title}` }))];
       }), { caption: "Laatste 100 berekeningen", stack: true }));
       refresh();
@@ -76,9 +76,9 @@
   UI.page("berekeningen/:id", {
     title: "Uitkomst", subtitle: "Vergelijking met geen accu, binnen de vastgelegde aannames.", parent: "berekeningen",
     async render(view, actions, { id }) {
-      const run = (await Data.runs()).find(r => String(r.id) === id);
-      if (!run) { view.append(UI.empty("Berekening niet gevonden",
-        "Alleen de laatste 100 berekeningen zijn beschikbaar.",
+      let run;
+      try { run = await Data.run(id); }
+      catch (error) { view.append(UI.empty("Berekening niet gevonden", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button")));
         return; }
       $("page-title").textContent = run.title;
@@ -110,6 +110,14 @@
         annual_price_change_pct: "Prijsverandering energie per jaar (%)",
         price_uncertainty_pct: "Tariefvariatie gevoeligheid (%)",
         cost_uncertainty_pct: "Kostenvariatie gevoeligheid (%)" };
+      // Wat elke aanname doet, in gewone taal (docs/roi-model.md).
+      const help = { discount_pct: Data.GLOSSARY.find(([term]) => term === "Discontovoet")[1],
+        annual_cost_escalation_pct: "Hoeveel jaarlijkse kosten zoals een abonnement, onderhoud of verzekering elk jaar duurder worden.",
+        annual_pv_loss_pct: "Hoeveel minder je panelen elk jaar opwekken door veroudering.",
+        annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je bij Zelf doorrekenen apart in.",
+        annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk.",
+        price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
+        cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid." };
       // Dezelfde grenzen als bij Zelf doorrekenen, zodat een standaardwaarde daar altijd geldig is.
       const ranges = { annual_price_change_pct: ["-20", "30", "0.1"],
         ...Object.fromEntries(Scenario.PARAMS.map(([key, , min, max, step]) => [key, [min, max, step]])) };
@@ -127,7 +135,7 @@
         toast(saved ? "Standaardaannames bewaard voor nieuwe berekeningen." : "Bewaren in deze browser is niet beschikbaar.",
           !saved);
       } }, h("h2", {}, "Standaardaannames"), h("p", { class: "help" }, "Gelden voor nieuwe berekeningen in de keuzehulp en bij Zelf doorrekenen. Bewaarde berekeningen veranderen nooit."),
-        h("div", { class: "grid" }, Object.entries(labels).map(([key, label]) => field(label, controls[key]))),
+        h("div", { class: "grid" }, Object.entries(labels).map(([key, label]) => field(label, controls[key], help[key]))),
         h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Bewaar"),
           button("Herstel oorspronkelijke waarden", () => { store.set("thuisaccu-standaard", null); for (const [key, control] of Object.entries(controls)) control.value = String(Data.DEFAULTS[key]); toast("Oorspronkelijke waarden hersteld."); }, "ghost")));
       const preference = (key, label, options) => field(label,

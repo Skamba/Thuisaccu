@@ -134,7 +134,8 @@ window.UI = (() => {
     if (v.customError) return control.validationMessage;
     if (v.badInput) return "Vul een getal in.";
     if (v.valueMissing) return control.tagName === "SELECT" || control.type === "radio" ? "Maak een keuze."
-      : control.type === "file" ? "Kies een bestand." : "Vul dit veld in.";
+      : control.type === "file" ? "Kies een bestand." : control.type === "checkbox" ? "Vink elke bevestiging aan om verder te gaan."
+      : "Vul dit veld in.";
     if (v.rangeUnderflow) return `Vul ${num(control.min)} of meer in.`;
     if (v.rangeOverflow) return `Vul ${num(control.max)} of minder in.`;
     if (v.stepMismatch) {
@@ -146,17 +147,35 @@ window.UI = (() => {
     return control.validationMessage;
   }
 
+  // De melding staat onder het veld (of onder de groep keuzes) en wordt via aria-describedby voorgelezen.
   function validate(root) {
     let first = null;
+    root.querySelectorAll(".error").forEach(error => error.remove());
     for (const control of root.querySelectorAll("input, select, textarea")) {
       const valid = control.checkValidity();
       control.setAttribute("aria-invalid", String(!valid));
-      const holder = control.closest(".field");
-      holder?.querySelector(".error")?.remove();
-      if (!valid) { holder?.append(h("small", { class: "error" }, invalidMessage(control))); first ||= control; }
+      const described = (control.getAttribute("aria-describedby") || "").split(" ").filter(id => id && !id.startsWith("fout-"));
+      if (!valid) {
+        first ||= control;
+        const holder = control.closest(".field, fieldset");
+        let error = holder?.querySelector(":scope > .error");
+        if (holder && !error) holder.append(error = h("small", { class: "error", id: uid("fout") }, invalidMessage(control)));
+        if (error) described.push(error.id);
+      }
+      if (described.length) control.setAttribute("aria-describedby", described.join(" "));
+      else control.removeAttribute("aria-describedby");
     }
     first?.focus();
     return !first;
+  }
+  // Een fout die meer velden betreft, bij het veld waar je hem oplost: dezelfde melding en focus als bij
+  // één veld. De wizard wist zulke meldingen bij de volgende poging. Zonder veld blijft het een melding.
+  function reject(control, message, root) {
+    if (!control) { toast(message, true); return false; }
+    control.setCustomValidity(message);
+    control.addEventListener("input", () => control.setCustomValidity(""), { once: true });
+    validate(root);
+    return false;
   }
 
   // Met stack: true wordt elke rij op een smal scherm een kaartje met de kolomkop bij elke waarde (zie styles.css).
@@ -199,13 +218,20 @@ window.UI = (() => {
     return h("div", { class: "tabset" }, list, panels);
   }
 
-  // Wizard: stappen [{ label, render(body) }]; validate(index, body) mag blokkeren.
+  // Wizard: stappen [{ label, render(body) }]; validate(index, body) mag blokkeren. Met action(knop) zet
+  // een stap zijn hoofdknop (zoals ‘Bereken’) in de vaste balk onderaan, tot een andere stap verschijnt.
   function wizard(steps, { validate: check = () => true, onShow = () => {}, finish } = {}) {
     const stepper = h("ol", { class: "stepper" }), body = h("div", { class: "wizard-body" });
+    // Op een smal scherm vervangt één regel met voortgang de rij stapknoppen (styles.css).
+    const compact = h("p", { class: "stepper-compact" }), progress = h("progress", { max: steps.length, "aria-hidden": "true" });
     const previous = button("← Vorige", () => show(current - 1), "secondary");
-    const next = button("Volgende →", async () => { if (await check(current, body)) show(current + 1); });
-    const footer = h("div", { class: "wizard-footer" }, previous, next, finish ?? null);
-    let current = 0, reached = 0;
+    const next = button("Volgende →", async () => {
+      body.querySelectorAll("input, select, textarea").forEach(control => control.setCustomValidity(""));
+      if (await check(current, body)) show(current + 1);
+    });
+    const slot = h("span", { class: "wizard-action" });
+    const footer = h("div", { class: "wizard-footer" }, previous, next, slot, finish ?? null);
+    let current = 0, reached = 0, shown = null;
     steps.forEach((step, index) => stepper.append(h("li", {},
       h("button", { type: "button", class: "ghost", onclick: () => index <= reached && show(index) }, `${index + 1}. ${step.label}`))));
     function show(index) {
@@ -214,13 +240,20 @@ window.UI = (() => {
         const control = li.firstChild; control.disabled = i > reached;
         if (i === current) control.setAttribute("aria-current", "step"); else control.removeAttribute("aria-current");
       });
-      body.replaceChildren(); steps[current].render(body);
+      compact.replaceChildren(`Stap ${current + 1} van ${steps.length} · ${steps[current].label}`, progress);
+      progress.value = current + 1;
+      slot.replaceChildren(); body.replaceChildren(); steps[current].render(body);
       previous.disabled = current === 0; next.hidden = current === steps.length - 1;
       onShow(current, body);
-      body.querySelector("h2, h3")?.setAttribute("tabindex", "-1");
+      const heading = body.querySelector("h2, h3");
+      heading?.setAttribute("tabindex", "-1");
+      // Na Volgende of Vorige begint een schermlezer bij de kop van de nieuwe stap.
+      if (shown !== null && shown !== current) heading?.focus({ preventScroll: true });
+      shown = current;
     }
-    const element = h("div", { class: "wizard" }, stepper, body, footer);
-    return { element, show, rerender: () => show(current), get current() { return current; } };
+    const element = h("div", { class: "wizard" }, stepper, compact, body, footer);
+    return { element, show, rerender: () => show(current), action: control => slot.replaceChildren(control),
+      get current() { return current; } };
   }
 
   function dialog(title, ...content) {
@@ -402,7 +435,7 @@ window.UI = (() => {
 
   return {
     h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, api, store, toast, busy,
-    button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, table, stats, empty,
+    button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

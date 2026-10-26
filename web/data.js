@@ -120,7 +120,10 @@ window.Data = (() => {
   }
   const typicalSources = async () => (typicalCache ||= await api("/api/v1/solar/typical"));
   const imports = async () => (await api("/api/v1/solar/imports")).imports;
+  // De lijst is een samenvatting zonder jaartabellen en zonder de invoer van de opties; voor tonen,
+  // vergelijken of aanpassen haal je de volledige berekening op met `run(id)`.
   const runs = async () => (await api("/api/v1/analysis/runs")).runs;
+  const run = id => api(`/api/v1/analysis/runs/${id}`);
   const invalidateCatalog = () => { catalogCache = null; };
 
   const objectives = {
@@ -479,7 +482,7 @@ window.Data = (() => {
 
   return {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
-    catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
+    catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults
   };

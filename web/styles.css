@@ -82,6 +82,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 input, select, textarea { font: inherit; width: 100%; min-width: 0; padding: var(--control); border: 1px solid var(--line); border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--ink); }
 input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
 .error { color: var(--danger); font-weight: 600; }
+fieldset > .error { display: block; margin-top: .4rem; }
+.check:has(> input[aria-invalid="true"]) > span { color: var(--danger); }
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--pad); margin: 0 0 1rem; }
 legend { font-weight: 700; padding: 0 .35rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 0 var(--gap); }
@@ -172,6 +174,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1.25rem; border-bottom: 1px solid var(--line); }
 .stepper button { border-radius: var(--radius) var(--radius) 0 0; border-bottom: 3px solid transparent; color: var(--muted); }
 .stepper button[aria-current="step"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); }
+.stepper-compact { display: none; }
+.wizard-action:empty { display: none; }
 .wizard-footer { position: sticky; bottom: 0; display: flex; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
 
 /* Keuzehulp en resultaat */
@@ -186,6 +190,12 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .verdict .stats { grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); }
 .verdict .stats dd { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 0; }
 @media (max-width: 40rem) { .verdict .stats { grid-template-columns: 1fr 1fr; } .verdict .stats dd { font-size: 1.15rem; } }
+/* Op een smal scherm één regel ‘Stap 2 van 5 · …’ met voortgang in plaats van een rij stapknoppen over drie regels. */
+@media (max-width: 40rem) {
+  .stepper { display: none; }
+  .stepper-compact { display: flex; flex-direction: column; gap: .35rem; margin: 0 0 1rem; font-weight: 600; color: var(--muted); }
+  .stepper-compact progress { width: 100%; height: .45rem; accent-color: var(--accent); }
+}
 .verdict-plug { margin: .5rem 0 0; }
 .fold { border-top: 1px solid var(--line); padding: .35rem 0; }
 .fold > summary { padding: .3rem 0; }
