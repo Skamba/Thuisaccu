@@ -43,19 +43,36 @@ window.Compare = (() => {
         `kosten ${price(variant.export_fee_eur_per_kwh)} per kWh)` : "geen"],
       ["extra verbruik", (request.load_changes || []).map(c => `${c.kind === "ev" ? "elektrische auto" : "warmtepomp"} vanaf ` +
         `${c.from_calendar_year} (${kwh(c.annual_kwh)} per jaar)`).join(", ") || "geen"],
-      ["accu’s", request.candidates.map(c => c.name).join(", ")],
       ...request.candidates.map(c => [c.name, candidate(c)])
     ];
+  }
+  // De accu's als aantal per aansluiting, met de namen die niet in elke andere berekening staan. Een volledige
+  // lijst van tientallen uitvoeringen maakt de cel onleesbaar; meer dan drie namen staan ingeklapt.
+  const CONNECTION = { plug: "stekker", fixed: "vast", circuit: "stekker op eigen groep" };
+  function batteries(run, all) {
+    const names = r => new Set(r.input.request.candidates.map(c => c.name));
+    const mine = names(run), others = all.filter(r => r !== run).map(names);
+    if (others.every(set => set.size === mine.size && [...mine].every(name => set.has(name)))) return null;
+    const candidates = run.input.request.candidates, counts = new Map();
+    for (const c of candidates) if (CONNECTION[c.connection]) counts.set(CONNECTION[c.connection], (counts.get(CONNECTION[c.connection]) ?? 0) + 1);
+    const only = [...mine].filter(name => others.some(set => !set.has(name)));
+    const head = `accu’s: ${candidates.length}` + (counts.size ? ` (${[...counts].map(([label, count]) => `${count} ${label}`).join(", ")})` : "");
+    if (!only.length) return `${head}; een andere berekening heeft er meer`;
+    const label = `${head}; niet in elke andere berekening: `;
+    return only.length <= 3 ? label + only.join(", ")
+      : [label, h("details", { class: "fold" }, h("summary", {}, `${only.length} accu’s`), h("ul", { class: "compact" }, only.map(name => h("li", {}, name))))];
   }
   function differences(run, all) {
     const others = all.filter(r => r !== run).map(r => new Map(facts(r)));
     const lines = facts(run).filter(([label, text]) => others.some(o => o.has(label) && o.get(label) !== text))
       .map(([label, text]) => `${label}: ${text}`);
+    const battery = batteries(run, all);
+    if (battery) lines.push(battery);
     const quote = run.input.request.quote_basis;
     if (quote) lines.unshift(`offerte: ${quote.changes.map(Data.quoteChange).join("; ")}` + (quote.price
       ? `; ${{ fixed: "vaste prijs", subject_to_survey: "onder voorbehoud van schouw", unknown: "niet bekend of de prijs vast is" }[quote.price.terms]}`
       : ""));
-    return lines.length ? h("ul", { class: "compact" }, lines.map(text => h("li", {}, text))) : "Dezelfde invoer als de andere";
+    return lines.length ? h("ul", { class: "compact" }, lines.map(line => h("li", {}, line))) : "Dezelfde invoer als de andere";
   }
   // Verschillen die de uitkomsten zelf onvergelijkbaar maken; die staan boven de tabel.
   function caveats(runs) {

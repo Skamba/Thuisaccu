@@ -24,6 +24,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+      # Snelle controles zonder browser, zodat een syntaxfout in web/ niet live gaat; de volledige
+      # controles staan in ci.yml.
+      - name: Check JavaScript syntax and data.js
+        run: |
+          for f in web/*.js; do node --check "$f"; done
+          node --test tests/e2e/data.test.js
       - name: Install stable Rust with the WebAssembly target
         run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2

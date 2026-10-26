@@ -64,22 +64,13 @@ window.Results = (() => {
   // Capaciteit en vermogen in labels: hele getallen zonder decimaal, anders één.
   const n1 = value => n(value, Number.isInteger(value) ? 0 : 1);
   // Soort aansluiting in woorden, voor kaarten en tabellen.
-  const CONNECTION = { plug: "Stekker", fixed: "Vast", circuit: "Eigen groep" };
+  const CONNECTION = { plug: "Stekker", fixed: "Vast", circuit: "Stekker op eigen groep" };
   const connectionText = (c, kinds) => !kinds.get(c.key) ? "Onbekend"
-    : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Eigen groep, afgeleid" : CONNECTION[kinds.get(c.key)];
-  // Korte naam voor grafieken en keuzelijsten: merk en product, bruikbare capaciteit en aansluiting met vermogen, zodat
-  // het verschil tussen twee uitvoeringen niet wegvalt als een lange naam wordt afgekort. Alleen voor namen uit de
-  // catalogus (met ‘ · ’); een eigen naam blijft staan. Zouden twee korte namen gelijk zijn, dan houden die opties hun volle naam.
+    : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Stekker op eigen groep, afgeleid" : CONNECTION[kinds.get(c.key)];
+  // Korte namen voor grafieken en keuzelijsten (Data.shortLabels).
   function shortNames(run, all, kinds) {
-    const inputs = new Map(run.input.request.candidates.map(o => [o.key, o]));
-    const how = { plug: "stekker", fixed: "vast", circuit: "eigen groep" };
-    const short = new Map(all.filter(c => inputs.has(c.key) && c.name.includes(" · ")).map(c => {
-      const b = inputs.get(c.key).battery, kind = how[kinds.get(c.key)];
-      return [c.key, `${c.name.split(" · ")[0]} · ${n1(b.usable_capacity_kwh)} kWh · ${kind ? `${kind} ` : ""}` +
-        `${n1(b.discharge_power_kw)} kW${/\(afgeleid\)$/.test(c.name) ? " (afgeleid)" : ""}`];
-    }));
-    const count = new Map([...short.values()].map(s => [s, [...short.values()].filter(t => t === s).length]));
-    for (const c of all) c.short = short.has(c.key) && count.get(short.get(c.key)) === 1 ? short.get(c.key) : c.name;
+    const labels = Data.shortLabels(run.input.request.candidates, kinds);
+    for (const c of all) c.short = labels.get(c.key) ?? c.name;
   }
   const shown = all => all.slice(0, TOP + 1);
   const more = all => all.length > TOP + 1;
@@ -199,7 +190,10 @@ window.Results = (() => {
   function verdict(run, kinds) {
     const result = run.result, option = judged(run), rec = option?.key === result.recommended_key;
     const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
-    const isPlug = option && kinds.get(option.key) === "plug";
+    const isPlug = option && kinds.get(option.key) === "plug", isCircuit = option && kinds.get(option.key) === "circuit";
+    // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
+    // installateur die hem vast wil aansluiten.
+    const installed = isCircuit ? result.candidates.filter(c => kinds.get(c.key) === "fixed").sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     const fixed = isPlug ? result.candidates.filter(c => kinds.get(c.key) && kinds.get(c.key) !== "plug")
       .sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
@@ -212,11 +206,15 @@ window.Results = (() => {
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
         ].filter(Boolean)), closeCall(run, option)] : null,
+      isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Een stekkerbatterij op een eigen groep. "),
+        "Vraag vooraf of een installateur hem vast wil aansluiten en of de fabrikant dat toestaat. " +
+        (installed ? `De beste vaste installatie in deze berekening is ${installed.name}: netto ${eur0(installed.npv_eur)} in geld van nu.`
+          : "Er zit geen vaste installatie in deze berekening.")) : null,
       // Is de besproken accu zelf geen stekkerbatterij, dan gaat het advies over de andere opties.
       plugged ? h("p", { class: "verdict-plug" }, h("strong", {}, option && !isPlug
         ? "Er zitten ook stekkerbatterijen in een gewoon stopcontact in deze berekening; Milieu Centraal raadt die af. "
         : "Milieu Centraal raadt stekkerbatterijen af. "),
-        fixed ? `De beste vaste aansluiting in deze berekening is ${fixed.name}: netto ${eur0(fixed.npv_eur)} in geld van nu. ` : "",
+        fixed ? `De beste optie met een installateur in deze berekening is ${fixed.name}: netto ${eur0(fixed.npv_eur)} in geld van nu. ` : "",
         toAdvice("Lees waarom en wat veiliger is")) : null);
   }
 
@@ -427,21 +425,31 @@ window.Results = (() => {
     const result = run.result, out = h("div", { class: "print-keep" });
     const inputs = new Map(run.input.request.candidates.map(o => [o.key, o]));
     // Waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen. De naam noemt vaak de nominale capaciteit.
+    // Een capaciteit die de keuzehulp heeft aangenomen (bijvoorbeeld 90% van nominaal) staat er als aanname bij.
     const spec = c => {
-      const b = inputs.get(c.key)?.battery;
+      const input = inputs.get(c.key), b = input?.battery;
+      const assumed = b && Data.isAssumed("usable_capacity_kwh", input.assumptions || "");
       return b ? h("p", { class: "help option-spec" }, [kinds.get(c.key) ? connectionText(c, kinds) : null,
-        `${n1(b.usable_capacity_kwh)} kWh bruikbaar`, `${n1(b.discharge_power_kw)} kW ontladen, ${n1(b.charge_power_kw)} kW laden`]
-        .filter(Boolean).join(" · ")) : null;
+        `${assumed ? "≈ " : ""}${n1(b.usable_capacity_kwh)} kWh bruikbaar${assumed ? " (aanname)" : ""}`,
+        `${n1(b.discharge_power_kw)} kW ontladen, ${n1(b.charge_power_kw)} kW laden`].filter(Boolean).join(" · ")) : null;
     };
-    // Dezelfde uitvoering met een andere aansluiting (stekker en eigen groep): het verschil in één zin.
+    // Dezelfde uitvoering of hetzelfde product (merk en product, het deel van de naam vóór ‘ · ’) met een andere
+    // aansluiting: het verschil in één zin. Bij hetzelfde product de uitvoering met de dichtstbijzijnde capaciteit.
+    const head = c => c.name.split(" · ")[0];
     const sibling = c => {
-      const id = inputs.get(c.key)?.configuration_id, kind = kinds.get(c.key);
-      const other = id == null || !kind ? null : all.find(o => o.key !== c.key && inputs.get(o.key)?.configuration_id === id &&
-        kinds.get(o.key) && kinds.get(o.key) !== kind);
+      const input = inputs.get(c.key), kind = kinds.get(c.key);
+      if (!input || !kind) return null;
+      const others = all.filter(o => o.key !== c.key && inputs.has(o.key) && kinds.get(o.key) && kinds.get(o.key) !== kind);
+      const same = input.configuration_id == null ? null : others.find(o => inputs.get(o.key).configuration_id === input.configuration_id);
+      const capacity = o => inputs.get(o.key).battery.usable_capacity_kwh;
+      const other = same || (input.configuration_id == null || !c.name.includes(" · ") ? null : others
+        .filter(o => inputs.get(o.key).configuration_id != null && head(o) === head(c))
+        .sort((a, b) => Math.abs(capacity(a) - input.battery.usable_capacity_kwh) - Math.abs(capacity(b) - input.battery.usable_capacity_kwh))[0]);
       if (!other) return null;
       const kw = n1(inputs.get(other.key).battery.discharge_power_kw), diff = other.initial_investment_eur - c.initial_investment_eur;
-      const how = { plug: `in een gewoon stopcontact (${kw} kW)`, circuit: `op een eigen groep (${kw} kW)`, fixed: "als vaste installatie" }[kinds.get(other.key)];
-      return h("p", { class: "help" }, `Dezelfde accu ${how}: netto voordeel ${eur0(other.npv_eur)}, ` +
+      const how = { plug: "in een gewoon stopcontact", circuit: "op een eigen groep", fixed: "als vaste installatie" }[kinds.get(other.key)];
+      return h("p", { class: "help" }, (same ? `Dezelfde accu ${how} (${kw} kW)` : `Hetzelfde product ${how} ` +
+        `(${n1(capacity(other))} kWh bruikbaar, ${kw} kW)`) + `: netto voordeel ${eur0(other.npv_eur)}, ` +
         (Math.round(diff) === 0 ? "even duur in aanschaf." : `${eur0(Math.abs(diff))} ${diff < 0 ? "goedkoper" : "duurder"} in aanschaf.`));
     };
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
@@ -1099,9 +1107,11 @@ window.Results = (() => {
     const costCatalog = await Data.costs(), categories = costCatalog.categories;
     // De soort aansluiting staat sinds 26 oktober 2026 in de run; bij oudere runs uit de catalogus. Zonder catalogus
     // (of bij een oude gedeelde run met onbekende accu's) blijft de soort onbekend en het stekkeradvies weg.
-    const described = request.candidates.every(c => c.connection) ? new Map()
+    const described = request.candidates.every(c => c.connection != null) ? new Map()
       : await Data.described(request.candidates).catch(() => new Map());
-    const kinds = new Map(request.candidates.map(c => [c.key, c.connection ?? Data.connectionOf(described.get(c.key))]));
+    // Een onbekende waarde (een link uit een nieuwere versie of met de hand aangepast) telt als onbekend.
+    const kinds = new Map(request.candidates.map(c => [c.key, Data.CONNECTIONS.includes(c.connection) ? c.connection
+      : c.connection == null ? Data.connectionOf(described.get(c.key)) : null]));
     shortNames(run, all, kinds);
     UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
       shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),

@@ -161,8 +161,9 @@
         ["plug", "Zelf, met de stekker", "Stekkerbatterij tot 800 W in een gewoon stopcontact. Goedkoper en kleiner, " +
           "geen installateur. Lees wel het veiligheidsadvies hieronder."],
         ["fixed", "Laten installeren",
-          "Vaste aansluiting in de meterkast. Meer vermogen en capaciteit, hogere kosten."],
-        ["any", "Weet ik nog niet", "We laten beide soorten zien."]]),
+          "Een installateur sluit de accu vast aan in de meterkast: een vaste thuisaccu, of een stekkerbatterij op een eigen groep. " +
+          "Meer vermogen en capaciteit, hogere kosten."],
+        ["any", "Weet ik nog niet", "We laten alle soorten zien: stekker, vast en stekker op een eigen groep."]]),
       answers.install === "fixed" ? null : h("div", { class: "callout" }, h("p", {}, RULES.plug)),
       pick("phases", "Wat voor aansluiting heb je?", [
         ["1", "1-fase", "Eén hoofdschakelaar in de meterkast, vaak 1×35 A of 1×40 A."],
@@ -245,7 +246,8 @@
   function fit(p) {
     const no = [], notes = [];
     if (answers.install === "plug" && p.kind === "fixed") no.push("Moet door een installateur worden aangesloten.");
-    if (answers.install === "fixed" && p.kind === "plug") no.push("Dit is een stekkerbatterij, geen vaste installatie.");
+    if (answers.install === "fixed" && p.kind === "plug") no.push(p.hasCircuit ? "Als stekker in een stopcontact geen vaste " +
+      "installatie; dezelfde accu op een eigen groep door een elektricien doet wel mee (afgeleid)." : "Dit is een stekkerbatterij, geen vaste installatie.");
     if (p.kind == null) notes.push("Soort aansluiting onbekend.");
     if (p.phases === 3 && answers.phases === "1") no.push("Werkt alleen op een 3-fasenaansluiting.");
     if (p.phases === 3 && answers.phases === "unknown") notes.push("Werkt alleen op een 3-fasenaansluiting; controleer je meterkast.");
@@ -347,6 +349,8 @@
     const usage = answers.data === "file" ? null : gross(), solar = answers.panels === "yes" ? production() : null;
     const about = answers.data === "file" ? ["eigen meetbestand"] : [usage == null ? null : `${n(usage, 0)} kWh verbruik`,
       answers.panels === "no" ? "geen zonnepanelen" : solar == null ? null : `${n(solar, 0)} kWh opwek`];
+    // De gekozen aansluiting onderscheidt anders gelijke berekeningen in Mijn berekeningen.
+    about.push({ plug: "stekker", fixed: "met installateur", any: "alle aansluitingen" }[answers.install]);
     return {
       title: ["Keuzehulp", about.filter(Boolean).join(", ")].filter(Boolean).join(": "), solar_import_id: importId,
       site: { address: "Nederland (keuzehulp, geen adres opgegeven)", latitude: null, longitude: null, bag_id: null },
@@ -483,7 +487,7 @@
     const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
     // Een stekkeraccu die meer dan 800 W kan, doet ook mee als afgeleide uitvoering op een eigen groep.
     const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c))
-      .flatMap(p => [plugLimit(p), Data.circuitVariant(cmp, p)].filter(Boolean)).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? Data.costLinesFor(costCatalog, p, answers) : null }))
+      .flatMap(p => { const variant = Data.circuitVariant(cmp, p); return [{ ...plugLimit(p), hasCircuit: variant != null }, variant].filter(Boolean); }).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? Data.costLinesFor(costCatalog, p, answers) : null }))
       .map(p => ({ ...p, reason: exclusion(p, labels) }));
     const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s rekenen we door?"));
     if (!products.length) {

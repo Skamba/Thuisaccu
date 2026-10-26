@@ -232,7 +232,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
   const runHash = await page.evaluate(() => location.hash);
   // De titel zegt waarmee is gerekend, zodat berekeningen van dezelfde dag uit elkaar te houden zijn.
-  await page.waitForSelector("#page-title:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek')");
+  await page.waitForSelector("#page-title:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek, stekker')");
   // Liggen de beste twee binnen de onzekerheid, dan noemt het korte antwoord de nummer twee (aangepaste kopie van deze run).
   const closeCall = await page.evaluate(async id => {
     const run = structuredClone(await Data.run(id)), [a, b, ...others] = run.result.candidates;
@@ -290,7 +290,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.ok(summary.indexOf("raadt stekkerbatterijen op dit moment af") < summary.indexOf("Zo reken je de besparing"));
   // Elke kaart noemt aansluiting, bruikbare capaciteit en vermogen; de grafiek gebruikt korte namen met dezelfde gegevens.
   assert.match(await page.locator("article.option").nth(1).textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);
-  assert.match(await page.locator("figure.chart").first().textContent(), / · [\d,]+ kWh · stekker 0,8 kW/);
+  assert.match(await page.locator("figure.chart").first().textContent(), /Stekker 0,8 kW · .+? · [\d,]+ kWh/);
   await page.locator("button:has-text('Milieu Centraal raadt stekkerbatterijen af: lees waarom')").first().click();
   assert.equal(await page.evaluate(() => document.activeElement.id), "stekkeradvies");
   assert.equal(await page.evaluate(() => location.hash), runHash);
@@ -659,7 +659,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await row("Extra/hybride omvormer").getByLabel("Bron of aanname").fill("Synthetische offerte");
   // Als stekkerbatterij met 5 kW laden en ontladen: het advies noemt dat beide boven de 800 W liggen. Na het vullen
   // gekozen, dus de kosten blijven die van een vaste installatie.
-  await card.getByLabel("Soort accu (voor de indicaties)").selectOption("plug");
+  // Een eigen optie begint met een onbekende soort aansluiting.
+  assert.equal(await card.getByLabel("Soort aansluiting").inputValue(), "unknown");
+  await card.getByLabel("Soort aansluiting").selectOption("plug");
   await next(page);
   await page.waitForSelector("text=De invoer is compleet.");
   for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();

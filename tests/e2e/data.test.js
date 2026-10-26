@@ -270,3 +270,33 @@ test("described(): de uitvoering achter een optie, op naam en soort aansluiting"
   assert.equal(found.get("c1").battery.discharge_power_kw, 0.8, "de stekkeruitvoering is begrensd op 800 W");
   assert.equal(found.get("g1").battery.discharge_power_kw, 2.5);
 });
+
+test("shortLabels(): korte namen alleen uit de catalogus, uniek, anders met meer detail of de volle naam", () => {
+  const battery = (kwh, kw) => ({ usable_capacity_kwh: kwh, discharge_power_kw: kw });
+  const candidates = [
+    { key: "a", configuration_id: 1, name: "Fictief Accu · 1-fase · 5 kWh · stekker", battery: battery(5, 0.8) },
+    { key: "b", configuration_id: 2, name: "Fictief Accu · 3-fase · 5 kWh · stekker", battery: battery(5, 0.8) },
+    { key: "c", configuration_id: 3, name: "Fictief Groot · 10 kWh", battery: battery(9.5, 2.4) },
+    { key: "d", configuration_id: 3, name: "Fictief Groot · 10 kWh · eigen groep 3 kW (afgeleid)", battery: battery(9.5, 3) },
+    { key: "own", configuration_id: null, name: "Offerte · Installateur A", battery: battery(10, 5) },
+    { key: "e", configuration_id: 4, name: "Fictief Twee · 5 kWh", battery: battery(5, 1) },
+    { key: "f", configuration_id: 5, name: "Fictief Twee · 5 kWh", battery: battery(5, 1) }];
+  const kinds = new Map([["a", "plug"], ["b", "plug"], ["c", "fixed"], ["d", "circuit"], ["own", "plug"], ["e", "fixed"], ["f", "fixed"]]);
+  const labels = Data.shortLabels(candidates, kinds);
+  assert.equal(labels.get("a"), "Stekker 0,8 kW · Fictief Accu · 1-fase · 5 kWh");
+  assert.equal(labels.get("b"), "Stekker 0,8 kW · Fictief Accu · 3-fase · 5 kWh");
+  assert.equal(labels.get("c"), "Vast 2,4 kW · Fictief Groot · 9,5 kWh");
+  assert.equal(labels.get("d"), "Eigen groep 3 kW (afgeleid) · Fictief Groot · 9,5 kWh");
+  assert.equal(labels.get("own"), "Offerte · Installateur A", "een eigen naam blijft staan");
+  assert.equal(labels.get("e"), "Fictief Twee · 5 kWh", "zonder onderscheid de volle naam");
+});
+
+test("costLinesFor(): een stekkeraccu op een eigen groep krijgt de extra groep als installatie", () => {
+  const costs = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "crates", "server", "resources", "cost-catalog.json"), "utf8"));
+  const p = { kind: "plug", circuit: false, phases: null, inverterIncluded: true, config };
+  const installation = (item, kind) => Data.costLinesFor(costs, item, {}, kind).find(l => l.category === "installation");
+  assert.notEqual(installation(p, "plug").status, "priced");
+  const group = installation({ ...p, circuit: true }, "fixed");
+  assert.equal(group.status, "priced");
+  assert.equal(group.amount_minor, Math.round(costs.estimates.amounts.dedicated_circuit.amount_eur * 100));
+});

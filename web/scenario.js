@@ -27,6 +27,7 @@ window.Scenario = (() => {
     ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", "0", "80", "1"]
   ];
   // Extra verbruik vanaf een later jaar, met dezelfde vormen als het geschatte profiel (crates/server/src/typical_profile.rs).
+  const CONNECTIONS = Data.CONNECTIONS;
   const CHANGES = {
     heat_pump: { label: "Warmtepomp", max: 30000, kwh: "2500" },
     ev: { label: "Elektrische auto", max: 20000, kwh: "2000" }
@@ -37,7 +38,7 @@ window.Scenario = (() => {
   const NO_ADDRESS = /^Nederland \((keuzehulp, )?geen adres opgegeven\)$/;
   const blankOption = (index, extra = {}) => ({
     key: `optie-${Date.now().toString(36)}-${index}`, name: `Eigen optie ${index}`, configuration_id: null,
-      kind: "fixed",
+      kind: "unknown",
     battery: Object.fromEntries(TECH.map(([key]) => [key, ""])), assumptions: "", costs: {},
       loan: { amount: "0", interest: "0", years: "0" }, warranty: "", ...extra
   });
@@ -81,9 +82,10 @@ window.Scenario = (() => {
       changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: plain(c.from_calendar_year),
         kwh: plain(c.annual_kwh), charging: c.charging || "evening" })),
       options: request.candidates.map((c, i) => ({
-        // De soort aansluiting staat sinds 26 oktober 2026 in de run; anders leidt stap 3 hem af uit de catalogus (`resolveKinds`).
+        // De soort aansluiting staat sinds 26 oktober 2026 in de run; anders leidt stap 3 hem af uit de catalogus
+        // (`resolveKinds`), en is hij bij een eigen optie onbekend.
         key: c.key, name: c.name, configuration_id: c.configuration_id,
-          kind: c.connection ?? (c.configuration_id == null ? "fixed" : null),
+          kind: CONNECTIONS.includes(c.connection) ? c.connection : c.configuration_id == null ? "unknown" : null,
           assumptions: c.assumptions,
         battery: Object.fromEntries(TECH.map(([key]) => [key, plain(c.battery[key])])),
         costs: Object.fromEntries(c.costs.map(l => [l.category,
@@ -209,7 +211,7 @@ window.Scenario = (() => {
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
         financing: { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
           annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") },
-        assumptions: option.assumptions, warranty_stress, connection: option.kind || undefined };
+        assumptions: option.assumptions, warranty_stress, connection: CONNECTIONS.includes(option.kind) ? option.kind : undefined };
     });
     // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
     const site = state.site && state.site.address === state.address ? state.site
@@ -411,12 +413,15 @@ window.Scenario = (() => {
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
   // extra groep, zoals in de keuzehulp.
+  // Bij een onbekende soort de posten van de catalogus, of anders die van een vaste installatie; de soort zelf blijft onbekend.
   function fillEstimates(option, costCatalog, described) {
-    option.kind ??= Data.connectionOf(described) || "fixed";
-    const circuit = option.kind === "circuit", kind = circuit ? "fixed" : option.kind;
+    const chosen = CONNECTIONS.includes(option.kind) ? option.kind : Data.connectionOf(described) || "fixed";
+    const circuit = chosen === "circuit", kind = circuit ? "fixed" : chosen;
+    // Zonder product is een ingebouwde omvormer bij een stekkerbatterij een aanname, geen bronclaim.
     const lines = described ? Data.costLinesFor(costCatalog, { ...described, circuit }, {}, kind)
       : Data.estimateCosts(costCatalog, { kind, circuit, manufacturer: "", phases: null,
-        inverterIncluded: option.kind !== "fixed" }, {});
+        inverterIncluded: chosen !== "fixed" }, {}).map(line => line.category !== "inverter" || line.status !== "included" ? line
+          : { ...line, source: "Aanname", notes: "Aanname: een stekkerbatterij heeft een ingebouwde omvormer; controleer dat in de offerte." });
     let filled = 0;
     for (const line of lines) {
       const current = option.costs[line.category];
@@ -477,10 +482,12 @@ window.Scenario = (() => {
           if (year) year.disabled = amount.disabled;
           if (amount.disabled) { amount.value = ""; line.amount = ""; } persist(); refreshProgress(); });
       return h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), h("small", {}, c.note)),
-        h("div", { class: "cost-controls" }, field("Status", status), field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount), year ? field("Einde van jaar", year) : h("span"), field("Bron of aanname", source)));
+        h("div", { class: "cost-controls" }, field("Status", status), field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount), year ? field("Einde van jaar", year) : h("span"),
+          // De toelichting bij een indicatie (bijvoorbeeld wat niet is meegeteld) staat onder de bron.
+          field("Bron of aanname", source, line.notes && line.notes !== "Invoer in Zelf doorrekenen" ? line.notes : undefined)));
     });
-    const kind = select([["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij"],
-      ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind,
+    const kind = select([["unknown", "Onbekend"], ["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij in een stopcontact"],
+      ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind ?? "unknown",
       { onchange: event => { option.kind = event.target.value; persist(); } });
     const estimate = button("Vul open posten met indicaties", async () => {
       const [cmp, costCatalog] = await Promise.all([Data.catalog(), Data.costs()]);
@@ -496,7 +503,9 @@ window.Scenario = (() => {
     return h("details", { class: "panel option-editor", open: true }, h("summary", {}, option.name || `Optie ${index + 1}`),
       h("div", { class: "actions" }, remove), tech, assumptions,
       h("h3", {}, "Kosten"), progress, total,
-        h("div", { class: "actions" }, field("Soort accu (voor de indicaties)", kind), estimate),
+        h("div", { class: "actions" }, field("Soort aansluiting", kind, "Bepaalt welke posten ‘Vul open posten’ invult en hoe " +
+          "de uitkomst de aansluiting noemt. Al ingevulde posten blijven staan; een stekkerbatterij op een eigen groep krijgt " +
+          "de post voor een extra groep."), estimate),
       h("p", { class: "help" },
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
         h("div", { class: "cost-rows" }, rows),
@@ -506,10 +515,14 @@ window.Scenario = (() => {
 
   // Een overgenomen run weet niet of een catalogusoptie een stekkeraccu is; zonder dat zou ‘Vul open posten’ het
   // installatiepakket van een vaste accu invullen.
-  function resolveKinds(cmp) {
-    for (const option of state.options.filter(o => o.kind == null)) {
+  // Op naam, zodat een afgeleide uitvoering op een eigen groep geen stekkeraccu wordt (`Data.described`).
+  async function resolveKinds(cmp) {
+    const open = state.options.filter(o => o.kind == null);
+    if (!open.length) return;
+    const described = await Data.described(open).catch(() => new Map());
+    for (const option of open) {
       const config = cmp.configurations.find(c => c.id === option.configuration_id);
-      option.kind = (config && Data.connectionOf(Data.describe(cmp, config))) || "fixed";
+      option.kind = Data.connectionOf(described.get(option.key) ?? (config && Data.describe(cmp, config))) || "unknown";
     }
   }
 
@@ -518,8 +531,8 @@ window.Scenario = (() => {
       h("p", { class: "help" },
         "Elke optie wordt vergeleken met geen accu. Ontbrekende specificaties en prijzen worden niet stilzwijgend aangenomen: gebruik de knop voor indicaties of vul je offerte in."));
     const host = h("div", {}, h("p", { class: "help" }, "Laden…")); body.append(host);
-    Promise.all([Data.catalog(), Data.costs()]).then(([cmp, costCatalog]) => {
-      resolveKinds(cmp);
+    Promise.all([Data.catalog(), Data.costs()]).then(async ([cmp, costCatalog]) => {
+      await resolveKinds(cmp);
       const pickConfig = select([["", "Kies een uitvoering…"],
         ...cmp.configurations.map(c => [String(c.id), `${c.manufacturer_name} · ${c.product_name} · ${c.name}`])],
         "");

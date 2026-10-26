@@ -46,7 +46,31 @@ window.Data = (() => {
     return out;
   }
   // Soort aansluiting van een beschreven uitvoering, zoals `connection` in een berekening: `plug`, `fixed`, `circuit` of null.
+  const CONNECTIONS = ["plug", "fixed", "circuit"];
   const connectionOf = p => !p ? null : p.circuit ? "circuit" : p.kind ?? null;
+  // Korte namen voor grafieken en keuzelijsten van een berekening: aansluiting met ontlaadvermogen, merk en product en
+  // bruikbare capaciteit. De aansluiting staat vooraan, zodat hij niet wegvalt als een lange naam wordt afgekort. Alleen
+  // voor opties uit de catalogus; een eigen naam blijft staan. Zou een korte naam niet uniek zijn, dan komt het eerste
+  // deel van de uitvoeringsnaam erbij, en anders blijft de volle naam. `kinds`: optie → soort aansluiting.
+  function shortLabels(candidates, kinds) {
+    const how = { plug: "Stekker", fixed: "Vast", circuit: "Eigen groep" }, n1 = v => n(v, Number.isInteger(v) ? 0 : 1);
+    const label = (c, detail) => {
+      const parts = c.name.split(" · "), b = c.battery, kind = how[kinds.get(c.key)];
+      if (detail && parts.length < 3) return null;
+      return [`${kind ? `${kind} ` : ""}${n1(b.discharge_power_kw)} kW${/\(afgeleid\)$/.test(c.name) ? " (afgeleid)" : ""}`,
+        parts[0], ...(detail ? [parts[1]] : []), `${n1(b.usable_capacity_kwh)} kWh`].join(" · ");
+    };
+    const out = new Map(candidates.map(c => [c.key, c.name]));
+    let open = candidates.filter(c => c.configuration_id != null && c.name.includes(" · "));
+    for (const detail of [false, true]) {
+      const tried = new Map(open.map(c => [c.key, label(c, detail)]));
+      const taken = [...out].filter(([key]) => !tried.has(key)).map(([, text]) => text).concat([...tried.values()]);
+      const fits = open.filter(c => tried.get(c.key) && taken.filter(text => text === tried.get(c.key)).length === 1);
+      for (const c of fits) out.set(c.key, tried.get(c.key));
+      open = open.filter(c => !fits.includes(c));
+    }
+    return out;
+  }
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
   // andere versie zijn met andere rekenregels gemaakt.
@@ -83,7 +107,8 @@ window.Data = (() => {
     import: 0.2552,
     importText: "Indicatie € 0,26: gemiddeld variabel leveringstarief september 2026 (€ 0,1487, CBS) " +
       "plus energiebelasting 2027 (8,80 cent, met btw € 0,1065), beide per kWh inclusief btw. Het model rekent vanaf 2027, " +
-      "dus met de belasting van 2027. Vaste en dynamische contracten wijken af.",
+      "dus met de belasting van 2027. Dat tarief is voorlopig tot de Eerste Kamer het Belastingplan 2027 aanneemt (gepland " +
+      "december 2026). Vaste en dynamische contracten wijken af.",
     // Energiebelasting 2027 per kWh met btw (fiscale sleuteltabel 2027, zie importSources).
     energyTax: 0.1065,
     importHelp: "Leveringstarief plus energiebelasting (in 2027 € 0,1065 per kWh), inclusief btw, zonder vaste kosten " +
@@ -675,6 +700,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, connectionOf, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();
