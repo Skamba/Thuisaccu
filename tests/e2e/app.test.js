@@ -501,6 +501,34 @@ test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async ()
   await close();
 });
 
+test("instellingen: Nederlandse meldingen en de looptijd geldt ook in de keuzehulp", async () => {
+  const { page, problems, close } = await open({ locale: "en-US" });
+  await page.goto(`${base}/#/instellingen`);
+  await page.getByLabel("Looptijd (jaren)").fill("40");
+  await page.getByLabel("Discontovoet per jaar (%)").fill("");
+  await page.click("button:has-text('Bewaar')");
+  // Ook in een Engelstalige browser zijn de meldingen Nederlands, met dezelfde grenzen als Zelf doorrekenen.
+  assert.deepEqual(await page.$$eval(".field .error", errors => errors.map(e => e.textContent)),
+    ["Vul 30 of minder in.", "Vul dit veld in."]);
+  await page.getByLabel("Looptijd (jaren)").fill("12");
+  await page.getByLabel("Discontovoet per jaar (%)").fill("3");
+  await page.click("button:has-text('Bewaar')");
+  await page.waitForSelector("text=Standaardaannames bewaard");
+  await page.goto(`${base}/#/keuzehulp`);
+  await page.getByLabel("Stroom van het net per jaar (kWh)").fill("3000");
+  await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").fill("2000");
+  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("3500");
+  await next(page);
+  await next(page);
+  await page.click("button:has-text('Gebruik de indicatie')");
+  await next(page);
+  const horizon = page.getByLabel("Hoe ver wil je vooruitkijken?");
+  assert.equal(await horizon.inputValue(), "12");
+  assert.equal(await horizon.locator("option:checked").textContent(), "12 jaar");
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("smal scherm: menu werkt met het toetsenbord", async () => {
   const { page, problems, close } = await open({ viewport: { width: 390, height: 844 } });
   await page.goto(`${base}/#/keuzehulp`);

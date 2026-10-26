@@ -94,9 +94,14 @@
         annual_price_change_pct: "Prijsverandering energie per jaar (%)",
         price_uncertainty_pct: "Tariefvariatie gevoeligheid (%)",
         cost_uncertainty_pct: "Kostenvariatie gevoeligheid (%)" };
+      // Dezelfde grenzen als bij Zelf doorrekenen, zodat een standaardwaarde daar altijd geldig is.
+      const ranges = { annual_price_change_pct: ["-20", "30", "0.1"],
+        ...Object.fromEntries(Scenario.PARAMS.map(([key, , min, max, step]) => [key, [min, max, step]])) };
       const current = Data.defaults(),
-        controls = Object.fromEntries(Object.keys(labels).map(key => [key,
-          numberInput({ value: String(current[key]), required: true })]));
+        controls = Object.fromEntries(Object.keys(labels).map(key => {
+          const [min, max, step = "any"] = ranges[key];
+          return [key, numberInput({ value: String(current[key]), required: true, min, max, step })];
+        }));
       const form = h("form", { class: "panel", novalidate: true, onsubmit: event => {
         event.preventDefault();
         if (!UI.validate(form)) return;

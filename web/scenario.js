@@ -411,5 +411,5 @@ window.Scenario = (() => {
     }
   });
 
-  return { load };
+  return { load, PARAMS };
 })();

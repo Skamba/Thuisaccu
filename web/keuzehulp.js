@@ -75,8 +75,10 @@
     heatPump: "", ev: "", evCharging: "evening",
     install: "any", phases: "unknown", place: "any", backup: "no",
     contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
-    objective: "net_present_value", budget: "", horizon: "15", sizing: "value", rangeLow: null, rangeHigh: null
+    objective: "net_present_value", budget: "", horizon: "", sizing: "value", rangeLow: null, rangeHigh: null
   };
+  // Zonder eigen keuze geldt de looptijd uit Instellingen.
+  const horizon = () => answers.horizon || String(Data.defaults().horizon_years);
   let answers = null, yields = null, flow = null;
   // Bij elk bezoek opnieuw uit de opslag: andere schermen (zoals een energieprofiel) vullen het concept aan.
   function load() {
@@ -272,7 +274,8 @@
       h("div", { class: "grid" },
         amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" },
           "Alle startkosten samen: accu, installatie en eventuele extra’s."),
-        field("Hoe ver wil je vooruitkijken?", select([["10", "10 jaar"], ["15", "15 jaar"], ["20", "20 jaar"]], answers.horizon, { onchange: event => { answers.horizon = event.target.value; save(); } }))));
+        field("Hoe ver wil je vooruitkijken?", select([...new Set(["10", "15", "20", horizon()])].sort((a, b) => a - b)
+          .map(years => [years, `${years} jaar`]), horizon(), { onchange: event => { answers.horizon = event.target.value; save(); } }))));
   }
 
   // Past een uitvoering bij de antwoorden? Harde bezwaren blokkeren, opmerkingen informeren.
@@ -386,8 +389,10 @@
     if (feed.export == null || feed.fee == null) {
       throw new Error("Vul in stap 3 je terugleververgoeding en terugleverkosten in, of kies de indicatie.");
     }
+    // Een later startjaar uit Instellingen schuift de stresstest mee; het model eist dat hij binnen de looptijd begint.
+    const variantYear = Math.max(INDICATION.variantYear, d.start_year);
     const variant = answers.variant === "yes" ? {
-      label: `Stresstest: geen terugleververgoeding vanaf ${INDICATION.variantYear}`, from_calendar_year: INDICATION.variantYear,
+      label: `Stresstest: geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
       export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
     } : undefined;
     const candidates = chosen.map(p => ({ key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id,
@@ -397,7 +402,7 @@
       title: `Keuzehulp ${new Date().toLocaleDateString("nl-NL")}`, solar_import_id: importId,
       site: { address: "Nederland (keuzehulp, geen adres opgegeven)", latitude: null, longitude: null, bag_id: null },
       parameters: {
-        start_year: 2027, horizon_years: Number(answers.horizon), discount_pct: d.discount_pct,
+        start_year: d.start_year, horizon_years: Number(horizon()), discount_pct: d.discount_pct,
           annual_cost_escalation_pct: d.annual_cost_escalation_pct,
         annual_pv_loss_pct: d.annual_pv_loss_pct, annual_load_growth_pct: d.annual_load_growth_pct,
           objective: answers.objective, budget_eur: parse(answers.budget),

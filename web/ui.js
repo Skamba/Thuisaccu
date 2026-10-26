@@ -128,6 +128,24 @@ window.UI = (() => {
     return { box, element: h("label", { class: "check" }, box, h("span", {}, labelText)) };
   };
   // Markeert ongeldige velden met een zichtbare melding; geeft het eerste ongeldige veld terug.
+  // Meldingen in het Nederlands, ook in een anderstalige browser; een eigen melding gaat voor.
+  function invalidMessage(control) {
+    const v = control.validity, num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6 });
+    if (v.customError) return control.validationMessage;
+    if (v.badInput) return "Vul een getal in.";
+    if (v.valueMissing) return control.tagName === "SELECT" || control.type === "radio" ? "Maak een keuze."
+      : control.type === "file" ? "Kies een bestand." : "Vul dit veld in.";
+    if (v.rangeUnderflow) return `Vul ${num(control.min)} of meer in.`;
+    if (v.rangeOverflow) return `Vul ${num(control.max)} of minder in.`;
+    if (v.stepMismatch) {
+      const decimals = (control.step.split(".")[1] || "").length;
+      if (control.step === "1") return "Vul een heel getal in.";
+      if (Number(control.step) === 10 ** -decimals) return `Gebruik hoogstens ${decimals} ${decimals === 1 ? "decimaal" : "decimalen"}.`;
+      return `Gebruik stappen van ${num(control.step)}.`;
+    }
+    return control.validationMessage;
+  }
+
   function validate(root) {
     let first = null;
     for (const control of root.querySelectorAll("input, select, textarea")) {
@@ -135,7 +153,7 @@ window.UI = (() => {
       control.setAttribute("aria-invalid", String(!valid));
       const holder = control.closest(".field");
       holder?.querySelector(".error")?.remove();
-      if (!valid) { holder?.append(h("small", { class: "error" }, control.validationMessage)); first ||= control; }
+      if (!valid) { holder?.append(h("small", { class: "error" }, invalidMessage(control))); first ||= control; }
     }
     first?.focus();
     return !first;
