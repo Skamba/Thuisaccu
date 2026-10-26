@@ -123,7 +123,9 @@
             () => { UI.store.set("thuisaccu-keuzehulp",
               { ...UI.store.get("thuisaccu-keuzehulp", {}), data: "file", importId: String(item.id) });
               location.hash = "#/keuzehulp"; }),
-          button("Zelf doorrekenen", () => { UI.store.set("thuisaccu-scenario", { profile: String(item.id) }); location.hash = "#/zelf"; }, "secondary"));
+          // Alleen het profiel wisselt; opties en kostenposten in een bestaand concept blijven staan.
+          button("Zelf doorrekenen", () => { UI.store.set("thuisaccu-scenario",
+            { ...UI.store.get("thuisaccu-scenario", {}), profile: String(item.id) }); location.hash = "#/zelf"; }, "secondary"));
       }
       view.append(h("p", {}, title(item), " ", fitBadge(item)),
         summaryView(item.summary, item.options.generator ? null : item.options.timezone || "UTC"));

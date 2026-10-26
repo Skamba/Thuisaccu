@@ -568,6 +568,11 @@ window.Results = (() => {
   // Hoogstens twee decimalen, zonder nullen aan het eind: 9,3 en 6,03.
   const plain = value => n(value, 2).replace(/,?0+$/, "");
   const withUnit = Data.quoteUnit;
+  // Op papier: het getal met eenheid, of precies wat er stond als het geen getal is (nooit een verzonnen 0).
+  const paperValue = (field, raw) => {
+    const value = UI.parse(raw, { money: Data.isPriceField(field) });
+    return value == null ? raw : withUnit(field, value);
+  };
   // [vraag, velden in de offerte, waarde, aannamepatroon, wat geen antwoord is]
   // [vraag, velden, waarde, toelichting]; of een veld een aanname is, herkent `Data.isAssumed`.
   const CHECK = [
@@ -652,7 +657,7 @@ window.Results = (() => {
     // Op het scherm vul je de technische antwoorden in; op papier staat wat je invulde of een lege regel.
     const cell = (c, r, paper) => {
       if (paper) return r.fields.some(f => answer(c, f).trim())
-        ? h("span", { class: "write-in" }, r.fields.map(f => answer(c, f).trim() ? withUnit(f, UI.parse(answer(c, f)) ?? 0) : null).filter(Boolean).join(", "))
+        ? h("span", { class: "write-in" }, r.fields.map(f => answer(c, f).trim() ? paperValue(f, answer(c, f).trim()) : null).filter(Boolean).join(", "))
         : h("span", { class: "write-in" });
       const inputs = h("span", { class: "quote-inputs" }, r.fields.map(f => {
         const [, name, unit] = QUOTE_FIELDS.find(([key]) => key === f);
@@ -738,8 +743,9 @@ window.Results = (() => {
         const raw = answer(c, field).trim();
         if (!raw) continue;
         // Bedragen in hele centen, zoals de kostenposten.
-        const parsed = UI.parse(raw), value = parsed != null && Data.isPriceField(field) ? Math.round(parsed * 100) / 100 : parsed;
-        if (value == null || value < 0) { wrong.push(name); continue; }
+        const parsed = UI.parse(raw, { money: Data.isPriceField(field) }),
+          value = parsed != null && Data.isPriceField(field) ? Math.round(parsed * 100) / 100 : parsed;
+        if (value == null || value < 0) { wrong.push(`${name} (${UI.parseProblem(raw, { money: Data.isPriceField(field) }) || "vul 0 of meer in"})`); continue; }
         if (field === "upfront_eur") {
           const separate = [...(terms.separate || [])];
           price = { total_eur: value, separate,

@@ -130,8 +130,17 @@ test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () =>
   const cases = [["3,5", 3.5], ["6.500,00", 6500], ["1.250.000", 1250000], ["0.250", 0.25], ["0.2552", 0.2552],
     ["12.5", 12.5], ["-0,5", -0.5], ["3 500", 3500], ["", null], ["abc", null], ["1,250.50", null],
     // Eén punt met precies drie cijfers kan 3500 of 3,5 zijn: geen getal, het formulier vraagt het na.
-    ["3.500", null], ["2.688", null]];
+    ["3.500", null], ["2.688", null], ["€ 3.500", null],
+    // Wat wel een getal lijkt voor Number(), maar niet in een Nederlands invoerveld hoort.
+    ["0x10", null], ["1e3", null], ["Infinity", null], ["6500,-", 6500], ["€ 6.500,00", 6500]];
   for (const [raw, expected] of cases) assert.equal(UI.parse(raw), expected, raw);
+  // Bij een bedrag in euro zijn drie cijfers na de punt een duizendtal: centen hebben er twee.
+  for (const [raw, expected] of [["6.500", 6500], ["€ 6.500", 6500], ["6.500,-", 6500], ["0.25", 0.25], ["12.345.678", 12345678]]) {
+    assert.equal(UI.parse(raw, { money: true }), expected, raw);
+  }
+  assert.match(UI.parseProblem("€ 3.500"), /Bedoel je 3500 of 3,500\?/);
+  assert.equal(UI.parseProblem("€ 3.500", { money: true }), "");
+  assert.match(UI.parseProblem("0x10"), /Vul een getal in/);
   // Beginwaarden in een veld lezen terug als hetzelfde getal.
   for (const value of [2.688, 0.25, 1250, 3.5]) assert.equal(UI.parse(UI.plain(value)), value);
 });

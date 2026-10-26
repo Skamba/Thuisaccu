@@ -1,7 +1,8 @@
 use axum::{
     Json,
     extract::{Multipart, Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
+    response::IntoResponse,
 };
 use std::{collections::HashSet, sync::OnceLock};
 
@@ -167,6 +168,25 @@ pub async fn reference_status(State(catalog): State<Catalog>) -> Result<Json<Val
         .count();
     Ok(Json(
         json!({"sets": REFERENCE_SETS.len(), "pending": pending}),
+    ))
+}
+
+/// Een samenhangende kopie van de hele database als SQLite-bestand, ook terwijl de app draait: de
+/// kopie komt via de verbinding en bevat dus ook wat nog in het WAL-bestand staat.
+pub async fn backup(State(catalog): State<Catalog>) -> Result<impl IntoResponse, ApiError> {
+    let bytes = crate::blocking(move || catalog.to_bytes())
+        .await?
+        .map_err(database_error)?;
+    let name = format!("thuisaccu-{}.sqlite3", Utc::now().format("%Y-%m-%d"));
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/vnd.sqlite3".to_owned()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+        ],
+        bytes,
     ))
 }
 

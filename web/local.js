@@ -40,9 +40,22 @@ window.Local = (() => {
     const body = ["GET", "HEAD"].includes(request.method) ? new ArrayBuffer(0) : await request.arrayBuffer();
     const reply = await call({ type: "request", method: request.method, path: target.pathname + target.search,
       contentType: request.headers.get("content-type"), body }, [body]);
+    if (reply.unsaved !== undefined) unsaved(reply.unsaved);
     const empty = [204, 205, 304].includes(reply.status);
     return new Response(empty ? null : reply.body,
       { status: reply.status, headers: reply.contentType ? { "content-type": reply.contentType } : {} });
+  }
+
+  // Blijvende melding bovenaan zolang een wijziging niet in IndexedDB staat; verdwijnt na een geslaagde opslag.
+  function unsaved(message) {
+    let banner = document.getElementById("unsaved");
+    if (!message) { banner?.remove(); return; }
+    if (!banner) {
+      banner = Object.assign(document.createElement("p"), { id: "unsaved", className: "banner" });
+      banner.setAttribute("role", "alert");
+      document.getElementById("main")?.prepend(banner);
+    }
+    banner.textContent = message;
   }
 
   // Een kopie van de database als SQLite-bestand, hetzelfde formaat als data/research.sqlite3.

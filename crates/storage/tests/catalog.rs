@@ -428,6 +428,21 @@ async fn file_and_copied_databases_enforce_foreign_keys_and_transactions_can_rol
 }
 
 #[tokio::test]
+async fn a_backup_while_the_server_runs_includes_what_is_still_in_the_wal() {
+    // Zo maakt `GET /api/v1/backup` een back-up zonder de app te stoppen; het bestand zelf kopiëren
+    // zou wijzigingen missen die nog alleen in het WAL-bestand staan.
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("research.sqlite3");
+    let catalog = Catalog::open(&path).await.unwrap();
+    setup(&catalog).await;
+    let copy = Catalog::from_bytes(&catalog.to_bytes().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(copy.list_products().await.unwrap().len(), 1);
+    catalog.close().await;
+}
+
+#[tokio::test]
 async fn a_copy_of_a_wal_database_file_opens_in_memory_and_stays_writable() {
     // Zo leest de browserversie een back-up of het databasebestand van de lokale server.
     let directory = tempfile::tempdir().unwrap();
@@ -454,6 +469,35 @@ async fn a_copy_of_a_wal_database_file_opens_in_memory_and_stays_writable() {
     let applied: i64 = scalar(&again, "SELECT count(*) FROM _sqlx_migrations");
     assert_eq!(applied, 5);
     assert!(Catalog::from_bytes(b"not a database").await.is_err());
+}
+
+#[tokio::test]
+async fn a_backup_must_be_a_thuisaccu_database() {
+    // Terugzetten vervangt alles; een ander SQLite-bestand zou anders een lege database worden.
+    let catalog = Catalog::in_memory().await.unwrap();
+    setup(&catalog).await;
+    let restored = Catalog::from_backup(&catalog.to_bytes().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(restored.list_products().await.unwrap().len(), 1);
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("other.db");
+    let other = rusqlite::Connection::open(&path).unwrap();
+    other
+        .execute_batch(
+            "CREATE TABLE notes (text TEXT); INSERT INTO notes VALUES ('niet van Thuisaccu');",
+        )
+        .unwrap();
+    drop(other);
+    let foreign = std::fs::read(&path).unwrap();
+    let refused = Catalog::from_backup(&foreign).await.err().unwrap();
+    assert!(
+        matches!(&refused, StorageError::InvalidInput(message) if message.contains("geen back-up van Thuisaccu"))
+    );
+    // Bij gewoon openen (de eigen opslag van de browser) blijven migraties zoals ze waren.
+    assert!(Catalog::from_bytes(&foreign).await.is_ok());
+    assert!(Catalog::from_backup(b"not a database").await.is_err());
 }
 
 #[tokio::test]

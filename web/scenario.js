@@ -46,7 +46,7 @@ window.Scenario = (() => {
     return {
       title: "Mijn berekening", address: "", site: null, profile: "", objective: "net_present_value", budget: "",
       params: Object.fromEntries(PARAMS.map(([key]) => [key, plain(d[key])])),
-      tariff: { import: "", export: "", fee: "", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
+      tariff: { import: "", export: "", fee: "", change: plain(d.annual_price_change_pct), bands: "", fixed: 0 },
       variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
         changes: [], basis: null, options: []
     };
@@ -59,7 +59,7 @@ window.Scenario = (() => {
   // Neemt een bewaarde run over als nieuw concept; bevestigingen worden nooit overgenomen.
   // `extra` komt uit de offertecheck: een andere naam, de herkomst (`quote_basis`) en de stap om te openen.
   function load(request, extra = {}) {
-    const money2 = minor => (minor / 100).toFixed(2);
+    const money2 = minor => (minor / 100).toFixed(2).replace(".", ",");
     state = {
       title: `${request.title} (kopie)`, address: NO_ADDRESS.test(request.site.address) ? "" : request.site.address,
         site: request.site.latitude != null ? request.site : null, profile: String(request.solar_import_id),
@@ -129,7 +129,7 @@ window.Scenario = (() => {
     const horizon = parse(state.params.horizon_years);
     const parameters = {
       ...Object.fromEntries(PARAMS.map(([key, label]) => [key, number(state.params[key], label)])),
-      objective: state.objective, budget_eur: parse(state.budget),
+      objective: state.objective, budget_eur: parse(state.budget, { money: true }),
       tariff: { import_eur_per_kwh: number(state.tariff.import, "Stroomprijs"),
         export_eur_per_kwh: number(state.tariff.export, "Terugleververgoeding"),
         export_fee_eur_per_kwh: number(state.tariff.fee, "Terugleverkosten"), export_fee_bands: exportBands,
@@ -166,7 +166,7 @@ window.Scenario = (() => {
         let amount = 0;
         if (line.status === "priced") {
           // Nederlandse notatie mag (6.500,00); hele centen, zoals de kostenposten.
-          const euro = parse(line.amount);
+          const euro = parse(line.amount, { money: true });
           if (euro == null || euro < 0 || Math.abs(euro * 100 - Math.round(euro * 100)) > 1e-6) problems.push(`${option.name}: bedrag voor ‘${c.label}’ in euro met hoogstens twee decimalen.`);
           else amount = Math.round(euro * 100);
           if (c.timing === "event" && !(parse(line.year) >= 1 && parse(line.year) <= horizon)) problems.push(`${option.name}: jaar voor ‘${c.label}’ moet binnen de looptijd vallen.`);
@@ -263,7 +263,7 @@ window.Scenario = (() => {
             " of laat de keuzehulp een geschat profiel maken.")),
         field("Doel",
           bindValue(select(Object.entries(Data.objectives)), () => state.objective, v => { state.objective = v; })),
-        field("Maximale startinvestering (€, optioneel)", bindValue(numberInput({ min: "0", step: "0.01", placeholder: "Geen maximum" }), () => state.budget, v => { state.budget = v; }))),
+        field("Maximale startinvestering (€, optioneel)", bindValue(numberInput({ min: "0", step: "0.01", placeholder: "Geen maximum", money: true }), () => state.budget, v => { state.budget = v; }))),
       h("section", { class: "panel" }, h("h3", {}, "Verandering in verbruik (optioneel)"),
         h("p", { class: "help" }, "Komt er later een warmtepomp of elektrische auto bij? Dan telt dat verbruik vanaf 1 januari van het jaar dat je kiest. " +
           "De warmtepomp volgt de buitentemperatuur van 2023 in De Bilt, met een gelijkmatig deel voor warm tapwater; de auto laadt elke dag even veel. " +
@@ -365,7 +365,7 @@ window.Scenario = (() => {
       const current = option.costs[line.category];
       if ((current && current.status !== "unknown") || line.status === "unknown") continue;
       option.costs[line.category] = { status: line.status,
-        amount: line.status === "priced" ? (line.amount_minor / 100).toFixed(2) : "", year: "", source: line.source,
+        amount: line.status === "priced" ? (line.amount_minor / 100).toFixed(2).replace(".", ",") : "", year: "", source: line.source,
         notes: line.notes };
       filled++;
     }
@@ -380,19 +380,34 @@ window.Scenario = (() => {
       TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)));
     const assumptions = field("Bron en aannames van de techniek", bindValue(h("textarea", { rows: "3", required: true }), () => option.assumptions, v => { option.assumptions = v; }),
       "Controleer bruikbare capaciteit, werkelijk AC-vermogen en AC-systeemrendement; kVA en DC-rendement zijn hiervoor onvoldoende.");
-    const progress = h("p", { class: "help" });
+    const progress = h("p", { class: "help" }), total = h("p", { class: "cost-total" });
+    // Voortgang en lopend totaal van de ingevulde posten, zoals de rekenkern ze telt (teruggaven eraf).
     const refreshProgress = () => {
       const open = categories.filter(c => (option.costs[c.key]?.status || "unknown") === "unknown").length;
       progress.textContent = open ? `${categories.length - open} van ${categories.length} posten beoordeeld; onbekende posten blokkeren de berekening.` : `Alle ${categories.length} posten beoordeeld.`;
+      let gross = 0, credit = 0, yearly = 0, invalid = 0;
+      for (const c of categories) {
+        const line = option.costs[c.key];
+        if (line?.status !== "priced") continue;
+        const euro = parse(line.amount, { money: true });
+        if (euro == null) invalid++;
+        else if (c.timing === "annual") yearly += euro;
+        else if (c.timing === "upfront") { if (Data.CREDITS.includes(c.key)) credit += euro; else gross += euro; }
+      }
+      const eur = value => money(value, { decimals: 0 });
+      total.textContent = `Startkosten volgens deze posten: ${eur(gross)}` +
+        (credit ? ` vóór teruggaven, ${eur(gross - credit)} erna` : "") + ` · jaarlijks ${eur(yearly)}` +
+        (invalid ? ` · ${invalid === 1 ? "één bedrag is" : `${invalid} bedragen zijn`} nog geen geldig getal` : "") +
+        (open ? " · onbekende posten tellen nog niet mee" : "");
     };
     const rows = categories.map(c => {
       const line = option.costs[c.key] ||= { status: "unknown", amount: "", year: "", source: "", notes: "" };
-      const amount = numberInput({ min: "0", step: "0.01", disabled: line.status !== "priced" });
+      const amount = numberInput({ min: "0", step: "0.01", money: true, disabled: line.status !== "priced" });
       const status = select(Object.entries(Data.costStatus), line.status);
       const year = c.timing === "event" ? numberInput({ min: "1", max: "30", step: "1",
         disabled: line.status !== "priced" }) : null;
       const source = input({ placeholder: "Offerte, bron of aanname" });
-      bindValue(amount, () => line.amount, v => { line.amount = v; });
+      bindValue(amount, () => line.amount, v => { line.amount = v; refreshProgress(); });
       if (year) bindValue(year, () => line.year, v => { line.year = v; });
       bindValue(source, () => line.source, v => { line.source = v; line.notes = "Invoer in Zelf doorrekenen"; });
       status.addEventListener("change",
@@ -417,7 +432,7 @@ window.Scenario = (() => {
     refreshProgress();
     return h("details", { class: "panel option-editor", open: true }, h("summary", {}, option.name || `Optie ${index + 1}`),
       h("div", { class: "actions" }, remove), tech, assumptions,
-      h("h3", {}, "Kosten"), progress,
+      h("h3", {}, "Kosten"), progress, total,
         h("div", { class: "actions" }, field("Soort accu (voor de indicaties)", kind), estimate),
       h("p", { class: "help" },
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
@@ -501,8 +516,9 @@ window.Scenario = (() => {
       subtitle: "Voor wie offertes heeft: alle aannames en kostenposten zelf invullen.",
     render(view, actions) {
       state = { ...blank(), ...store.get(STORE, {}) };
-      actions.append(button("Begin opnieuw", () => { store.set(STORE, null); state = blank(); flow.show(0); },
-        "ghost"));
+      actions.append(button("Begin opnieuw", () => UI.confirm("Opnieuw beginnen?",
+        ["Je concept met alle opties, kostenposten en aannames wordt gewist. Bewaarde berekeningen blijven staan."],
+        "Wis het concept", () => { store.set(STORE, null); state = blank(); flow.show(0); }), "ghost"));
       view.append(h("details", { class: "help-box" }, h("summary", {}, "Over deze berekening"),
         h("p", {},
           "Het model simuleert zonnestroom opslaan voor eigen gebruik met vaste tarieven, per meetperiode over één volledig jaar, en vergelijkt elke optie met geen accu. Dynamische handel en onbalansinkomsten zijn niet opgenomen."),
@@ -515,5 +531,8 @@ window.Scenario = (() => {
     }
   });
 
-  return { load, PARAMS };
+  // Een concept met minstens één accu-optie; dat gooi je niet zonder te vragen weg.
+  const hasDraft = () => (store.get(STORE, {})?.options || []).length > 0;
+
+  return { load, hasDraft, PARAMS };
 })();

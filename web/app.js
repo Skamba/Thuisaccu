@@ -22,9 +22,15 @@
   };
 
   function duplicate(run) {
-    Scenario.load(run.input.request);
-    toast("Kopie geladen. Controleer de invoer en bevestig opnieuw.");
-    location.hash = "#/zelf";
+    const open = () => {
+      Scenario.load(run.input.request);
+      toast("Kopie geladen. Controleer de invoer en bevestig opnieuw.");
+      location.hash = "#/zelf";
+    };
+    if (!Scenario.hasDraft()) { open(); return; }
+    UI.confirm("Concept vervangen?", [
+      "Bij Zelf doorrekenen staat nog een concept met accu-opties. Een kopie van deze berekening komt daarvoor in de plaats."
+    ], "Vervang het concept", open);
   }
 
   function remove(run) {
@@ -147,7 +153,8 @@
       } }, h("h2", {}, "Standaardaannames"), h("p", { class: "help" }, "Gelden voor nieuwe berekeningen in de keuzehulp en bij Zelf doorrekenen. Bewaarde berekeningen veranderen nooit."),
         h("div", { class: "grid" }, Object.entries(labels).map(([key, label]) => field(label, controls[key], help[key]))),
         h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Bewaar"),
-          button("Herstel oorspronkelijke waarden", () => { store.set("thuisaccu-standaard", null); for (const [key, control] of Object.entries(controls)) control.value = String(Data.DEFAULTS[key]); toast("Oorspronkelijke waarden hersteld."); }, "ghost")));
+          button("Herstel oorspronkelijke waarden", () => { store.set("thuisaccu-standaard", null); for (const [key, control] of Object.entries(controls)) control.value = UI.plain(Data.DEFAULTS[key]);
+            UI.validate(form); toast("Oorspronkelijke waarden hersteld."); }, "ghost")));
       const preference = (key, label, options) => field(label,
         select(options, store.get(`thuisaccu-${key}`, options[0][0]),
           { onchange: event => { document.documentElement.dataset[key] = event.target.value;
@@ -183,10 +190,20 @@
   }
 
   function dataPanel() {
-    const clear = button("Wis concepten in deze browser", () => { for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null); toast("Concepten gewist."); }, "secondary");
+    const clear = button("Wis concepten in deze browser", () => UI.confirm("Concepten wissen?", [
+      "Je antwoorden in de keuzehulp, het concept bij Zelf doorrekenen en de accu’s die je wilde vergelijken worden gewist. " +
+        "Bewaarde berekeningen, energieprofielen en de catalogus blijven staan."
+    ], "Wis concepten", () => {
+      for (const key of ["thuisaccu-keuzehulp", "thuisaccu-scenario", "thuisaccu-vergelijking"]) store.set(key, null);
+      toast("Concepten gewist.");
+    }), "secondary");
+    // Bij de lokale app maakt de server de kopie, ook terwijl hij draait; een gewone downloadlink.
     if (!Local.enabled) return h("section", { class: "panel" }, h("h2", {}, "Je gegevens"),
       h("p", {},
-        "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). Wil je een back-up, stop dan de app en kopieer dat bestand."),
+        "Alles wat je bewaart, staat in een databasebestand op deze computer (standaard data/research.sqlite3). " +
+        "‘Download back-up’ maakt daar een volledige kopie van, ook terwijl de app draait. Terugzetten doe je door de app te stoppen " +
+        "en het databasebestand door de back-up te vervangen; de browserversie kan de back-up ook inlezen."),
+      h("div", { class: "actions" }, h("a", { href: "api/v1/backup", download: "", class: "button secondary" }, "Download back-up")),
       h("p", {},
         "Er gaat niets naar internet, behalve een adres dat je zelf opzoekt met ‘Zoek adres via PDOK’. Concepten van de keuzehulp en Zelf doorrekenen staan alleen in deze browser."),
       clear);
@@ -206,12 +223,15 @@
 
     // Formulierstatus in een object; de knop werkt pas met een gekozen bestand.
     const state = { file: null };
-    const replace = button("Vervang de gegevens in deze browser", async () => {
+    const replace = button("Vervang de gegevens in deze browser", () => {
       if (!state.file) return;
-      replace.disabled = true;
-      try { await Local.restore(state.file); toast("Back-up teruggezet."); setTimeout(() => location.reload(), 600); }
-      catch (error) { toast(`Terugzetten mislukt; je huidige gegevens zijn ongewijzigd. ${error.message}`, true);
-        replace.disabled = false; }
+      UI.confirm("Alle gegevens vervangen?", [
+        `Alles in deze browser wordt vervangen door ‘${state.file.name}’: energieprofielen, berekeningen en zelf toegevoegde accu’s.`,
+        "Twijfel je? Download dan eerst een back-up van wat er nu staat."
+      ], "Vervang alles", async () => {
+        try { await Local.restore(state.file); toast("Back-up teruggezet."); setTimeout(() => location.reload(), 600); }
+        catch (error) { toast(`Terugzetten mislukt; je huidige gegevens zijn ongewijzigd. ${error.message}`, true); }
+      });
     }, "ghost");
     replace.disabled = true;
     const chooser = h("input", { type: "file", accept: ".sqlite3,.sqlite,.db,application/vnd.sqlite3,application/x-sqlite3",

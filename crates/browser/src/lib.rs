@@ -46,9 +46,21 @@ pub async fn open(bytes: Option<Vec<u8>>) -> Result<(), JsError> {
         None => Catalog::in_memory().await,
     }
     .map_err(js_error)?;
+    install(catalog);
+    Ok(())
+}
+
+/// Zet een back-up terug in plaats van de huidige database. Alleen een database van Thuisaccu
+/// wordt geaccepteerd; bij een fout blijft de huidige database open.
+#[wasm_bindgen]
+pub async fn restore(bytes: Vec<u8>) -> Result<(), JsError> {
+    install(Catalog::from_backup(&bytes).await.map_err(js_error)?);
+    Ok(())
+}
+
+fn install(catalog: Catalog) {
     let router = thuisaccu_server::app(catalog.clone());
     STATE.with_borrow_mut(|state| *state = Some((catalog, router)));
-    Ok(())
 }
 
 /// Antwoord op één API-verzoek.

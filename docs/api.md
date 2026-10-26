@@ -7,12 +7,13 @@ De volgende routes bestaan:
 | `/` | `200`, `text/html; charset=utf-8` | App-shell; taakschermen via de URL-hash |
 | `/styles.css` | `200`, `text/css; charset=utf-8` | Stijlblad |
 | `/api/v1/health` | `200`, `application/json` | Servicestatus |
+| `GET /api/v1/backup` | `200`, `application/vnd.sqlite3`, als bijlage `thuisaccu-JJJJ-MM-DD.sqlite3` | Volledige, samenhangende kopie van de database terwijl de app draait (via de verbinding, dus inclusief wat nog in het WAL-bestand staat). Te openen door de lokale app en in te lezen door de browserversie |
 | `/ui.js`, `/data.js`, `/results.js`, `/keuzehulp.js`, `/catalog.js`, `/energy.js`, `/scenario.js`, `/compare.js`, `/app.js` | `200`, `text/javascript; charset=utf-8` | Browserscripts uit de tabel `ASSETS` |
 | `/api/v1/products` | `200`, JSON | Productidentiteiten in een `products`-array |
 | `/api/v1/comparison` | `200`, JSON | `configurations`, `numbers`, `features`, `texts`, `warranties`, `offers`; elke configuratie heeft `researched` (staat in een ingebouwde onderzochte set) |
 | `POST /api/v1/candidates` | `201`, JSON | Onderzoeksdossier atomisch opslaan; geeft `configuration_id` |
 | `GET /api/v1/references` | `200`, JSON met `sets` en `pending` | Aantal ingebouwde sets bronmomentopnamen en hoeveel daarvan nog niet in deze database staan; laadt zelf niets |
-| `POST /api/v1/references` | `200`, JSON | Invoer van acht sets bronmomentopnamen, elk idempotent per sleutel; `imported: true` als minstens één set nieuw was. De interface roept dit één keer per bezoek aan |
+| `POST /api/v1/references` | `200`, JSON | Invoer van de ingebouwde sets bronmomentopnamen, elk idempotent per sleutel (al geladen sets worden niet opnieuw ingelezen); `imported: true` als minstens één set nieuw was. De interface roept dit één keer per bezoek aan |
 | `POST /api/v1/solar/inspect` | `200`, JSON | Kolommen, eerste acht rijen, werkbladen, aantal rijen, eventuele metadata |
 | `POST /api/v1/solar/preview` | `200`, JSON | Opwekoverzicht zonder opslag |
 | `POST /api/v1/solar/imports` | `201`, JSON | Atomische opslag; geeft `id` en `summary` |

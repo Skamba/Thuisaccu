@@ -158,6 +158,31 @@ async fn requests_from_other_websites_are_refused() {
 }
 
 #[tokio::test]
+async fn a_backup_downloads_the_database_as_a_sqlite_file() {
+    let response = test_app()
+        .await
+        .oneshot(Request::get("/api/v1/backup").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "application/vnd.sqlite3"
+    );
+    let disposition = response.headers()[header::CONTENT_DISPOSITION]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        disposition.starts_with("attachment; filename=\"thuisaccu-")
+            && disposition.ends_with(".sqlite3\""),
+        "{disposition}"
+    );
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert!(body.starts_with(b"SQLite format 3\0"));
+}
+
+#[tokio::test]
 async fn health_rejects_unsupported_methods() {
     let response = test_app()
         .await

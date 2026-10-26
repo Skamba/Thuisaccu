@@ -27,15 +27,68 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing::info!(address = %listener.local_addr()?, "Thuisaccu webserver gestart");
 
     let result = axum::serve(listener, thuisaccu_server::app(catalog.clone()))
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(catalog.clone()))
         .await;
     catalog.close().await;
     result?;
     Ok(())
 }
 
-async fn shutdown_signal() {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::error!(%error, "Kon het afsluitsignaal niet registreren");
+/// Ctrl+C, maar ook het consolevenster sluiten, afmelden of afsluiten (Windows) en SIGTERM of SIGHUP
+/// (Unix). Direct daarna gaat het WAL-bestand terug in de database: Windows beëindigt het proces na
+/// een paar seconden, ook als er nog verbindingen open zijn.
+async fn shutdown_signal(catalog: Catalog) {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "Kon het afsluitsignaal niet registreren");
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate() => {}
     }
+    tracing::info!("Thuisaccu wordt afgesloten");
+    catalog.close().await;
+}
+
+#[cfg(windows)]
+async fn terminate() {
+    use tokio::signal::windows;
+    match (
+        windows::ctrl_close(),
+        windows::ctrl_shutdown(),
+        windows::ctrl_logoff(),
+    ) {
+        (Ok(mut close), Ok(mut shutdown), Ok(mut logoff)) => {
+            tokio::select! {
+                _ = close.recv() => {}
+                _ = shutdown.recv() => {}
+                _ = logoff.recv() => {}
+            }
+        }
+        _ => std::future::pending().await,
+    }
+}
+
+#[cfg(unix)]
+async fn terminate() {
+    use tokio::signal::unix::{SignalKind, signal};
+    match (
+        signal(SignalKind::terminate()),
+        signal(SignalKind::hangup()),
+    ) {
+        (Ok(mut term), Ok(mut hangup)) => {
+            tokio::select! {
+                _ = term.recv() => {}
+                _ = hangup.recv() => {}
+            }
+        }
+        _ => std::future::pending().await,
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+async fn terminate() {
+    std::future::pending().await
 }

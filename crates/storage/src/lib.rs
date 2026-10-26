@@ -80,6 +80,34 @@ impl Catalog {
     /// Database in het geheugen uit een kopie van een databasebestand, zoals de browser die bewaart.
     /// Ontbrekende migraties worden toegepast; een onbekende of gewijzigde migratie wordt geweigerd.
     pub async fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Self::prepare(Self::deserialize(bytes)?)
+    }
+
+    /// Als `from_bytes`, maar alleen voor een database van Thuisaccu (de eerste migratie is al
+    /// toegepast). Een back-up terugzetten vervangt alle gegevens; een leeg of ander SQLite-bestand
+    /// zou anders stil een lege database opleveren.
+    pub async fn from_backup(bytes: &[u8]) -> Result<Self> {
+        let connection = Self::deserialize(bytes)?;
+        let tracked: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations')",
+            [],
+            |row| row.get(0),
+        )?;
+        let thuisaccu = tracked
+            && connection.query_row(
+                "SELECT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 1 AND success)",
+                [],
+                |row| row.get::<_, bool>(0),
+            )?;
+        if !thuisaccu {
+            return Err(StorageError::InvalidInput(
+                "Dit is geen back-up van Thuisaccu.".into(),
+            ));
+        }
+        Self::prepare(connection)
+    }
+
+    fn deserialize(bytes: &[u8]) -> Result<Connection> {
         if !bytes.starts_with(b"SQLite format 3\0") || bytes.len() < 100 {
             return Err(StorageError::InvalidInput(
                 "Dit is geen SQLite-database.".into(),
@@ -94,7 +122,7 @@ impl Catalog {
         }
         let mut connection = Connection::open_in_memory()?;
         connection.deserialize_read_exact(MAIN_DB, &copy[..], copy.len(), false)?;
-        Self::prepare(connection)
+        Ok(connection)
     }
 
     fn prepare(mut connection: Connection) -> Result<Self> {

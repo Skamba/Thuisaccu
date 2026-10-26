@@ -47,17 +47,29 @@ window.UI = (() => {
   const dateOnly = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleDateString("nl-NL");
   // Getal uit een invoerveld in Nederlandse notatie: komma (of punt) als decimaalteken, punten in groepen
   // van drie als duizendtallen (6.500,00 en 1.250.000). Leeg of geen getal geeft null.
-  // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na.
-  const ambiguous = raw => /^[+-]?[1-9]\d{0,2}\.\d{3}$/.test(String(raw ?? "").trim());
-  const parse = raw => {
-    let text = String(raw ?? "").trim().replace(/^€/, "").replace(/\s/g, "");
+  // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na. Bij een
+  // bedrag in euro (`money`) is het 3500, want centen hebben twee decimalen. ‘6500,-’ is 6500; ‘0x10’ en
+  // ‘1e3’ zijn geen getal.
+  const tidy = raw => String(raw ?? "").trim().replace(/^€/, "").replace(/\s/g, "").replace(/,-{1,2}$/, "");
+  const ambiguous = raw => /^[+-]?[1-9]\d{0,2}\.\d{3}$/.test(tidy(raw));
+  const parse = (raw, { money = false } = {}) => {
+    let text = tidy(raw);
     if (/^[+-]?\d{1,3}(\.\d{3})+,\d*$/.test(text) || /^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(text)) text = text.replace(/\./g, "");
-    else if (ambiguous(text)) return null;
+    else if (ambiguous(text)) { if (!money) return null; text = text.replace(".", ""); }
     text = text.replace(",", ".");
-    return text === "" || !Number.isFinite(Number(text)) ? null : Number(text);
+    return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(text) && Number.isFinite(Number(text)) ? Number(text) : null;
   };
-  // Een getal als beginwaarde van een invoerveld; drie decimalen met een punt zouden als duizendtal lezen.
-  const plain = value => value == null ? "" : ambiguous(String(value)) ? String(value).replace(".", ",") : String(value);
+  // Wat er mis is met een getal als tekst, of "" als het een getal is (of leeg).
+  const parseProblem = (raw, options) => {
+    const text = tidy(raw);
+    if (text === "" || parse(text, options) != null) return "";
+    if (ambiguous(text)) return `Bedoel je ${text.replace(".", "")} of ${text.replace(".", ",")}? Schrijf duizendtallen zonder punt en decimalen met een komma.`;
+    return "Vul een getal in, bijvoorbeeld 3500 of 0,25.";
+  };
+  // Een getal als beginwaarde van een invoerveld, met een decimale komma zoals de velden vragen.
+  const plain = value => value == null || value === "" ? ""
+    : typeof value === "number" ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 10 }).replace(".", ",")
+    : String(value).replace(/^([+-]?\d+)\.(\d+)$/, "$1,$2");
 
   async function api(url, { method = "GET", json, body } = {}) {
     const options = { method };
@@ -124,8 +136,10 @@ window.UI = (() => {
   // Een tekstveld, geen type=number: dat leest ‘3.500’ in een Nederlandse browser als 3,5 of laat de komma
   // vallen. `parse` leest de tekst; `validate` controleert getal, grenzen en stappen met Nederlandse meldingen.
   // Het decimale toetsenbord op een telefoon heeft geen minteken; velden die negatief mogen krijgen er een gewoon.
-  const numberInput = (props = {}) => h("input", { type: "text", step: "any", autocomplete: "off", spellcheck: "false",
-    inputmode: props.min != null && Number(props.min) < 0 ? "text" : "decimal", ...props, dataset: { number: "" } });
+  // `money`: een bedrag in euro, waarin ‘6.500’ als 6500 telt (zie parse).
+  const numberInput = ({ money: euro = false, ...props } = {}) => h("input", { type: "text", step: "any", autocomplete: "off",
+    spellcheck: "false", inputmode: props.min != null && Number(props.min) < 0 ? "text" : "decimal", ...props,
+    dataset: euro ? { number: "", money: "" } : { number: "" } });
   function select(options, value, props = {}) {
     const element = h("select", props, options.map(([v, text]) => h("option", { value: v }, text)));
     if (value != null) element.value = String(value);
@@ -148,11 +162,11 @@ window.UI = (() => {
   // Meldingen in het Nederlands, ook in een anderstalige browser; een eigen melding gaat voor.
   // Wat er mis is met een getalveld, of "" als het klopt; grenzen en stappen zoals bij type=number.
   function numberProblem(control) {
-    const raw = control.value.trim(), num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6 });
-    if (raw === "") return "";
-    if (ambiguous(raw)) return `Bedoel je ${raw.replace(".", "")} of ${raw.replace(".", ",")}? Schrijf duizendtallen zonder punt en decimalen met een komma.`;
-    const value = parse(raw);
-    if (value == null) return "Vul een getal in, bijvoorbeeld 3500 of 0,25.";
+    const raw = control.value.trim(), // Zonder duizendtalpunt, zoals de meldingen zelf vragen: ‘Vul 2026 of meer in.’
+    num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6, useGrouping: false });
+    const options = { money: "money" in control.dataset }, problem = parseProblem(raw, options);
+    if (raw === "" || problem) return problem;
+    const value = parse(raw, options);
     if (control.min !== "" && value < Number(control.min)) return `Vul ${num(control.min)} of meer in.`;
     if (control.max !== "" && value > Number(control.max)) return `Vul ${num(control.max)} of minder in.`;
     const step = control.getAttribute("step");
@@ -176,7 +190,8 @@ window.UI = (() => {
   }
 
   function invalidMessage(control) {
-    const v = control.validity, num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6 });
+    const v = control.validity, // Zonder duizendtalpunt, zoals de meldingen zelf vragen: ‘Vul 2026 of meer in.’
+    num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6, useGrouping: false });
     if (v.customError) return control.validationMessage;
     if (v.badInput) return "Vul een getal in.";
     if (v.valueMissing) return control.tagName === "SELECT" || control.type === "radio" ? "Maak een keuze."
@@ -482,7 +497,7 @@ window.UI = (() => {
   const page = (key, definition) => pages.set(key, definition);
 
   return {
-    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, plain, api, store, toast, busy,
+    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
     button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };

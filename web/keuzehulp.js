@@ -217,7 +217,7 @@
         "en duur te gebruiken. Dat rekent de keuzehulp nog niet: we rekenen met een gemiddelde prijs, dus de uitkomst kan " +
         "lager uitvallen dan in werkelijkheid."));
     }
-    const useImport = () => { answers.tariffImport = String(INDICATION.import); save(); rerender(); };
+    const useImport = () => { answers.tariffImport = UI.plain(INDICATION.import); save(); rerender(); };
     body.append(
       h("div", { class: "grid" }, amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport",
         { min: "-1", max: "2", step: "0.0001", required: true }, INDICATION.importText)),
@@ -254,7 +254,7 @@
         ["payback", "Als ik mijn geld zo snel mogelijk terugverdien"],
         ["self_consumption", "Als ik zo veel mogelijk eigen zonnestroom gebruik", "Ook als dat financieel niet uitkomt."]]),
       h("div", { class: "grid" },
-        amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1" },
+        amount("Maximaal budget (€, optioneel)", "budget", { min: "0", max: "100000", step: "1", money: true },
           "Alle startkosten samen: accu, installatie en eventuele extra’s."),
         field("Hoe ver wil je vooruitkijken?", select([...new Set(["10", "15", "20", horizon()])].sort((a, b) => a - b)
           .map(years => [years, `${years} jaar`]), horizon(), { onchange: event => { answers.horizon = event.target.value; save(); } }),
@@ -348,7 +348,7 @@
     const open = p.lines.filter(l => l.status === "unknown" && l.category !== "battery");
     if (open.length) return `Kosten onbekend: ${open.map(l => labels[l.category]).join(", ")}`;
     // Boven het budget kan een accu nooit de aanbeveling worden; hij zou alleen een plek in de berekening innemen.
-    const budget = parse(answers.budget), upfront = startCosts(p.lines);
+    const budget = parse(answers.budget, { money: true }), upfront = startCosts(p.lines);
     return budget != null && upfront > budget
       ? `Boven je budget van ${money(budget, { decimals: 0 })}: startkosten ongeveer ${money(upfront, { decimals: 0 })}` : null;
   }
@@ -393,7 +393,7 @@
         start_year: d.start_year, horizon_years: Number(horizon()), discount_pct: d.discount_pct,
           annual_cost_escalation_pct: d.annual_cost_escalation_pct,
         annual_pv_loss_pct: d.annual_pv_loss_pct, annual_load_growth_pct: d.annual_load_growth_pct,
-          objective: answers.objective, budget_eur: parse(answers.budget),
+          objective: answers.objective, budget_eur: parse(answers.budget, { money: true }),
         tariff: {
           import_eur_per_kwh: tariffImport, export_eur_per_kwh: feed.export, export_fee_eur_per_kwh: feed.fee,
           export_fee_bands: [], fixed_annual_eur: 0, annual_price_change_pct: d.annual_price_change_pct
@@ -569,7 +569,7 @@
               `${included.length === 1 ? "accu" : "kleinere en grotere accu"} door en vergelijken met geen accu. ` +
               "Verschuif het bereik om andere accu’s mee te nemen."
             : `We rekenen ${chosen.length > included.length ? `de ${included.length}${range ? "" : " goedkoopste"} van de ${chosen.length}` : `alle ${included.length}`} ` +
-              `accu’s door die bij je antwoorden passen${where}${parse(answers.budget) != null ? " en binnen je budget blijven" : ""} ` +
+              `accu’s door die bij je antwoorden passen${where}${parse(answers.budget, { money: true }) != null ? " en binnen je budget blijven" : ""} ` +
               "en waarvan prijs, capaciteit en vermogen bekend zijn" +
               `${chosen.length > included.length && range ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +
               "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."),

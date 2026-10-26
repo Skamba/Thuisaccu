@@ -81,6 +81,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .field > label { font-weight: 600; font-size: .9rem; }
 input, select, textarea { font: inherit; width: 100%; min-width: 0; padding: var(--control); border: 1px solid var(--control-line); border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--ink); }
 input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
+/* Een veld dat nu niet telt (bijvoorbeeld het bedrag van een inbegrepen post) ziet er ook zo uit. */
+input:disabled, select:disabled, textarea:disabled { background: var(--soft); color: var(--muted); border-style: dashed; cursor: not-allowed; }
+.cost-total { font-weight: 600; }
 .error { color: var(--danger); font-weight: 600; }
 fieldset > .error { display: block; margin-top: .4rem; }
 .check:has(> input[aria-invalid="true"]) > span { color: var(--danger); }

@@ -190,7 +190,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.click("text=Zelf, met de stekker");
   await next(page);
   await page.click("button:has-text('Gebruik de indicatie')");
-  assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0.2552");
+  assert.equal(await page.getByLabel("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)").inputValue(), "0,2552");
   await next(page);
   await next(page);
   // Ook een lege catalogus krijgt de onderzochte accu's: de app laadt ontbrekende sets zelf bij.
@@ -607,7 +607,13 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await card.locator("button:has-text('Vul open posten met indicaties')").click();
   const row = title => card.locator(".cost-row", { hasText: title });
   await row("Accu of complete pakketprijs").getByLabel("Status").selectOption("priced");
-  await row("Accu of complete pakketprijs").getByLabel("Bedrag (€)").fill("9000");
+  // In een bedrag is ‘9.000’ negenduizend; het lopende totaal telt het meteen mee.
+  const total = async () => Number((await card.locator(".cost-total").textContent())
+    .match(/Startkosten volgens deze posten: €\s*([\d.]+)/)[1].replace(/\./g, ""));
+  await row("Accu of complete pakketprijs").getByLabel("Bedrag (€)").fill("");
+  const before = await total();
+  await row("Accu of complete pakketprijs").getByLabel("Bedrag (€)").fill("9.000");
+  assert.equal(await total(), before + 9000);
   await row("Accu of complete pakketprijs").getByLabel("Bron of aanname").fill("Synthetische offerte");
   await row("Extra/hybride omvormer").getByLabel("Status").selectOption("included");
   await row("Extra/hybride omvormer").getByLabel("Bron of aanname").fill("Synthetische offerte");
@@ -716,6 +722,8 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(side, /Uitkomst(Advies: |Geen accu komt het beste uit)/);
   assert.match(side, /Lonend tot.*(Zelfs gratis niet|Tot €)/);
   assert.match(side, /Wat is anders.*offerte: bruikbare capaciteit 10 kWh → 9,3 kWh.*vaste prijs/);
+  // Ook de accu zelf staat bij ‘Wat is anders’, per accu met dezelfde naam.
+  assert.match(side, /: 10 kWh bruikbaar, .*: 9,3 kWh bruikbaar, /);
   assert.doesNotMatch(side, /ouder rekenmodel/);
   assert.match(await page.textContent(".glossary"), /Discontovoet.*kWh en kW/);
   // Een berekening van een ouder rekenmodel nabootsen (alleen in de pagina): met één klik opnieuw, met
@@ -955,8 +963,18 @@ test("browserversie bewaart gegevens in deze browser en maakt een back-up", { sk
   const fresh = await open();
   await fresh.page.goto(`${base}/#/instellingen`);
   await fresh.page.setInputFiles("input[type=file]", file);
+  // Een SQLite-bestand van iets anders wordt geweigerd; er wordt eerst om bevestiging gevraagd.
+  const { DatabaseSync } = await import("node:sqlite");
+  const foreign = path.join(workdir, "ander.db"), db = new DatabaseSync(foreign);
+  db.exec("CREATE TABLE notes (text TEXT); INSERT INTO notes VALUES ('niet van Thuisaccu');");
+  db.close();
+  await fresh.page.setInputFiles("input[type=file]", foreign);
   await fresh.page.click("button:has-text('Vervang de gegevens in deze browser')");
-  await fresh.page.waitForEvent("load");
+  await fresh.page.click("dialog button:has-text('Vervang alles')");
+  await fresh.page.waitForSelector("text=Dit is geen back-up van Thuisaccu");
+  await fresh.page.setInputFiles("input[type=file]", file);
+  await fresh.page.click("button:has-text('Vervang de gegevens in deze browser')");
+  await Promise.all([fresh.page.waitForEvent("load"), fresh.page.click("dialog button:has-text('Vervang alles')")]);
   await fresh.page.goto(`${base}/#/accus`);
   await fresh.page.waitForSelector("table tbody tr", { timeout: 30000 });
   assert.equal(await fresh.page.locator("table tbody tr").count(), rows);

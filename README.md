@@ -35,7 +35,7 @@ Serveer `site/` met een willekeurige statische webserver (de wasm moet als `appl
 3. **Accu’s vergelijken** toont de onderzochte uitvoeringen (bronmomentopnamen van 24 oktober 2026, waarvan vijf met een Nederlandse prijs) en eigen dossiers. Zet er maximaal vier naast elkaar; iedere bronclaim behoudt bron, vindplaats en meetgrens. Er wordt geen winnaar gekozen.
 4. **Energiegegevens** toont bewaarde profielen met hun geschiktheid en een capaciteitscurve. De importwizard leest CSV, Excel of JSON van omvormers en van de slimme meter (P1: opwek, netafname en teruglevering in één bestand). Een profiel verwijderen kan vanuit het overzicht; berekeningen op dat profiel gaan mee, en de vraag vooraf noemt hoeveel.
 5. **Zelf doorrekenen** is voor wie offertes heeft: alle aannames, tot twaalf opties met techniek, 26 kostenposten en financiering zelf invullen, met een knop die open posten vult met bronvermelde indicaties. Adres opzoeken via PDOK gebeurt alleen met de zoekknop.
-6. **Instellingen** bewaart standaardaannames, thema en dichtheid in deze browser en kan concepten wissen. In de browserversie staan hier ook back-up, terugzetten en blijvende opslag.
+6. **Instellingen** bewaart standaardaannames, thema en dichtheid in deze browser en kan concepten wissen. Hier download je ook een back-up van de database, ook terwijl de app draait; in de browserversie staan hier ook terugzetten en blijvende opslag. De lokale app schrijft bij Ctrl+C, het sluiten van het consolevenster of SIGTERM alle wijzigingen terug in het databasebestand.
 
 Fictieve gegevens uit een oudere database blijven als FICTIEF gemarkeerd; de interface biedt geen demo-acties.
 
