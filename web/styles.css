@@ -210,7 +210,15 @@ td strong, th strong { display: block; }
   body { display: block; }
   [role="tabpanel"] { display: block !important; }
   .panel { break-inside: avoid; }
+  /* De offertecheck drukt alleen het blad af, zonder energiegegevens of uitkomst. */
+  body.print-check > :not(#print-sheet) { display: none !important; }
+  body.print-check #print-sheet { display: block; }
+  #print-sheet table { width: 100%; }
+  #print-sheet tr { break-inside: avoid; }
+  #print-sheet .write-in { display: block; min-width: 8rem; min-height: 2.2rem; border-bottom: 1px solid #000; }
 }
+#print-sheet { display: none; }
+.quote-check td { vertical-align: top; }
 .cost-rows { display: grid; gap: 0; }
 .cost-row { padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .cost-controls { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(7rem, 9rem) minmax(6rem, 8rem) minmax(12rem, 1fr); gap: .6rem; margin-top: .4rem; }

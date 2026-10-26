@@ -237,6 +237,25 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
+  // De offertecheck noemt per vraag de waarde waarmee is gerekend; de keuzehulp neemt levensduur en
+  // capaciteitsverlies altijd aan. Het afdrukblad bevat geen besparing, grensprijs of energiegegevens.
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  const check = await page.textContent("[role=tabpanel]:not([hidden])");
+  assert.match(check, /Bruikbare capaciteit[\s\S]*kWh bruikbaar/);
+  assert.match(check, /capaciteitsverlies per jaar\s*aanname: vraag dit eerst/);
+  assert.match(check, /Belastingdienst/);
+  await page.evaluate(() => { window.print = () => { window.printed = true; }; });
+  await page.click("button:has-text('Druk af voor de installateur')");
+  assert.equal(await page.evaluate(() => window.printed && document.body.classList.contains("print-check")), true);
+  const sheet = await page.textContent("#print-sheet");
+  assert.match(sheet, /Offertecheck: .+Offerte zegt/);
+  assert.doesNotMatch(sheet, /NPV|Lonend|netto voordeel|bespaart|kWh per jaar/i);
+  // Afgedrukt is alleen het blad zichtbaar.
+  await page.emulateMedia({ media: "print" });
+  assert.deepEqual([await page.isVisible("#print-sheet"), await page.isVisible("#view")], [true, false]);
+  await page.emulateMedia({ media: "screen" });
+  await page.evaluate(() => dispatchEvent(new Event("afterprint")));
+  assert.equal(await page.evaluate(() => document.body.classList.contains("print-check")), false);
   // Op een telefoon schuift geen enkel tabblad van de uitkomst zijwaarts.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -544,6 +563,12 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const heatTotal = amount(heat[2]);
   const signed = line => (line.startsWith("−") ? -1 : 1) * amount(line);
   assert.ok(Math.abs(signed(heat[0]) + signed(heat[1]) - heatTotal) <= 1, heat.join(" | "));
+  // Bij een eigen offerte is de techniek in de offertecheck eigen invoer.
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  await page.getByLabel("Offertecheck voor").selectOption({ label: "Eigen optie 1" });
+  const own = await page.textContent("[role=tabpanel]:not([hidden])");
+  assert.match(own, /10 kWh bruikbaar\s*jouw invoer/);
+  assert.match(own, /Accu of complete pakketprijs €\s*9\.000/);
   // In de jaartabel springt het verbruik in 2028 met de warmtepomp omhoog, met de uitleg eronder.
   await page.click(`[role=tab]:has-text("Kasstromen")`);
   await page.getByLabel("Jaartabel van").selectOption({ label: "Eigen optie 1" });

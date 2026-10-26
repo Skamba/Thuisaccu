@@ -147,7 +147,8 @@ window.Results = (() => {
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
-      "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
+      "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn. " +
+      "Het tabblad Offertecheck zet op een rij wat je in de offerte controleert, met de waarden waarmee hier is gerekend."));
     return h("section", { class: "panel plain" }, h("h2", {}, "Wat betekent dit voor jou?"), list);
   }
 
@@ -376,6 +377,97 @@ window.Results = (() => {
     return out;
   }
 
+  // Vragen voor de offerte, met de waarde waarmee gerekend is. Of een waarde een aanname is, staat in de
+  // aannametekst van de keuzehulp (`describe` in data.js); in Zelf doorrekenen is alles eigen invoer.
+  const VAT_URL = "https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw";
+  const plain = value => n(value, Number.isInteger(value) ? 0 : 2);
+  const CHECK = [
+    ["Bruikbare capaciteit", b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`, /Aanname: [\d,]+% van de opgegeven/,
+      "Niet de nominale of totale capaciteit: vraag hoeveel kWh je echt kunt gebruiken."],
+    ["Laadvermogen aan de AC-kant", b => `${plain(b.charge_power_kw)} kW`, /Aanname: laadvermogen gelijk/,
+      "Hoeveel zonnestroom de accu per uur kan opnemen. Een DC- of PV-ingang telt niet."],
+    ["Ontlaadvermogen aan de AC-kant", b => `${plain(b.discharge_power_kw)} kW`, /ontladen ingesteld op 800 W/,
+      "Wat de accu continu aan je huis levert. kVA is geen kW, en een piek van een paar seconden telt niet."],
+    ["Rendement AC → AC, heen en terug", b => `${plain(b.ac_round_trip_efficiency_pct)}%`, /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
+      "‘Tot 95%’, een DC-rendement of het rendement van alleen de batterij is niet hetzelfde."],
+    ["Sluimerverbruik van accu, omvormer en regeling samen", b => `${plain(b.standby_w)} W`, /Aanname: [\d,]+ W sluimerverbruik/,
+      "Ook als de accu niets doet. ‘Zit in het rendement’ is geen antwoord."],
+    ["Garantie: jaren, cycli of MWh doorvoer en gegarandeerde restcapaciteit",
+      b => `${plain(b.operating_life_years)} jaar levensduur, ${plain(b.annual_capacity_loss_pct)}% capaciteitsverlies per jaar`, /Aanname: [\d,]+% capaciteitsverlies/,
+      "Vraag ook wie de garantie geeft, fabrikant of installateur, en wat er gebeurt als de installateur stopt."]
+  ];
+  function quoteCheck(run, all, categories) {
+    const request = run.input.request, result = run.result, out = h("div"), target = h("div");
+    const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), result.recommended_key ?? best?.key);
+    const label = key => categories.find(c => c.key === key)?.label || key;
+    // Rijen voor één optie: vraag, toelichting, waarde en herkomst.
+    function rows(c) {
+      const input = request.candidates.find(v => v.key === c.key);
+      const own = !/^Keuzehulp\./.test(input.assumptions);
+      const origin = (assumed, mine = own) => assumed && !mine ? badge("aanname: vraag dit eerst", "warning") : badge(mine ? "jouw invoer" : "bron");
+      const line = key => input.costs.find(l => l.category === key);
+      const status = l => !l || l.status === "not_applicable" ? "niet meegeteld"
+        : l.status === "priced" ? money(l.amount_minor / 100, { decimals: 0 }) : "inbegrepen";
+      // Ook in Zelf doorrekenen kunnen kostenposten aannames zijn, ingevuld met ‘Vul open posten met indicaties’.
+      const costOrigin = (...keys) => { const assumed = keys.map(line).some(l => l && Data.isAssumption(l));
+        return origin(assumed, own && !assumed); };
+      const priced = input.costs.filter(l => l.timing === "upfront" && l.status === "priced" && !CREDITS.includes(l.category));
+      const included = input.costs.filter(l => l.status === "included");
+      const skipped = ["inverter", "ems_metering", "installation", "cabling_protection", "meter_cabinet", "grid_connection"]
+        .map(line).filter(l => l && l.status === "not_applicable");
+      const listed = (title, lines, show) => lines.length ? `; ${title} ${lines.map(show).join(", ")}` : "";
+      const subscription = line("subscription"), vat = line("vat_refund");
+      return [
+        ...CHECK.map(([question, value, assumption, hint]) => [question, hint, value(input.battery), origin(assumption.test(input.assumptions))]),
+        ["Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin?",
+          `${money(c.initial_investment_eur, { decimals: 0 })} startinvestering na teruggaven` +
+            listed("waarvan", priced, l => `${label(l.category)} ${money(l.amount_minor / 100, { decimals: 0 })}`) +
+            listed("inbegrepen:", included, l => label(l.category)) + listed("niet meegeteld:", skipped, l => label(l.category)),
+          costOrigin("installation", "cabling_protection", "meter_cabinet", "grid_connection", "inverter", "ems_metering")],
+        ["Aansluiting", "1- of 3-fase, past het op je huidige aansluiting, en is een eigen groep in de meterkast (NEN 1010) inbegrepen?",
+          `Meterkast: ${status(line("meter_cabinet"))}; aansluiting: ${status(line("grid_connection"))}`, costOrigin("meter_cabinet", "grid_connection")],
+        ["Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?",
+          status(line("backup")), costOrigin("backup")],
+        ["App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
+          subscription?.status === "priced" ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription), costOrigin("subscription")],
+        ["Btw", h("span", {}, "Prijs inclusief 21% btw? Zegt de installateur dat je de btw terugkrijgt: volgens de ",
+          UI.external("Belastingdienst", VAT_URL), " kan dat niet als je de accu alleen voor je eigen huis gebruikt."),
+          vat?.status === "priced" ? `Teruggave van ${money(vat.amount_minor / 100, { decimals: 0 })} gerekend` : "Geen btw-teruggave gerekend", costOrigin("vat_refund")]
+      ];
+    }
+    // Met een lege kolom voor wat de offerte zegt en een vinkje.
+    const sheet = c => table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
+      rows(c).map(([question, hint, value, origin]) => [h("span", {}, h("strong", {}, question), h("br"), h("small", {}, hint)),
+        h("span", {}, value, " ", origin), h("span", { class: "write-in" }),
+        h("input", { type: "checkbox", "aria-label": `Klopt: ${question}` })]),
+      { className: "quote-check", stack: true });
+    const render = () => {
+      const c = all.find(o => o.key === pick.value);
+      target.replaceChildren(...(c ? [sheet(c)] : []));
+    };
+    pick.addEventListener("change", render); render();
+    // Afdrukken: alleen het blad, zonder energiegegevens, besparing of grensprijs.
+    const print = button("Druk af voor de installateur", () => {
+      const c = all.find(o => o.key === pick.value);
+      if (!c) return;
+      document.getElementById("print-sheet")?.remove();
+      document.body.append(h("section", { id: "print-sheet" },
+        isFictitious(run) ? h("p", { class: "callout" }, "FICTIEF: berekend met demogegevens.") : null,
+        h("h1", {}, `Offertecheck: ${c.name}`),
+        h("p", {}, `Gemaakt op ${new Date().toLocaleDateString("nl-NL")}. Vul per regel in wat de offerte zegt en vink af wat klopt. ` +
+          "Begin met de regels gemarkeerd ‘aanname’."),
+        sheet(c)));
+      document.body.classList.add("print-check");
+      addEventListener("afterprint", () => document.body.classList.remove("print-check"), { once: true });
+      window.print();
+    }, "secondary");
+    out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron. " +
+      "Vraag die eerst na. Wijkt de offerte af, pas de waarde dan aan in Zelf doorrekenen en reken opnieuw."),
+      UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, print));
+    return out;
+  }
+
   function inputs(run, categories) {
     const input = run.input, request = input.request, p = request.parameters, tariff = p.tariff, out = h("div");
     const label = key => categories.find(c => c.key === key)?.label || key;
@@ -526,6 +618,7 @@ window.Results = (() => {
     view.append(summary(run), tabs([
       { label: "Overzicht", content: overview(run, all) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Kostenopbouw", content: costs(run, all, categories) },
+      { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
       { label: "Invoer en aannames", content: inputs(run, categories) },
       { label: `Waarschuwingen (${result.warnings.length})`,
