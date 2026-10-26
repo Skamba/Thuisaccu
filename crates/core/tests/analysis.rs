@@ -969,6 +969,40 @@ fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone(
 }
 
 #[test]
+fn warranty_stress_of_several_candidates_equals_a_separate_run_with_the_stressed_battery() {
+    // De simulatie loopt jaar voor jaar voor alle accu's tegelijk; elke stresstest moet bij haar eigen
+    // accu horen, ook als niet elke optie er een heeft.
+    let stress = |life, loss| analysis::BatteryStress {
+        operating_life_years: life,
+        annual_capacity_loss_pct: loss,
+        basis: "Synthetische garantie".into(),
+    };
+    let mut a = candidate("a", 2.0, 50_000);
+    a.warranty_stress = Some(stress(2, 5.0));
+    let b = candidate("b", 4.0, 80_000);
+    let mut c = candidate("c", 6.0, 120_000);
+    c.warranty_stress = Some(stress(3, 4.0));
+    let mut p = parameters();
+    p.horizon_years = 6;
+    p.load_variation = LoadVariation::Households;
+    let together = analysis::analyze(&profile(), &p, &[a.clone(), b, c.clone()]).unwrap();
+    for (index, option) in [(0, a), (2, c)] {
+        let mut alone = option.clone();
+        alone.battery =
+            analysis::stressed_battery(&option.battery, option.warranty_stress.as_ref().unwrap());
+        alone.warranty_stress = None;
+        let separate = analysis::analyze(&profile(), &p, &[alone]).unwrap();
+        let stressed = together.candidates[index].warranty_stress.as_ref().unwrap();
+        close(stressed.npv_eur, separate.candidates[0].npv_eur);
+        close(
+            stressed.net_profit_eur,
+            separate.candidates[0].net_profit_eur,
+        );
+    }
+    assert!(together.candidates[1].warranty_stress.is_none());
+}
+
+#[test]
 fn npv_is_linear_in_the_net_export_value_from_2027_as_the_interface_assumes() {
     // De interface (`perCent` in web/results.js) leidt het effect van 1 cent netto terugleverwaarde af uit de
     // bewaarde teruglevering per jaar: Σ (teruglevering zonder − met accu) × 0,01 × prijsfactor / disconto.

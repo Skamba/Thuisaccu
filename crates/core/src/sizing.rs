@@ -173,6 +173,56 @@ pub fn simulate_year(
     initial_storage: f64,
     variation: LoadVariation,
 ) -> EnergyYear {
+    let year = LoadYear::new(profile, load_factor, variation);
+    simulate_load_year(&year, battery, age, pv_factor, initial_storage)
+}
+
+/// Verbruik van een projectiejaar met de verdeling per meetperiode alvast berekend. De verdeling
+/// hangt alleen af van profiel, verbruiksfactor en variatie, dus alle opties en stresstests in
+/// hetzelfde jaar delen haar.
+pub struct LoadYear<'a> {
+    profile: &'a [EnergyInterval],
+    load_factor: f64,
+    /// Leeg bij `Uniform`; anders per meetperiode een verdeling (of `None`: gelijkmatig).
+    shapes: Vec<Option<[f64; BANDS]>>,
+}
+
+impl<'a> LoadYear<'a> {
+    pub fn new(profile: &'a [EnergyInterval], load_factor: f64, variation: LoadVariation) -> Self {
+        let shapes = if variation == LoadVariation::Uniform {
+            Vec::new()
+        } else {
+            profile
+                .iter()
+                .map(|i| {
+                    let load = i.consumption_kwh * load_factor;
+                    let steady =
+                        (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
+                    spread(
+                        variation,
+                        i.duration_hours,
+                        (load - steady) / i.duration_hours,
+                    )
+                })
+                .collect()
+        };
+        Self {
+            profile,
+            load_factor,
+            shapes,
+        }
+    }
+}
+
+/// Zoals [`simulate_year`], met de verdeling binnen de meetperioden uit een vooraf berekend [`LoadYear`].
+pub fn simulate_load_year(
+    year: &LoadYear,
+    battery: Option<&Battery>,
+    age: u32,
+    pv_factor: f64,
+    initial_storage: f64,
+) -> EnergyYear {
+    let (profile, load_factor) = (year.profile, year.load_factor);
     let active = battery.filter(|b| age < b.operating_life_years);
     let capacity = active.map_or(0.0, |b| {
         b.usable_capacity_kwh * (1.0 - b.annual_capacity_loss_pct / 100.0).powi(age as i32)
@@ -185,15 +235,11 @@ pub fn simulate_year(
         ..Default::default()
     };
     let mut discharged_storage = 0.0;
-    for i in profile {
+    for (index, i) in profile.iter().enumerate() {
         let production = i.production_kwh * pv_factor;
         let load = i.consumption_kwh * load_factor;
         let steady = (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
-        let shape = spread(
-            variation,
-            i.duration_hours,
-            (load - steady) / i.duration_hours,
-        );
+        let shape = year.shapes.get(index).copied().flatten();
         let (charge_limit, discharge_limit) = active.map_or((0.0, 0.0), |b| {
             (
                 b.charge_power_kw * i.duration_hours,
@@ -285,6 +331,7 @@ pub fn capacity_curve(
     capacities_kwh: &[f64],
     variation: LoadVariation,
 ) -> Vec<CapacityPoint> {
+    let load_year = LoadYear::new(profile, 1.0, variation);
     capacities_kwh
         .iter()
         .map(|&capacity| {
@@ -298,16 +345,8 @@ pub fn capacity_curve(
                 operating_life_years: 2,
             };
             let battery = (capacity > 0.0).then_some(&ideal);
-            let warm_up = simulate_year(profile, battery, 0, 1.0, 1.0, 0.0, variation);
-            let year = simulate_year(
-                profile,
-                battery,
-                1,
-                1.0,
-                1.0,
-                warm_up.end_storage_kwh,
-                variation,
-            );
+            let warm_up = simulate_load_year(&load_year, battery, 0, 1.0, 0.0);
+            let year = simulate_load_year(&load_year, battery, 1, 1.0, warm_up.end_storage_kwh);
             CapacityPoint {
                 usable_capacity_kwh: capacity,
                 battery_to_load_kwh: year.battery_to_load_kwh,

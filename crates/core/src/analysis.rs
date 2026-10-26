@@ -543,50 +543,45 @@ fn factors(p: &Parameters, year: u32) -> (f64, f64) {
     )
 }
 
-/// Energiestromen zonder accu per looptijdjaar; gelijk voor alle opties en varianten.
-fn simulate_baseline(profiles: &Profiles, p: &Parameters) -> Vec<EnergyYear> {
-    (1..=p.horizon_years)
-        .map(|year| {
-            let (pv_factor, load_factor) = factors(p, year);
-            sizing::simulate_year(
-                profiles.year(p.start_year + year - 1),
-                None,
-                0,
-                pv_factor,
-                load_factor,
-                0.0,
-                p.load_variation,
-            )
-        })
-        .collect()
-}
-
-/// Energiestromen met accu per looptijdjaar. Prijzen en kosten beïnvloeden de simulatie niet,
-/// dus gevoeligheids- en terugleveringsvarianten delen deze uitkomst.
-fn simulate_battery(profiles: &Profiles, p: &Parameters, c: &Candidate) -> Vec<EnergyYear> {
-    let ages = battery_ages(c, p.horizon_years);
-    let mut state = 0.0;
-    let mut years = Vec::new();
+/// Energiestromen zonder accu en voor iedere accu (met haar leeftijden) per looptijdjaar. Jaar voor
+/// jaar, zodat de verdeling binnen de meetperioden per jaar maar een keer wordt berekend.
+fn simulate_all(
+    profiles: &Profiles,
+    p: &Parameters,
+    batteries: &[(&Battery, Vec<u32>)],
+) -> (Vec<EnergyYear>, Vec<Vec<EnergyYear>>) {
+    let mut baseline = Vec::new();
+    let mut tracks: Vec<Vec<EnergyYear>> = vec![Vec::new(); batteries.len()];
+    let mut states = vec![0.0; batteries.len()];
     for year in 1..=p.horizon_years {
         let (pv_factor, load_factor) = factors(p, year);
-        let energy = sizing::simulate_year(
+        let load_year = sizing::LoadYear::new(
             profiles.year(p.start_year + year - 1),
-            Some(&c.battery),
-            ages[(year - 1) as usize],
-            pv_factor,
             load_factor,
-            state,
             p.load_variation,
         );
-        // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
-        state = if ages.get(year as usize) == Some(&0) {
-            0.0
-        } else {
-            energy.end_storage_kwh
-        };
-        years.push(energy);
+        baseline.push(sizing::simulate_load_year(
+            &load_year, None, 0, pv_factor, 0.0,
+        ));
+        for (((battery, ages), track), state) in batteries.iter().zip(&mut tracks).zip(&mut states)
+        {
+            let energy = sizing::simulate_load_year(
+                &load_year,
+                Some(battery),
+                ages[(year - 1) as usize],
+                pv_factor,
+                *state,
+            );
+            // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
+            *state = if ages.get(year as usize) == Some(&0) {
+                0.0
+            } else {
+                energy.end_storage_kwh
+            };
+            track.push(energy);
+        }
     }
-    years
+    (baseline, tracks)
 }
 
 fn project(
@@ -812,11 +807,27 @@ pub fn analyze_with(
     validate(profile, parameters, candidates)?;
     validate_additions(profile, parameters, additions)?;
     let profiles = Profiles::new(profile, additions);
-    let baselines = simulate_baseline(&profiles, parameters);
+    let stressed: Vec<Option<Battery>> = candidates
+        .iter()
+        .map(|c| {
+            c.warranty_stress
+                .as_ref()
+                .map(|s| stressed_battery(&c.battery, s))
+        })
+        .collect();
+    let batteries: Vec<(&Battery, Vec<u32>)> = candidates
+        .iter()
+        .map(|c| (&c.battery, battery_ages(c, parameters.horizon_years)))
+        .chain(candidates.iter().zip(&stressed).filter_map(|(c, s)| {
+            s.as_ref()
+                .map(|b| (b, battery_ages(c, parameters.horizon_years)))
+        }))
+        .collect();
+    let (baselines, mut tracks) = simulate_all(&profiles, parameters, &batteries);
+    let mut stress_tracks = tracks.split_off(candidates.len()).into_iter();
     let mut results = Vec::new();
-    for c in candidates {
-        let energies = simulate_battery(&profiles, parameters, c);
-        let run = |stress, variant| project(&baselines, &energies, parameters, c, stress, variant);
+    for (c, energies) in candidates.iter().zip(&tracks) {
+        let run = |stress, variant| project(&baselines, energies, parameters, c, stress, variant);
         let mut base = run(0, None);
         let low = run(-1, None);
         let high = run(1, None);
@@ -824,10 +835,8 @@ pub fn analyze_with(
             base.export_variant = Some(outcome(&run(0, Some(v))));
         }
         // Zelfde accu met een kortere levensduur en sneller verlies; telt niet mee voor de keuze.
-        if let Some(s) = &c.warranty_stress {
-            let mut stressed = c.clone();
-            stressed.battery = stressed_battery(&c.battery, s);
-            let energies = simulate_battery(&profiles, parameters, &stressed);
+        if c.warranty_stress.is_some() {
+            let energies = stress_tracks.next().unwrap_or_default();
             base.warranty_stress = Some(outcome(&project(
                 &baselines, &energies, parameters, c, 0, None,
             )));
