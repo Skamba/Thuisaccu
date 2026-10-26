@@ -37,6 +37,20 @@ pub struct TypicalEv {
     pub charging: String,
 }
 
+/// Extra verbruik vanaf 1 januari van een later jaar, met dezelfde vorm als in het geschatte
+/// profiel. Komt bovenop het verbruik in het gekozen energieprofiel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LoadChange {
+    /// `heat_pump` of `ev`.
+    pub kind: String,
+    pub from_calendar_year: u32,
+    pub annual_kwh: f64,
+    /// Alleen bij `ev`: `evening`, `night` of `daytime`, zoals bij [`TypicalEv`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charging: Option<String>,
+}
+
 /// Laadvermogen van een 1-fase laadpunt van 16 A: 230 V × 16 A.
 const EV_CHARGE_KW: f64 = 3.68;
 
@@ -170,15 +184,11 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     if !ev.is_finite() || !(0.0..=20_000.0).contains(&ev) {
         return Err("Vul voor de elektrische auto 0 tot 20.000 kWh per jaar in.".into());
     }
-    let ev_start = match request.ev.as_ref().map(|ev| ev.charging.as_str()) {
-        None => None,
-        Some("evening") => Some(18),
-        Some("night") => Some(1),
-        Some("daytime") => Some(11),
-        Some(_) => {
-            return Err("Kies voor het laden van de auto ’s avonds, ’s nachts of overdag.".into());
-        }
-    };
+    let ev_start = request
+        .ev
+        .as_ref()
+        .map(|ev| charging_start(&ev.charging))
+        .transpose()?;
     let household = consumption - heat_pump - ev;
     if household < 100.0 {
         return Err("Warmtepomp en auto samen zijn bijna even groot als of groter dan je totale verbruik. Het jaarverbruik is inclusief warmtepomp en auto; controleer de getallen.".into());
@@ -339,6 +349,100 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
         intervals,
         summary,
     })
+}
+
+fn charging_start(charging: &str) -> Result<u32, String> {
+    match charging {
+        "evening" => Ok(18),
+        "night" => Ok(1),
+        "daytime" => Ok(11),
+        _ => Err("Kies voor het laden van de auto ’s avonds, ’s nachts of overdag.".into()),
+    }
+}
+
+/// Omschrijving van een verandering in verbruik, voor de waarschuwingen bij het resultaat.
+pub fn load_change_label(change: &LoadChange) -> String {
+    match (change.kind.as_str(), change.charging.as_deref()) {
+        ("heat_pump", _) => "Warmtepomp".into(),
+        (_, Some("night")) => "Elektrische auto, ’s nachts laden".into(),
+        (_, Some("daytime")) => "Elektrische auto, overdag laden".into(),
+        _ => "Elektrische auto, ’s avonds laden".into(),
+    }
+}
+
+/// Extra verbruik per meetperiode (`[begin, einde)` in Unix-seconden) voor een verandering in
+/// verbruik. De uurvorm van het referentiejaar wordt op lokale datum en uur gelegd (29 februari
+/// als 28 februari), naar de periodeduur verdeeld en daarna op precies het jaarverbruik geschaald.
+pub fn load_change(change: &LoadChange, periods: &[(i64, i64)]) -> Result<Vec<f64>, String> {
+    use chrono::{Datelike, Timelike};
+    let r = resource();
+    let hours = r.load.values.len();
+    let annual = change.annual_kwh;
+    let hourly = match change.kind.as_str() {
+        "heat_pump" => {
+            if !annual.is_finite() || !(1.0..=30_000.0).contains(&annual) {
+                return Err("Vul voor de warmtepomp 1 tot 30.000 kWh per jaar in.".into());
+            }
+            let degree_sum: f64 = r.heating.degree_hours.iter().map(|&v| v as f64).sum();
+            r.heating
+                .degree_hours
+                .iter()
+                .map(|&d| {
+                    annual
+                        * ((1.0 - TAP_WATER_SHARE) * d as f64 / degree_sum
+                            + TAP_WATER_SHARE / hours as f64)
+                })
+                .collect()
+        }
+        "ev" => {
+            if !annual.is_finite() || !(1.0..=20_000.0).contains(&annual) {
+                return Err("Vul voor de elektrische auto 1 tot 20.000 kWh per jaar in.".into());
+            }
+            let start = charging_start(change.charging.as_deref().unwrap_or(""))?;
+            ev_load(r, annual, start)
+        }
+        _ => {
+            return Err(
+                "Kies als verandering in verbruik een warmtepomp of een elektrische auto.".into(),
+            );
+        }
+    };
+    // Lokale (maand, dag, uur) → kWh in dat uur; het dubbele uur bij de wintertijd telt gemiddeld.
+    let key = |unix_s: i64| -> Option<(u32, u32, u32)> {
+        let local = Utc
+            .timestamp_opt(unix_s, 0)
+            .single()?
+            .with_timezone(&Amsterdam);
+        let (month, day) = match (local.month(), local.day()) {
+            (2, 29) => (2, 28),
+            other => other,
+        };
+        Some((month, day, local.hour()))
+    };
+    let mut by_hour: BTreeMap<(u32, u32, u32), (f64, f64)> = BTreeMap::new();
+    for (index, value) in hourly.iter().enumerate() {
+        if let Some(k) = key(r.start_unix_s + index as i64 * r.interval_s) {
+            let entry = by_hour.entry(k).or_default();
+            entry.0 += value;
+            entry.1 += 1.0;
+        }
+    }
+    let mut values = Vec::with_capacity(periods.len());
+    for &(start, end) in periods {
+        let (month, day, hour) = key(start).ok_or("Datum buiten bereik.")?;
+        // Het uur dat bij de zomertijd in het referentiejaar ontbreekt, krijgt het uur erna.
+        let (sum, count) = [hour, hour + 1, hour.saturating_sub(1)]
+            .iter()
+            .find_map(|&h| by_hour.get(&(month, day, h)))
+            .copied()
+            .unwrap_or((0.0, 1.0));
+        values.push(sum / count * (end - start) as f64 / 3600.0);
+    }
+    let total: f64 = values.iter().sum();
+    if total > 0.0 {
+        values.iter_mut().for_each(|v| *v *= annual / total);
+    }
+    Ok(values)
 }
 
 /// Laadt elke dag dezelfde hoeveelheid met vast vermogen vanaf het gekozen lokale uur.

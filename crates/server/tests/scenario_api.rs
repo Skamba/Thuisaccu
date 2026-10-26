@@ -380,3 +380,66 @@ async fn deleting_a_run_keeps_the_profile_and_deleting_a_profile_removes_its_run
     let (status, _) = delete(format!("/api/v1/solar/imports/{id}")).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn heat_pump_and_ev_from_a_later_year_are_added_only_from_that_year() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut request = input(id);
+    request["load_changes"] = json!([
+        {"kind": "heat_pump", "from_calendar_year": 2028, "annual_kwh": 2500},
+        {"kind": "ev", "from_calendar_year": 2030, "annual_kwh": 2000, "charging": "evening"}
+    ]);
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let result = body(response).await;
+    let years = result["result"]["candidates"][0]["years"]
+        .as_array()
+        .unwrap();
+    let consumption = |i: usize| years[i]["energy"]["consumption_kwh"].as_f64().unwrap();
+    // Synthetisch jaar: 5 uur × 0,9 kWh + 19 uur × 0,25 kWh = 9,25 kWh per dag.
+    let base = 9.25 * 365.0;
+    for (year, expected) in [
+        (0, base),
+        (1, base + 2500.0),
+        (2, base + 2500.0),
+        (3, base + 4500.0),
+    ] {
+        assert!(
+            (consumption(year) - expected).abs() < 1e-6,
+            "{year}: {}",
+            consumption(year)
+        );
+    }
+    let warnings = result["result"]["warnings"].to_string();
+    assert!(warnings.contains(
+        "Extra verbruik ‘Warmtepomp’: vanaf 1 januari 2028 komt er 2.500 kWh per jaar bij"
+    ));
+    assert!(warnings.contains("Elektrische auto, ’s avonds laden"));
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(
+        saved[0].input["request"]["load_changes"][0]["kind"],
+        "heat_pump"
+    );
+    // Onbekende soort, beginjaar vóór de start of een auto zonder laadmoment: geen run.
+    for change in [
+        json!({"kind": "sauna", "from_calendar_year": 2028, "annual_kwh": 2500}),
+        json!({"kind": "heat_pump", "from_calendar_year": 2026, "annual_kwh": 2500}),
+        json!({"kind": "ev", "from_calendar_year": 2028, "annual_kwh": 2000}),
+    ] {
+        let mut wrong = input(id);
+        wrong["load_changes"] = json!([change]);
+        let response = app
+            .clone()
+            .oneshot(post("/api/v1/analysis/runs", wrong))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(catalog.list_analyses().await.unwrap().len(), 1);
+}

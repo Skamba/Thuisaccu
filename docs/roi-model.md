@@ -72,6 +72,16 @@ Voorbeeld (referentiegeval in `crates/core/tests/analysis.rs`): een uur met 2 kW
 
 Het verschil met de verdeling kan groot zijn: de verdeling is een gemiddelde van Duitse huishoudens, en een huishouden met minder wisselingen tussen overschot en tekort binnen het uur krijgt daarmee een te hoge accuopbrengst. Imports van vóór deze versie hebben de meterwaarden niet; opnieuw importeren met dezelfde instellingen vult ze aan in hetzelfde profiel. Een run vermeldt in een waarschuwing in hoeveel perioden de meterwaarden zijn gebruikt.
 
+### Verandering in verbruik
+
+Een warmtepomp of elektrische auto die er pas later bij komt, is een `load_changes`-regel in het verzoek: soort, beginjaar en extra kWh per jaar (met laadmoment voor een auto). De server zet die om in kWh per meetperiode met de vormen van het [geschatte profiel](keuzehulp.md): voor de warmtepomp 66% naar rato van de graaduren onder 18 °C in De Bilt (2023) en 34% gelijkmatig voor warm tapwater, voor de auto elke dag hetzelfde laadblok van 3,68 kW vanaf het gekozen uur. Elke meetperiode krijgt de waarde van het lokale uur (maand, dag, uur; 29 februari volgt 28 februari) maal de duur van de periode, en het geheel wordt geschaald naar het opgegeven jaartotaal. De rekenkern telt die kWh vanaf 1 januari van het beginjaar op bij het bruto verbruik, als gelijkmatig verbruik binnen de periode (net als warmtepomp en laden in het geschatte profiel), en daarna met dezelfde jaarlijkse verbruiksverandering als de rest van het huis. Een verandering in het startjaar hoort in het profiel zelf; het beginjaar ligt daarom na het startjaar en binnen de looptijd.
+
+In perioden met extra verbruik beschrijven de gemeten netafname en teruglevering het huis niet meer; daar schat de simulatie de gelijktijdigheid weer met de verdeling, en een waarschuwing noemt vanaf welk jaar. Bij beide soorten noemt een waarschuwing het label, het beginjaar en het jaartotaal. Een warmtepomp met een lager rendement bij vorst en wisselende laadmomenten zijn niet meegenomen, net als in het geschatte profiel.
+
+Dit veranderde de betekenis van bestaande uitkomsten niet: zonder `load_changes` rekent het model precies als eerder, dus de modelversie bleef `nl-self-consumption-v5`.
+
+Referentiegevallen: `extra_load_from_a_later_year_counts_only_from_that_year` in `crates/core/tests/analysis.rs` (1 kWh extra in ieder productie-uur vanaf jaar 2 halveert de besparing in dat jaar) en `heat_pump_and_ev_from_a_later_year_are_added_only_from_that_year` in `crates/server/tests/scenario_api.rs`.
+
 Het gemeten jaar wordt herhaald met instelbare jaarlijkse verandering van verbruik en PV-opwek. Ook een schrikkeljaar blijft bij herhaling even lang; er is geen kalender- of weermodellering. Startjaar is het eerste volledige exploitatiejaar, geen berekening van een gedeeltelijk installatiejaar. De standaardwaarden voor degradatie en levensduur zijn bewerkbare aannames, geen fabrikantvoorspelling of garantie.
 
 De uitkomst bevat per jaar productie, vraag, direct gebruikte zonnestroom, acculading en -levering, netafname, teruglevering, standby, verliezen, begin-/eindlading, equivalente cycli en maximaal gemiddeld netafnamevermogen per meetperiode. Dit laatste is geen aansluitingsontwerp of gegarandeerde piekreductie.

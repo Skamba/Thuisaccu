@@ -24,6 +24,13 @@ window.Scenario = (() => {
       ["price_uncertainty_pct", "Tariefvariatie gevoeligheid (%)", "0", "80", "1"],
     ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", "0", "80", "1"]
   ];
+  // Extra verbruik vanaf een later jaar, met dezelfde vormen als het geschatte profiel (crates/server/src/typical_profile.rs).
+  const CHANGES = {
+    heat_pump: { label: "Warmtepomp", max: 30000, kwh: "2500" },
+    ev: { label: "Elektrische auto", max: 20000, kwh: "2000" }
+  };
+  const CHARGING = [["evening", "’s Avonds, vanaf 18.00 uur"], ["night", "’s Nachts, vanaf 01.00 uur"],
+    ["daytime", "Overdag, vanaf 11.00 uur"]];
   // Omschrijving zonder adres, hier en in de keuzehulp; een kopie begint dan met een leeg adresveld.
   const NO_ADDRESS = /^Nederland \((keuzehulp, )?geen adres opgegeven\)$/;
   const blankOption = (index, extra = {}) => ({
@@ -39,7 +46,7 @@ window.Scenario = (() => {
       params: Object.fromEntries(PARAMS.map(([key]) => [key, String(d[key])])),
       tariff: { import: "", export: "", fee: "0", change: String(d.annual_price_change_pct), bands: "", fixed: 0 },
       variant: { on: false, label: "Stresstest: geen terugleververgoeding vanaf 2030", year: "2030", export: "0", fee: "" },
-        options: []
+        changes: [], options: []
     };
   }
   let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null;
@@ -68,6 +75,8 @@ window.Scenario = (() => {
         export: String(request.parameters.export_variant.export_eur_per_kwh),
           fee: String(request.parameters.export_variant.export_fee_eur_per_kwh)
       } : blank().variant,
+      changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: String(c.from_calendar_year),
+        kwh: String(c.annual_kwh), charging: c.charging || "evening" })),
       options: request.candidates.map((c, i) => ({
         key: c.key, name: c.name, configuration_id: c.configuration_id, kind: "fixed", assumptions: c.assumptions,
         battery: Object.fromEntries(TECH.map(([key]) => [key, String(c.battery[key])])),
@@ -123,6 +132,16 @@ window.Scenario = (() => {
         export_fee_eur_per_kwh: number(state.variant.fee, "Terugleverkosten in de variant")
       };
     }
+    const start = parse(state.params.start_year), last = start != null && horizon != null ? start + horizon - 1 : null;
+    const load_changes = (state.changes || []).map(change => {
+      const kind = CHANGES[change.kind], year = parse(change.year), kwh = parse(change.kwh);
+      if (year == null || last == null || year < start || year > last) {
+        problems.push(`${kind.label}: kies een beginjaar binnen de looptijd${last == null ? "" : ` (${start} tot en met ${last})`}.`);
+      }
+      if (kwh == null || kwh < 1 || kwh > kind.max) problems.push(`${kind.label}: vul 1 tot ${n(kind.max, 0)} kWh extra per jaar in.`);
+      return { kind: change.kind, from_calendar_year: year ?? 0, annual_kwh: kwh ?? 0,
+        ...(change.kind === "ev" ? { charging: change.charging } : {}) };
+    });
     const candidates = state.options.map(option => {
       const battery = Object.fromEntries(TECH.map(([key, label]) => [key,
         number(option.battery[key], `${option.name}: ${label}`)]));
@@ -148,7 +167,8 @@ window.Scenario = (() => {
     const site = state.site && state.site.address === state.address ? state.site
       : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
     return { problems,
-      request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates } };
+      request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates,
+        ...(load_changes.length ? { load_changes } : {}) } };
   }
 
   function stepProfile(body) {
@@ -164,9 +184,49 @@ window.Scenario = (() => {
         state.site = site; state.address = site.address; address.value = site.address; persist();
       } })) : h("p", { class: "help" }, "Geen adressen gevonden. Je kunt het adres ook handmatig gebruiken."));
     }), "secondary");
+    const totals = new Map(), changes = h("div"), sums = [];
     const profile = select([["", "Profielen laden…"]], "",
-      { required: true, onchange: event => { state.profile = event.target.value; persist(); } });
+      { required: true, onchange: event => { state.profile = event.target.value; persist(); showSums(); } });
+    const showSums = () => sums.forEach(show => show());
+    // Per verandering het verbruik vanaf dat jaar: profiel plus alles wat er tot en met dat jaar bij komt.
+    function renderChanges() {
+      state.changes ||= [];
+      sums.length = 0;
+      changes.replaceChildren(...state.changes.map((change, index) => {
+        const kind = CHANGES[change.kind], sum = h("p", { class: "help", "aria-live": "polite" });
+        sums.push(() => {
+          const base = totals.get(state.profile), year = parse(change.year);
+          const extras = state.changes.map(c => [parse(c.year), parse(c.kwh)])
+            .filter(([y, kwh]) => y != null && kwh != null && year != null && y <= year).map(([, kwh]) => kwh);
+          sum.textContent = base != null && year != null && parse(change.kwh) != null
+            ? `Je verbruik vanaf 1 januari ${year}: ${[base, ...extras].map(v => n(v, 0)).join(" + ")} = ongeveer ${n(extras.reduce((a, b) => a + b, base), 0)} kWh per jaar.`
+            : "Telt vanaf 1 januari van het gekozen jaar bovenop het verbruik in je energieprofiel.";
+        });
+        const own = (label, key, props, help) => field(label,
+          bindValue(numberInput({ required: true, ...props }), () => change[key], v => { change[key] = v; showSums(); }), help);
+        return h("fieldset", {}, h("legend", {}, kind.label),
+          h("div", { class: "grid" },
+            own("Vanaf jaar (1 januari)", "year", { min: "2026", max: "2100", step: "1" }),
+            own("Extra verbruik (kWh per jaar)", "kwh", { min: "1", max: String(kind.max), step: "1" },
+              change.kind === "heat_pump" ? "Wat er bij je huidige verbruik bij komt, niet je nieuwe totaal."
+                : "Wat de auto thuis laadt, met 3,68 kW (16 A, één fase)."),
+            change.kind === "ev" ? field("Laden", bindValue(select(CHARGING), () => change.charging, v => { change.charging = v; })) : null),
+          sum,
+          h("div", { class: "actions" }, button(`Verwijder ${kind.label.toLowerCase()}`, () => {
+            state.changes.splice(index, 1); persist(); renderChanges(); }, "ghost")));
+      }));
+      showSums();
+    }
+    const addChange = kind => button(`+ ${CHANGES[kind].label}`, () => {
+      const start = parse(state.params.start_year) ?? Data.defaults().start_year;
+      const last = start + (parse(state.params.horizon_years) ?? Data.defaults().horizon_years) - 1;
+      state.changes ||= [];
+      state.changes.push({ kind, year: String(Math.min(start + 1, last)), kwh: CHANGES[kind].kwh, charging: "evening" });
+      persist(); renderChanges();
+    }, "secondary");
     Data.imports().then(items => {
+      for (const item of items) if (item.summary.consumption_kwh != null) totals.set(String(item.id), item.summary.consumption_kwh);
+      showSums();
       profile.replaceChildren(h("option", { value: "" }, "Kies een bewaard profiel…"), ...items.map(item => {
         const fit = Data.suitability(item);
         return h("option", { value: String(item.id), disabled: fit.ok === false },
@@ -185,7 +245,22 @@ window.Scenario = (() => {
             " of laat de keuzehulp een geschat profiel maken.")),
         field("Doel",
           bindValue(select(Object.entries(Data.objectives)), () => state.objective, v => { state.objective = v; })),
-        field("Maximale startinvestering (€, optioneel)", bindValue(numberInput({ min: "0", step: "0.01", placeholder: "Geen maximum" }), () => state.budget, v => { state.budget = v; }))));
+        field("Maximale startinvestering (€, optioneel)", bindValue(numberInput({ min: "0", step: "0.01", placeholder: "Geen maximum" }), () => state.budget, v => { state.budget = v; }))),
+      h("section", { class: "panel" }, h("h3", {}, "Verandering in verbruik (optioneel)"),
+        h("p", { class: "help" }, "Komt er later een warmtepomp of elektrische auto bij? Dan telt dat verbruik vanaf 1 januari van het jaar dat je kiest. " +
+          "De warmtepomp volgt de buitentemperatuur van 2023 in De Bilt, met een gelijkmatig deel voor warm tapwater; de auto laadt elke dag even veel. " +
+          "Rekent je profiel met gemeten netafname en teruglevering, dan schat het model vanaf dat jaar hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dan wat minder zeker."),
+        h("details", {}, h("summary", {}, "Hoeveel kWh gebruikt een warmtepomp?"),
+          h("p", {}, "Kijk eerst in de offerte of het advies van je installateur. Staat het er niet in: Milieu Centraal rekent voor een goed geïsoleerd hoekhuis met 2 personen " +
+            "dat met een volledige warmtepomp ongeveer 950 m³ gas vervangt door 3.400 kWh stroom, ongeveer 3.150 kWh meer dan met een cv-ketel; " +
+            "grofweg 3,3 kWh per m³ gas dat je nu verbruikt (onze afleiding). Een hybride warmtepomp halveert in een matig geïsoleerd hoekhuis het gasverbruik van 1.360 naar 680 m³, " +
+            "met ongeveer 1.600 kWh extra stroom: grofweg 1,2 kWh per m³ van je huidige gasverbruik. Je eigen huis, isolatie en warmtepomp kunnen flink afwijken."),
+          h("p", {}, UI.external("Milieu Centraal: volledige warmtepomp (gewijzigd 14 oktober 2026)",
+            "https://www.milieucentraal.nl/energie-besparen/duurzaam-verwarmen-en-koelen/volledige-warmtepomp/"), " · ",
+          UI.external("Milieu Centraal: hybride warmtepomp (gewijzigd 14 oktober 2026)",
+            "https://www.milieucentraal.nl/energie-besparen/duurzaam-verwarmen-en-koelen/hybride-warmtepomp/"))),
+        changes, h("div", { class: "actions" }, addChange("heat_pump"), addChange("ev"))));
+    renderChanges();
   }
 
   // Optionele tweede doorrekening met andere terugleverprijzen vanaf een gekozen jaar.

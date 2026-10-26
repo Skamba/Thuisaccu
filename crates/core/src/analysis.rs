@@ -54,6 +54,61 @@ pub struct ExportVariant {
     pub export_fee_eur_per_kwh: f64,
 }
 
+/// Extra verbruik vanaf 1 januari van een kalenderjaar, zoals een warmtepomp of elektrische
+/// auto, bovenop het gemeten of geschatte jaar. `steady_kwh` heeft één waarde per meetperiode
+/// van het profiel en loopt binnen de periode gelijkmatig. De vorm (graaduren, laadmoment)
+/// komt van buiten de rekenkern.
+#[derive(Debug, Clone)]
+pub struct LoadAddition {
+    pub label: String,
+    pub from_calendar_year: u32,
+    pub steady_kwh: Vec<f64>,
+}
+
+/// Profiel per kalenderjaar: het basisjaar plus de extra verbruiken die dan al lopen.
+struct Profiles<'a> {
+    base: &'a [EnergyInterval],
+    /// Op volgorde van beginjaar; elk profiel bevat alle eerdere uitbreidingen.
+    stages: Vec<(u32, Vec<EnergyInterval>)>,
+}
+
+impl<'a> Profiles<'a> {
+    fn new(base: &'a [EnergyInterval], additions: &[LoadAddition]) -> Self {
+        let mut sorted: Vec<_> = additions.iter().collect();
+        sorted.sort_by_key(|a| a.from_calendar_year);
+        let mut stages: Vec<(u32, Vec<EnergyInterval>)> = Vec::new();
+        for addition in sorted {
+            let mut profile = stages
+                .last()
+                .map_or_else(|| base.to_vec(), |(_, p)| p.clone());
+            for (interval, &extra) in profile.iter_mut().zip(&addition.steady_kwh) {
+                if extra > 0.0 {
+                    interval.consumption_kwh += extra;
+                    interval.steady_consumption_kwh =
+                        Some(interval.steady_consumption_kwh.unwrap_or(0.0) + extra);
+                    // De meter mat het huis zonder dit verbruik; de gelijktijdigheid binnen de
+                    // periode volgt dan weer de verdeling.
+                    interval.measured_import_kwh = None;
+                    interval.measured_export_kwh = None;
+                }
+            }
+            match stages.last_mut() {
+                Some((year, last)) if *year == addition.from_calendar_year => *last = profile,
+                _ => stages.push((addition.from_calendar_year, profile)),
+            }
+        }
+        Self { base, stages }
+    }
+
+    fn year(&self, calendar_year: u32) -> &[EnergyInterval] {
+        self.stages
+            .iter()
+            .rev()
+            .find(|(from, _)| *from <= calendar_year)
+            .map_or(self.base, |(_, profile)| profile)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Candidate {
@@ -155,8 +210,48 @@ fn euro(value: f64) -> String {
     format!("{value:.4}").replace('.', ",")
 }
 
+/// Afgerond niet-negatief geheel getal met een punt als duizendtalscheiding, zoals in de interface.
+fn whole(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            out.push('.');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 fn bounded(value: f64, low: f64, high: f64) -> bool {
     value.is_finite() && value >= low && value <= high
+}
+
+fn validate_additions(
+    profile: &[EnergyInterval],
+    p: &Parameters,
+    additions: &[LoadAddition],
+) -> Result<(), AnalysisError> {
+    ensure(
+        additions.len() <= 10,
+        "Geef hoogstens 10 veranderingen in verbruik op.",
+    )?;
+    for a in additions {
+        ensure(
+            !a.label.trim().is_empty() && a.label.chars().count() <= 200,
+            "Geef elke verandering in verbruik een korte omschrijving.",
+        )?;
+        ensure(
+            (p.start_year..p.start_year + p.horizon_years).contains(&a.from_calendar_year),
+            "Een verandering in verbruik begint binnen de looptijd, op of na het startjaar.",
+        )?;
+        ensure(
+            a.steady_kwh.len() == profile.len()
+                && a.steady_kwh.iter().all(|&v| bounded(v, 0.0, 1e6)),
+            "Extra verbruik hoort één niet-negatieve waarde per meetperiode te hebben.",
+        )?;
+    }
+    Ok(())
 }
 
 pub fn validate(
@@ -401,7 +496,7 @@ fn year_ranges(years: &[u32]) -> String {
 }
 
 fn project(
-    profile: &[EnergyInterval],
+    profiles: &Profiles,
     p: &Parameters,
     c: &Candidate,
     stress: i32,
@@ -442,6 +537,8 @@ fn project(
     for year in 1..=p.horizon_years {
         let pv_factor = (1.0 - p.annual_pv_loss_pct / 100.0).powi((year - 1) as i32);
         let load_factor = (1.0 + p.annual_load_growth_pct / 100.0).powi((year - 1) as i32);
+        let calendar_year = p.start_year + year - 1;
+        let profile = profiles.year(calendar_year);
         let baseline = sizing::simulate_year(
             profile,
             None,
@@ -462,7 +559,6 @@ fn project(
         );
         state = energy.end_storage_kwh;
         let price_factor = (1.0 + p.tariff.annual_price_change_pct / 100.0).powi((year - 1) as i32);
-        let calendar_year = p.start_year + year - 1;
         let tariff = match variant {
             Some(v) if calendar_year >= v.from_calendar_year => &varied,
             _ => &tariff,
@@ -594,14 +690,26 @@ pub fn analyze(
     parameters: &Parameters,
     candidates: &[Candidate],
 ) -> Result<AnalysisResult, AnalysisError> {
+    analyze_with(profile, parameters, candidates, &[])
+}
+
+/// Als [`analyze`], met extra verbruik dat pas in een later kalenderjaar begint.
+pub fn analyze_with(
+    profile: &[EnergyInterval],
+    parameters: &Parameters,
+    candidates: &[Candidate],
+    additions: &[LoadAddition],
+) -> Result<AnalysisResult, AnalysisError> {
     validate(profile, parameters, candidates)?;
+    validate_additions(profile, parameters, additions)?;
+    let profiles = Profiles::new(profile, additions);
     let mut results = Vec::new();
     for c in candidates {
-        let mut base = project(profile, parameters, c, 0, None);
-        let low = project(profile, parameters, c, -1, None);
-        let high = project(profile, parameters, c, 1, None);
+        let mut base = project(&profiles, parameters, c, 0, None);
+        let low = project(&profiles, parameters, c, -1, None);
+        let high = project(&profiles, parameters, c, 1, None);
         if let Some(v) = &parameters.export_variant {
-            let varied = project(profile, parameters, c, 0, Some(v));
+            let varied = project(&profiles, parameters, c, 0, Some(v));
             base.export_variant = Some(ExportVariantResult {
                 npv_eur: varied.npv_eur,
                 net_profit_eur: varied.net_profit_eur,
@@ -622,8 +730,15 @@ pub fn analyze(
         };
         results.push(base);
     }
-    let baseline =
-        sizing::simulate_year(profile, None, 0, 1.0, 1.0, 0.0, parameters.load_variation);
+    let baseline = sizing::simulate_year(
+        profiles.year(parameters.start_year),
+        None,
+        0,
+        1.0,
+        1.0,
+        0.0,
+        parameters.load_variation,
+    );
     let best_key = choose(
         parameters.objective,
         baseline.self_consumption_pct,
@@ -668,9 +783,24 @@ pub fn analyze(
         .count();
     if measured > 0 {
         warnings.push(format!(
-            "In {} van de {} meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt hoeveel opwek en verbruik binnen de periode samenvielen de meter; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt.",
+            "In {} van de {} meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt uit de meter hoeveel opwek en verbruik binnen de periode samenvielen; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt.",
             measured,
             profile.len()
+        ));
+    }
+    for a in additions {
+        warnings.push(format!(
+            "Extra verbruik ‘{}’: vanaf 1 januari {} komt er {} kWh per jaar bij, bovenop het verbruik in het profiel; binnen iedere meetperiode loopt het gelijkmatig.",
+            a.label,
+            a.from_calendar_year,
+            whole(a.steady_kwh.iter().sum::<f64>())
+        ));
+    }
+    if let Some(first) = additions.iter().map(|a| a.from_calendar_year).min()
+        && measured > 0
+    {
+        warnings.push(format!(
+            "Vanaf {first} meet de slimme meter niet meer het huis waarmee gerekend wordt. In perioden met extra verbruik schat het model daarom weer met de verdeling hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dat jaar minder zeker en kan wat hoger of lager uitvallen."
         ));
     }
     if parameters.start_year <= 2026 {

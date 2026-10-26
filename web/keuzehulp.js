@@ -179,7 +179,8 @@
     const electric = h("fieldset", {}, h("legend", {}, "Warmtepomp of elektrische auto? (optioneel)"),
       h("p", { class: "help" }, "Deze verbruiken op andere momenten dan de rest van het huis: een warmtepomp vooral in de winter, " +
         "een auto als hij thuis laadt. Dit verbruik telt al mee in de getallen hierboven; we verdelen het alleen anders over het jaar. " +
-        `Plan je er een? Tel het verwachte verbruik dan op bij je ${total() ? "totale verbruik" : "afname"}.`),
+        `Plan je er een? Tel het verwachte verbruik dan op bij je ${total() ? "totale verbruik" : "afname"}. ` +
+        "Komt hij pas over een paar jaar? Tel hem dan hier niet op, maar kies na de uitkomst ‘Pas aan en reken opnieuw’ en vul bij ‘Verandering in verbruik’ in vanaf welk jaar."),
       h("div", { class: "grid" },
         amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { min: "0", max: "30000" },
           "Staat vaak in de app of op het display van de warmtepomp. Ter indicatie: CE Delft rekent bij label B en 2 personen " +

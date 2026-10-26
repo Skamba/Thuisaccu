@@ -195,25 +195,28 @@ window.Results = (() => {
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       const yearRows = c.key === "no_battery"
-        ? horizon.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.baseline_bill_eur),
+        ? horizon.map(y => [String(y.calendar_year), kwh(y.energy.consumption_kwh), money(y.baseline_bill_eur), money(y.baseline_bill_eur),
           money(0), money(0), money(0), money(0), money(0), "—"])
-        : c.years.map(y => [String(y.calendar_year), money(y.baseline_bill_eur), money(y.battery_bill_eur),
+        : c.years.map(y => [String(y.calendar_year), kwh(y.energy.consumption_kwh), money(y.baseline_bill_eur), money(y.battery_bill_eur),
           // Vóór modelversie 5 stond de hele investering op tijdstip nul en was er geen aflossing per jaar.
           money(y.extra_costs_eur), money(y.financing_interest_eur),
           finite(y.financing_principal_eur) ? money(y.financing_principal_eur) : "—", money(y.net_cashflow_eur), money(y.cumulative_eur),
           pct(y.energy.self_sufficiency_pct)]);
-      target.replaceChildren(
-        table(["Jaar", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Aflossing",
+      // Zonder accu geen totalen; replaceChildren zou null als tekst tonen.
+      target.replaceChildren(...[
+        table(["Jaar", "Bruto verbruik", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Aflossing",
           "Netto voordeel", "Cumulatief", "Zelfvoorziening"],
           yearRows),
         c.key === "no_battery" ? null : stats([
           ["Extra kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
             ["Bespaarde energiekosten", money(c.lifetime_energy_saving_eur)],
           ["Gedisconteerd terugverdiend na", years(c.discounted_payback_years)]
-        ]));
+        ])].filter(Boolean));
     };
     pick.addEventListener("change", render); render();
-    out.append(UI.field("Jaartabel van", pick), target);
+    // Een warmtepomp of auto vanaf een later jaar verklaart de sprong in het verbruik.
+    const changes = run.result.warnings.filter(w => /^Extra verbruik|meet de slimme meter niet meer/.test(w));
+    out.append(UI.field("Jaartabel van", pick), target, ...changes.map(w => h("p", { class: "help" }, w)));
     return out;
   }
 

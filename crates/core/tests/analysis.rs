@@ -270,6 +270,50 @@ fn financing_counts_interest_once_and_payback_must_survive_replacement_costs() {
 }
 
 #[test]
+fn extra_load_from_a_later_year_counts_only_from_that_year() {
+    // Vanaf 2028 komt er in elk opwekuur 1 kWh gelijkmatig verbruik bij (bijvoorbeeld een
+    // warmtepomp). Dan blijft er per opwekuur nog 1 kWh over om te laden in plaats van 2:
+    // 4380 × 1 kWh × (€ 0,30 − € 0,08) = € 963,60 in 2028 tegen € 1927,20 in 2027.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    let profile = profile();
+    let extra: Vec<f64> = (0..8760)
+        .map(|i| if i % 2 == 0 { 1.0 } else { 0.0 })
+        .collect();
+    let addition = analysis::LoadAddition {
+        label: "Warmtepomp".into(),
+        from_calendar_year: 2028,
+        steady_kwh: extra.clone(),
+    };
+    let c = candidate("b", 2.0, 50_000);
+    let r = analysis::analyze_with(&profile, &p, std::slice::from_ref(&c), &[addition]).unwrap();
+    let years = &r.candidates[0].years;
+    close(years[0].energy.consumption_kwh, 8760.0);
+    close(years[1].energy.consumption_kwh, 13140.0);
+    close(years[0].energy_saving_eur, 1927.2);
+    close(years[1].energy_saving_eur, 963.6);
+    close(r.baseline_first_year.consumption_kwh, 8760.0);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("vanaf 1 januari 2028 komt er 4.380 kWh per jaar bij"))
+    );
+    // Een verandering vóór het startjaar of met een verkeerde lengte wordt geweigerd.
+    for (from, values) in [
+        (2026, extra.clone()),
+        (2029, extra.clone()),
+        (2028, extra[..24].to_vec()),
+    ] {
+        let wrong = analysis::LoadAddition {
+            label: "Warmtepomp".into(),
+            from_calendar_year: from,
+            steady_kwh: values,
+        };
+        assert!(analysis::analyze_with(&profile, &p, std::slice::from_ref(&c), &[wrong]).is_err());
+    }
+}
+
+#[test]
 fn a_loan_at_the_discount_rate_leaves_the_npv_unchanged_and_costs_only_its_interest() {
     // € 500 lenen tegen 5% in 2 jaar, disconto 5%: de lening is in geld van nu precies € 500
     // waard. Annuïteit 25 / (1 − 1,05^−2) = € 268,90; rente 25,00 en 12,80; aflossing jaar 1

@@ -494,6 +494,11 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.getByLabel("Naam van de berekening").fill("Synthetische offerte");
   // Het adres is optioneel: alleen een label bij de berekening.
   await page.getByLabel(/Energieprofiel/).selectOption({ index: 1 });
+  // Een warmtepomp vanaf het tweede jaar telt pas vanaf 1 januari van dat jaar mee.
+  await page.click("button:has-text('+ Warmtepomp')");
+  assert.equal(await page.getByLabel("Vanaf jaar (1 januari)").inputValue(), "2028");
+  await page.getByLabel("Extra verbruik (kWh per jaar)").fill("2500");
+  await page.getByText(/Je verbruik vanaf 1 januari 2028: [\d.]+ \+ 2\.500 = ongeveer [\d.]+ kWh/).waitFor();
   await next(page);
   await page.getByLabel("Stroomprijs, alles inbegrepen (€/kWh)").fill("0.25");
   await page.getByLabel("Terugleververgoeding (€/kWh)").fill("0.05");
@@ -531,10 +536,18 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   if (limit.startsWith("Tot")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
   else assert.ok(expected <= 1, `${expected} zou positief zijn`);
   assert.match(view, /lonend zolang de startinvestering niet boven ongeveer|ook als hij gratis zou zijn/);
-  // Een kopie begint met een leeg adresveld, niet met de omschrijving.
+  // In de jaartabel springt het verbruik in 2028 met de warmtepomp omhoog, met de uitleg eronder.
+  await page.click(`[role=tab]:has-text("Kasstromen")`);
+  const yearly = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
+    .evaluate(t => [...t.tBodies[0].rows].map(r => Number(r.cells[1].textContent.replace(/\D/g, ""))));
+  assert.ok(Math.abs(yearly[1] - yearly[0] - 2500) < 50, JSON.stringify(yearly.slice(0, 2)));
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"),
+    /Extra verbruik ‘Warmtepomp’: vanaf 1 januari 2028 komt er 2\.500 kWh per jaar bij/);
+  // Een kopie begint met een leeg adresveld, niet met de omschrijving, en houdt de warmtepomp.
   await page.click("text=Pas aan en reken opnieuw");
   await page.waitForSelector("text=Profiel en doel");
   assert.equal(await page.getByLabel("Adres in Nederland (optioneel)").inputValue(), "");
+  assert.equal(await page.getByLabel("Extra verbruik (kWh per jaar)").inputValue(), "2500");
   assert.deepEqual(problems, []);
   await close();
 });

@@ -42,6 +42,10 @@ pub struct RunRequest {
     pub technical_assumptions_confirmed: bool,
     pub consumption_is_gross: bool,
     pub production_is_ac: bool,
+    /// Extra verbruik vanaf een later jaar, zoals een warmtepomp of elektrische auto.
+    /// Ontbreekt in runs van vóór deze uitbreiding.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub load_changes: Vec<crate::typical_profile::LoadChange>,
 }
 
 pub async fn costs() -> Json<Value> {
@@ -87,7 +91,19 @@ pub async fn run(
             "Ongeldige coördinaten voor de Nederlandse adresondersteuning.",
         ));
     }
-    let profile = load_profile(&catalog, request.solar_import_id).await?;
+    let (profile, periods) = load_profile(&catalog, request.solar_import_id).await?;
+    let additions = request
+        .load_changes
+        .iter()
+        .map(|change| {
+            Ok(analysis::LoadAddition {
+                label: crate::typical_profile::load_change_label(change),
+                from_calendar_year: change.from_calendar_year,
+                steady_kwh: crate::typical_profile::load_change(change, &periods)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map_err(invalid)?;
     let metadata = catalog
         .solar_metadata(request.solar_import_id)
         .await
@@ -99,10 +115,12 @@ pub async fn run(
     let input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
     let parameters = request.parameters.clone();
     let candidates = request.candidates.clone();
-    let mut result = crate::blocking(move || analysis::analyze(&profile, &parameters, &candidates))
-        .await
-        .ok_or_else(|| invalid("De scenarioanalyse kon niet worden voltooid."))?
-        .map_err(|e| invalid(e.to_string()))?;
+    let mut result = crate::blocking(move || {
+        analysis::analyze_with(&profile, &parameters, &candidates, &additions)
+    })
+    .await
+    .ok_or_else(|| invalid("De scenarioanalyse kon niet worden voltooid."))?
+    .map_err(|e| invalid(e.to_string()))?;
     if metadata["options"]["is_demo"] == true {
         result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
     } else if metadata["options"]["generator"] == crate::typical_profile::GENERATOR {
@@ -134,7 +152,11 @@ pub async fn run(
 }
 
 /// Eén aaneengesloten reeks met bruto verbruik per interval, of een gebruikersfout.
-async fn load_profile(catalog: &Catalog, import_id: i64) -> Result<Vec<EnergyInterval>, ApiError> {
+/// Met de begin- en eindtijd van iedere meetperiode, voor extra verbruik met een dagvorm.
+async fn load_profile(
+    catalog: &Catalog,
+    import_id: i64,
+) -> Result<(Vec<EnergyInterval>, Vec<(i64, i64)>), ApiError> {
     let intervals = catalog
         .solar_intervals(import_id)
         .await
@@ -164,7 +186,11 @@ async fn load_profile(catalog: &Catalog, import_id: i64) -> Result<Vec<EnergyInt
             measured_export_kwh: item.measured_export_wh.map(|v| v / 1000.0),
         });
     }
-    Ok(profile)
+    let periods = intervals
+        .iter()
+        .map(|i| (i.start_unix_s, i.end_unix_s))
+        .collect();
+    Ok((profile, periods))
 }
 
 /// Bovengrens van zelf gebruikte zonnestroom per accugrootte, als hulp bij het kiezen van een bereik.
@@ -172,7 +198,7 @@ pub async fn capacity_curve(
     State(catalog): State<Catalog>,
     Path(import_id): Path<i64>,
 ) -> Result<Json<Value>, ApiError> {
-    let profile = load_profile(&catalog, import_id).await?;
+    let (profile, _) = load_profile(&catalog, import_id).await?;
     let hours: f64 = profile.iter().map(|i| i.duration_hours).sum();
     if !((hours - 8760.0).abs() < 0.01 || (hours - 8784.0).abs() < 0.01) {
         return Err(invalid(
