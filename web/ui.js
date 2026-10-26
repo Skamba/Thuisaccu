@@ -159,12 +159,14 @@ window.UI = (() => {
     return !first;
   }
 
-  function table(headers, rows, { caption, className = "" } = {}) {
+  // Met stack: true wordt elke rij op een smal scherm een kaartje met de kolomkop bij elke waarde (zie styles.css).
+  function table(headers, rows, { caption, className = "", stack = false } = {}) {
     return h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": caption || headers.join(", ") },
-      h("table", { class: className },
+      h("table", { class: [className, stack ? "stack" : ""].filter(Boolean).join(" ") },
         caption ? h("caption", {}, caption) : null,
         h("thead", {}, h("tr", {}, headers.map(text => h("th", { scope: "col" }, text)))),
-        h("tbody", {}, rows.map(row => h("tr", {}, row.map(cell => h("td", {}, cell ?? "Onbekend")))))));
+        h("tbody", {}, rows.map(row => h("tr", {}, row.map((cell, i) =>
+          h("td", { dataset: stack ? { label: headers[i] ?? "" } : null }, cell ?? "Onbekend")))))));
   }
   const stats = items => h("dl", { class: "stats" },
     items.map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));

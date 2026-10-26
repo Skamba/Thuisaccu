@@ -55,7 +55,7 @@
             rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
           money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", () => duplicate(run), "ghost"),
             button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title}` }))];
-      }), { caption: "Laatste 100 berekeningen" }));
+      }), { caption: "Laatste 100 berekeningen", stack: true }));
     }
   });
 

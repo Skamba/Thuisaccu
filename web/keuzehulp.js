@@ -592,10 +592,10 @@
             p.name, soort[p.circuit ? "circuit" : p.kind] || "Onbekend", `${n(p.capacity, 1)} kWh`, `${n(p.dischargeKw, 1)} kW`,
             h("span", {}, external(money(p.offer.upfront_amount_minor / 100, { decimals: 0 }), p.offer.source_url),
               p.offer.includes_installation === false ? " excl. installatie" : ""),
-            position(p)]), { caption: "Accu’s in de berekening", className: "product-table" })) : null,
+            position(p)]), { caption: "Accu’s in de berekening", className: "product-table", stack: true })) : null,
         excluded.length ? group("excluded", `${excluded.length} ${excluded.length === 1 ? "accu" : "accu’s"} niet meegerekend, met de reden`,
           table(["Accu", "Waarom niet"], excluded.map(p => [p.name, p.reason]),
-            { caption: "Accu’s buiten de berekening", className: "product-table" })) : null].filter(Boolean));
+            { caption: "Accu’s buiten de berekening", className: "product-table", stack: true })) : null].filter(Boolean));
     };
     renderPick();
     pickSection.append(pickBody);

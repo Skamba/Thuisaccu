@@ -71,7 +71,7 @@
           kwh(item.summary.production_kwh),
         item.summary.consumption_kwh == null ? "Nee" : kwh(item.summary.consumption_kwh), fitBadge(item),
         button("Verwijder", () => remove(item), "ghost remove", { "aria-label": `Verwijder ${item.filename}` })]),
-        { caption: "Bewaarde energieprofielen" }));
+        { caption: "Bewaarde energieprofielen", stack: true }));
     }
   });
 

@@ -565,6 +565,12 @@ test("smal scherm: menu werkt met het toetsenbord", async () => {
   assert.equal(await page.getAttribute("#menu", "aria-expanded"), "false");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(overflow <= 1, `horizontaal scrollen: ${overflow}px`);
+  // De catalogus wordt op een telefoon een lijst kaartjes, met de kolomkop bij elke waarde.
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table.stack", { timeout: 30000 });
+  assert.equal(await page.$eval("table.stack td:nth-child(4)", td => getComputedStyle(td, "::before").content), "\"Prijs\"");
+  const sideways = await page.$eval(".table-wrap", wrap => wrap.scrollWidth - wrap.clientWidth);
+  assert.ok(sideways <= 1, `catalogus schuift ${sideways}px zijwaarts`);
   assert.deepEqual(problems, []);
   await close();
 });

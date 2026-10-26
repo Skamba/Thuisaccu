@@ -303,7 +303,7 @@
             capacity, offer ? priceText(offer) : h("span", { class: "unknown" }, "Geen prijs"),
               String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size),
             badge(reviewed ? "Bronnen nagekeken" : "Bronnen niet nagekeken", reviewed ? "success" : "warning")];
-        }), { caption: "Accucatalogus" }) : h("p", { class: "empty" }, "Geen uitvoeringen bij deze filters."));
+        }), { caption: "Accucatalogus", stack: true }) : h("p", { class: "empty" }, "Geen uitvoeringen bij deze filters."));
         drawTray();
       }
       draw();

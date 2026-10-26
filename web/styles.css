@@ -135,6 +135,20 @@ td strong, th strong { display: block; }
 .compare th[scope="row"] { position: sticky; left: 0; background: var(--surface); min-width: 11rem; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
 .compare td { min-width: 13rem; }
+.compare thead th:first-child { position: sticky; left: 0; z-index: 1; }
+@media (max-width: 40rem) {
+  .compare th[scope="row"], .compare thead th:first-child { min-width: 7.5rem; width: 7.5rem; hyphens: auto; }
+  .compare td { min-width: 11rem; }
+  /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
+  table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  table.stack, table.stack tbody, table.stack tr, table.stack caption { display: block; }
+  table.stack tr { border-bottom: 1px solid var(--line); padding: .35rem 0; }
+  table.stack td { display: grid; grid-template-columns: minmax(6.5rem, 35%) minmax(0, 1fr); gap: .75rem; border: 0; padding: .3rem .75rem; }
+  table.stack td::before { content: attr(data-label); font-weight: 600; font-size: .8rem; color: var(--muted); }
+  table.stack td input[type="checkbox"] { justify-self: start; }
+  table.stack td[data-label=""] { display: block; }
+  table.stack td[data-label=""]::before { content: none; }
+}
 .claim + .claim { border-top: 1px dashed var(--line); margin-top: .4rem; padding-top: .4rem; }
 .source summary { font-weight: 500; font-size: .8rem; }
 .source p { font-size: .8rem; margin: .2rem 0; color: var(--muted); }
