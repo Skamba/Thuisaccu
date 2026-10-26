@@ -40,6 +40,23 @@ let ready = Promise.all([loaded, owner])
   .then(async () => { await open((await stored("readonly", store => store.get(KEY))) ?? undefined); savedAt = changes(); })
   .catch(error => { throw new Error(`De database in deze browser kon niet worden geopend: ${error?.message ?? error}`); });
 
+// Een fout in de module zelf (een paniek in Rust) laat haar in een onbruikbare toestand achter:
+// local.js start een nieuwe worker, die de laatst bewaarde database opnieuw inleest. Een half
+// uitgevoerde wijziging was nog niet bewaard.
+const CRASHED = "Er ging iets mis in Thuisaccu zelf. De laatst bewaarde gegevens zijn opnieuw geladen; probeer het nog eens.";
+function crashed(id) {
+  self.postMessage({ id, restart: true, error: CRASHED });
+  self.close();
+}
+// Een Rust-functie die async is, start in een microtaak; een paniek daar komt niet in de catch hieronder
+// terecht, maar als ongevangen fout van de worker.
+self.addEventListener("error", event => {
+  if (event.error instanceof WebAssembly.RuntimeError) { event.preventDefault(); crashed(); }
+});
+self.addEventListener("unhandledrejection", event => {
+  if (event.reason instanceof WebAssembly.RuntimeError) { event.preventDefault(); crashed(); }
+});
+
 self.onmessage = async ({ data }) => {
   const { id } = data;
   if (data.type === "owner") { blocked = false; own(); return; }
@@ -85,15 +102,7 @@ self.onmessage = async ({ data }) => {
       self.postMessage({ id });
     }
   } catch (error) {
-    // Een fout in de module zelf (een paniek in Rust) laat haar in een onbruikbare toestand achter:
-    // local.js start een nieuwe worker, die de laatst bewaarde database opnieuw inleest. Een
-    // half uitgevoerde wijziging was nog niet bewaard.
-    if (error instanceof WebAssembly.RuntimeError) {
-      self.postMessage({ id, restart: true,
-        error: "Er ging iets mis in Thuisaccu zelf. De laatst bewaarde gegevens zijn opnieuw geladen; probeer het nog eens." });
-      self.close();
-      return;
-    }
+    if (error instanceof WebAssembly.RuntimeError) { crashed(id); return; }
     self.postMessage({ id, error: String(error?.message ?? error) });
   }
 };

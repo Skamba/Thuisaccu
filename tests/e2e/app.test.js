@@ -1067,10 +1067,12 @@ test("browserversie bewaart gegevens in deze browser en maakt een back-up", { sk
 });
 
 test("na een fout in de rekenmodule houdt dit tabblad de database", { skip: !BROWSER_MODE, timeout: 60000 }, async () => {
-  // Een worker die op één testpad een fout in de module nabootst, zoals een paniek in Rust.
+  // Een worker die op twee testpaden een fout in de module nabootst, zoals een paniek in Rust: direct in het
+  // verzoek, en in een microtaak, zoals bij een async Rust-functie (buiten de catch van het verzoek).
   const marker = 'if (data.type === "request") {';
   patchWorker = body => { assert.ok(body.includes(marker)); return body.replace(marker,
-    `${marker} if (data.path.includes("__fout")) throw new WebAssembly.RuntimeError("test");`); };
+    `${marker} if (data.path.includes("__fout")) throw new WebAssembly.RuntimeError("test");
+    if (data.path.includes("__later")) { queueMicrotask(() => { throw new WebAssembly.RuntimeError("test"); }); return; }`); };
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/accus`);
   await page.waitForSelector("table tbody tr", { timeout: 30000 });
@@ -1079,6 +1081,8 @@ test("na een fout in de rekenmodule houdt dit tabblad de database", { skip: !BRO
   await second.waitForSelector("#elsewhere");
   const failed = await page.evaluate(() => Local.fetch("api/v1/__fout").then(() => null, error => error.message));
   assert.match(failed, /opnieuw geladen/);
+  const later = await page.evaluate(() => Local.fetch("api/v1/__later").then(() => null, error => error.message));
+  assert.match(later, /opnieuw geladen/);
   // De nieuwe worker krijgt het slot van de pagina; het tweede tabblad blijft wachten.
   assert.equal(await page.evaluate(() => Local.fetch("api/v1/health").then(r => r.status)), 200);
   assert.equal(await page.locator("#elsewhere").count(), 0);
