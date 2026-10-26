@@ -332,7 +332,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await page.waitForSelector(".verdict");
-  // De tabbladen staan compact op hooguit drie regels, allemaal in beeld.
+  // De tabbladen staan in drie kolommen op drie regels, allemaal in beeld.
   const tops = await page.$$eval("[role=tab]", tabs => new Set(tabs.map(t => t.offsetTop)).size);
   assert.ok(tops <= 3, `tabbladen lopen over ${tops} regels`);
   assert.ok(await page.evaluate(() => [...document.querySelectorAll("[role=tab]")].every(t => t.getBoundingClientRect().right <= innerWidth)));
