@@ -203,6 +203,16 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
+  // Op een telefoon schuift geen enkel tabblad van de uitkomst zijwaarts.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.waitForSelector(".verdict");
+  for (const tab of await page.$$eval("[role=tab]", tabs => tabs.map(t => t.textContent))) {
+    await page.click(`[role=tab]:has-text("${tab.replace(/ \(\d+\)/, "")}")`);
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    assert.ok(over <= 0, `${tab}: ${over}px te breed`);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   // Delen: de link bevat de uitkomst zonder adres en opent ook in een browser zonder deze gegevens.
   await page.click("button:has-text('Deel als link')");

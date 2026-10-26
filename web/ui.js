@@ -35,8 +35,9 @@ window.UI = (() => {
   const number = (value, decimals = 2) => finite(value)
     ? new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)
     : "Onbekend";
+  // Minteken, euroteken en bedrag blijven op één regel.
   const money = (value, { decimals = 2 } = {}) => finite(value)
-    ? `${Number(value) < 0 ? "−" : ""}€ ${number(Math.abs(value), decimals)}`
+    ? `${Number(value) < 0 ? "−\u2060" : ""}€\u00a0${number(Math.abs(value), decimals)}`
     : "Onbekend";
   const kwh = (value, decimals = 0) => finite(value) ? `${number(value, decimals)} kWh` : "Onbekend";
   const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals)}%` : "Niet bepaald";
@@ -245,10 +246,12 @@ window.UI = (() => {
   const palette = ["#2b7a5f", "#3f7cc0", "#c06a1f", "#8f5aa0", "#00858b", "#8b6b23", "#5e68b8", "#b84d74", "#5f7338",
     "#7a6a5e"];
   function chart(type, { title, rows, series, unit = "", format = v => number(v, 0), marks = [] }) {
-    const width = 880, horizontal = type === "range" || type === "stacked";
+    // Op een smal scherm een smallere tekening, zodat de tekst na het schalen leesbaar blijft.
+    const narrow = window.matchMedia?.("(max-width: 640px)").matches === true;
+    const width = narrow ? 440 : 880, horizontal = type === "range" || type === "stacked";
     const height = horizontal ? Math.max(220, rows.length * 56 + 80) : 320;
-    const longest = Math.max(0, ...rows.map(r => String(r.label).length));
-    const left = horizontal ? Math.min(330, Math.max(110, longest * 6.6 + 24)) : 80, right = 24, top = 20,
+    const longest = Math.max(0, ...rows.map(r => String(r.label).length)), maxLabel = narrow ? 24 : 48;
+    const left = horizontal ? Math.min(narrow ? 170 : 330, Math.max(110, Math.min(longest, maxLabel) * 6.6 + 24)) : 80, right = 24, top = 20,
       bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
     const svg = document.createElementNS(SVG, "svg");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("role", "img");
@@ -326,7 +329,7 @@ window.UI = (() => {
       rows.forEach((r, ri) => {
         if (horizontal) {
           const cy = top + (ri + 0.5) / rows.length * plotH;
-          const name = String(r.label), short = name.length > 48 ? `${name.slice(0, 47)}…` : name;
+          const name = String(r.label), short = name.length > maxLabel ? `${name.slice(0, maxLabel - 1)}…` : name;
           text(left - 12, cy + 4, short, "end");
           if (type === "stacked") {
             let start = 0;

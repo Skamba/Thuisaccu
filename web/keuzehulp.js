@@ -448,7 +448,7 @@
         h("p", { class: "lead" }, `${answers.data === "totals" ? "Volgens het geschatte profiel gebruik je zonder accu" : "Zonder accu gebruik je"} ` +
           `ongeveer ${n(points[0].self_consumption_pct, 0)}% van je zonnestroom zelf. ` +
           "Met een accu loopt dat op, maar elke extra kWh wordt minder vaak gevuld. " +
-          (SIZING[answers.sizing] ? `Voor ‘${SIZING[answers.sizing].label.toLowerCase()}’ past een bruikbare capaciteit van ongeveer `
+          (SIZING[answers.sizing] ? `Voor ‘${SIZING[answers.sizing].label.replace(/^./, c => c.toLowerCase())}’ past een bruikbare capaciteit van ongeveer `
             : "Je eigen bereik is een bruikbare capaciteit van ") +
           `${size1(range.low)} tot ${kwhText(range.high)}: ongeveer ${n(shareAt(range.low) * 100, 0)} tot ` +
           `${n(shareAt(range.high) * 100, 0)}% van wat een accu van ${kwhText(largest)} zou opleveren.`),

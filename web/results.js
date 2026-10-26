@@ -285,7 +285,7 @@ window.Results = (() => {
         h("p", {}, `Vanaf ${variant.from_calendar_year} ${n(variant.export_eur_per_kwh, 4)} €/kWh vergoeding en ` +
           `${n(variant.export_fee_eur_per_kwh, 4)} €/kWh terugleverkosten; verder de basisaannames. Een aanname, geen voorspelling.`),
         table(["Optie", "NPV basis", "NPV variant", "Nettowinst variant", "ROI variant", "Terugverdiend na"], all.map(c => [
-          c.name, money(c.npv_eur), money(c.export_variant?.npv_eur), money(c.export_variant?.net_profit_eur),
+          c.name, eur0(c.npv_eur), eur0(c.export_variant?.npv_eur), eur0(c.export_variant?.net_profit_eur),
           c.key === "no_battery" ? "—" : pct(c.export_variant?.roi_pct), c.key === "no_battery" ? "—" : years(c.export_variant?.payback_years)])));
     }
     for (const [key, title, unit] of [["net_profit_eur", "Nettowinst over de looptijd", "EUR"], ["roi_pct", "ROI over de looptijd", "%"]]) {
@@ -442,9 +442,9 @@ window.Results = (() => {
       `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · model ${result.model_version} · ${UI.dateTime(run.created_at_unix_s)}`));
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
-    const recommended = all.find(c => c.key === result.recommended_key);
+    // De aanbeveling noemt de optie al; een extra label herhaalt alleen de (soms lange) naam.
     view.append(h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
-      h("h2", {}, result.recommendation), badge(recommended?.name || "Onbekende optie", "accent")));
+      h("h2", {}, result.recommendation)));
     view.append(summary(run), tabs([
       { label: "Overzicht", content: overview(run, all) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Kostenopbouw", content: costs(run, all, categories) },
