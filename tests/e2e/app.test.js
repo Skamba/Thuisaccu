@@ -126,6 +126,26 @@ function syntheticYear(dir) {
   return files;
 }
 
+// Synthetisch jaar zoals een Nederlandse energiemonitor: puntkomma, decimale komma en lokale tijd,
+// dus zonder 02.00 uur eind maart en met 02.00 uur twee keer eind oktober.
+function dutchLocalYear(dir) {
+  const lines = ["Datum;Opwek (kWh);Verbruik (kWh)"];
+  const local = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", day: "2-digit", month: "2-digit",
+    year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const start = Date.UTC(2024, 11, 31, 23);
+  for (let hour = 0; hour < 8760; hour++) {
+    const parts = Object.fromEntries(local.formatToParts(new Date(start + hour * 3600e3)).map(p => [p.type, p.value]));
+    const h = Number(parts.hour);
+    const solar = h >= 7 && h < 19 ? 0.4 * Math.sin(Math.PI * (h - 7) / 12) : 0;
+    const load = 0.25 + (h >= 17 && h < 22 ? 0.6 : 0);
+    const comma = v => v.toFixed(3).replace(".", ",");
+    lines.push(`${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute};${comma(solar)};${comma(load)}`);
+  }
+  const file = path.join(dir, "energiemonitor.csv");
+  fs.writeFileSync(file, `${lines.join("\r\n")}\r\n`);
+  return file;
+}
+
 test("startscherm is de keuzehulp, offline en zonder fouten", async () => {
   const { page, problems, close } = await open();
   await page.goto(`${base}/`);
@@ -363,6 +383,35 @@ test("omvormer- en meterbestand worden één bruikbaar jaarprofiel", async () =>
   await close();
 });
 
+test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp", async () => {
+  const file = dutchLocalYear(workdir);
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", file);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  // De decimale komma in de voorbeeldrijen zet het decimaalteken.
+  assert.equal(await page.getByLabel("Decimaalteken").inputValue(), "comma");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  // Het dubbele uur bij de overgang naar wintertijd is op volgorde gelezen, zonder gaten.
+  assert.match(await page.textContent(".wizard-body"), /als zomertijd en het tweede als wintertijd gelezen/);
+  assert.match(await page.textContent(".stats"), /8\.760 uur/);
+  await next(page);
+  await page.click("button:has-text('Bewaar energieprofiel')");
+  await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+  // Het profiel opent de keuzehulp met dit bestand gekozen, ook zonder de pagina te herladen.
+  await page.click("button:has-text('Gebruik in de keuzehulp')");
+  await page.waitForSelector("text=Bewaard energieprofiel");
+  assert.equal(await page.locator("input[value=file]").isChecked(), true);
+  const profile = page.getByLabel("Bewaard energieprofiel");
+  await page.waitForFunction(() => document.querySelectorAll(".wizard-body select option").length > 1);
+  assert.match(await profile.evaluate(s => s.selectedOptions[0].textContent), /energiemonitor\.csv/);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async () => {
   const { page, problems, close } = await open();
   await page.clock.setFixedTime(new Date("2026-11-30T12:00:00"));
@@ -370,6 +419,7 @@ test("na drie maanden waarschuwt de catalogus voor verouderde prijzen", async ()
   // De browserversie begint per test met een lege database; de onderzochte sets komen er vanzelf in.
   await page.waitForSelector("table", { timeout: 30000 });
   assert.equal(await page.locator(".callout", { hasText: "verouderd" }).count(), 0);
+  assert.doesNotMatch(await page.textContent("#view"), /null/);
   await page.clock.setFixedTime(new Date("2027-02-01T12:00:00"));
   await page.reload();
   await page.waitForSelector("table");

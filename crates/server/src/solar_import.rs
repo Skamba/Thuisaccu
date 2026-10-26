@@ -3,7 +3,7 @@
 use std::{collections::BTreeMap, io::Cursor};
 
 use calamine::{Data, Reader, open_workbook_auto_from_rs};
-use chrono::{DateTime, Duration, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, LocalResult, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use thuisaccu_storage::solar::{SolarInterval, SolarPeriod, SolarSummary};
@@ -270,7 +270,15 @@ fn cell(row: &[String], index: usize) -> Result<&str, String> {
         .ok_or_else(|| "Kolom ontbreekt.".to_owned())
 }
 
-fn parse_time(value: &str, timezone: Tz, date_order: &str) -> Result<DateTime<Tz>, String> {
+/// Leest een tijdstip. `repeated` telt lokale tijdstippen in het dubbele uur bij de overgang
+/// naar wintertijd: een export in lokale tijd noemt dat uur twee keer, het eerste is zomertijd
+/// en het tweede wintertijd. Een derde keer is een fout; één keer controleert de aanroeper.
+fn parse_time(
+    value: &str,
+    timezone: Tz,
+    date_order: &str,
+    repeated: &mut BTreeMap<NaiveDateTime, usize>,
+) -> Result<DateTime<Tz>, String> {
     if let Ok(value) = DateTime::parse_from_rfc3339(value.trim()) {
         return Ok(value.with_timezone(&timezone));
     }
@@ -337,7 +345,23 @@ fn parse_time(value: &str, timezone: Tz, date_order: &str) -> Result<DateTime<Tz
     let naive = naive.ok_or_else(|| {
         format!("Onbekend datumformaat: {raw}. Gebruik bijvoorbeeld 2026-06-01T12:00:00+02:00.")
     })?;
-    timezone.from_local_datetime(&naive).single().ok_or_else(|| format!("Tijdstip {raw} bestaat niet of is dubbelzinnig door zomer-/wintertijd; geef een ISO-tijdstip met UTC-offset."))
+    match timezone.from_local_datetime(&naive) {
+        LocalResult::Single(time) => Ok(time),
+        LocalResult::Ambiguous(summer, winter) => {
+            let seen = repeated.entry(naive).or_default();
+            *seen += 1;
+            match seen {
+                1 => Ok(summer),
+                2 => Ok(winter),
+                _ => Err(format!(
+                    "Tijdstip {raw} komt vaker dan twee keer voor in het dubbele uur bij de overgang naar wintertijd."
+                )),
+            }
+        }
+        LocalResult::None => Err(format!(
+            "Tijdstip {raw} bestaat niet door de overgang naar zomertijd; geef een ISO-tijdstip met UTC-offset."
+        )),
+    }
 }
 
 fn period_end(start: DateTime<Tz>, period: &str, direction: i64) -> Result<DateTime<Tz>, String> {
@@ -472,6 +496,7 @@ pub fn normalize(
     }
     let mut readings = Vec::new();
     let mut skipped_rows = 0;
+    let mut repeated = BTreeMap::new();
     for (index, row) in table.rows.iter().enumerate() {
         if options.missing_rows == "skip"
             && (cell(row, options.production_column).is_ok_and(|v| v.trim().is_empty())
@@ -484,14 +509,14 @@ pub fn normalize(
             skipped_rows += 1;
             continue;
         }
-        let read = || -> Result<_, String> {
+        let mut read = || -> Result<_, String> {
             let timestamp = if let Some(column) = options.time_part_column {
                 format!("{} {}", cell(row, options.time_column)?, cell(row, column)?)
             } else {
                 cell(row, options.time_column)?.to_owned()
             };
             Ok((
-                parse_time(&timestamp, timezone, &options.date_order)?,
+                parse_time(&timestamp, timezone, &options.date_order, &mut repeated)?,
                 parse_number(cell(row, options.production_column)?, &options.decimal)?,
                 options
                     .consumption_column
@@ -504,6 +529,13 @@ pub fn normalize(
             ))
         };
         readings.push(read().map_err(|e| format!("Gegevensrij {}: {e}", index + 1))?);
+    }
+    // Zonder tweede vermelding is niet te zeggen of het tijdstip zomer- of wintertijd is.
+    if let Some((time, _)) = repeated.iter().find(|(_, count)| **count == 1) {
+        return Err(format!(
+            "Tijdstip {} is dubbelzinnig door zomer-/wintertijd en komt maar één keer voor; geef een ISO-tijdstip met UTC-offset.",
+            time.format("%Y-%m-%d %H:%M")
+        ));
     }
     readings.sort_by_key(|r| r.0.timestamp());
     if readings.windows(2).any(|w| w[0].0 == w[1].0) {
@@ -598,6 +630,9 @@ pub fn normalize(
         );
     }
     let mut warnings = vec!["Opwek alleen bepaalt geen geschikte accucapaciteit of terugverdientijd. Combineer met gelijktijdig verbruik, tarieven en systeemgrenzen.".into()];
+    if !repeated.is_empty() {
+        warnings.push(format!("{} lokale tijdstip(pen) staan twee keer in het bestand door de overgang naar wintertijd; het eerste is als zomertijd en het tweede als wintertijd gelezen.", repeated.len()));
+    }
     if skipped_rows > 0 {
         warnings.push(format!("{skipped_rows} rij(en) met ontbrekende meetwaarden expliciet overgeslagen; dit is geen nulproductie."));
     }

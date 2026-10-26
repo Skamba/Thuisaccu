@@ -79,7 +79,7 @@ window.Results = (() => {
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
     list.append(h("li", {},
-      "Vraag voor een vaste accu altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
+      "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en omvormer geschikt zijn."));
     return h("section", { class: "panel plain" }, h("h2", {}, "Wat betekent dit voor jou?"), list);
   }
 

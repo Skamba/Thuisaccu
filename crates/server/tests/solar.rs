@@ -108,6 +108,24 @@ fn daylight_saving_ambiguities_require_offsets_and_calendar_days_keep_actual_dur
     .unwrap();
     assert_eq!(summary.rows, 2);
     assert_eq!(summary.production_kwh, 3.0);
+    // Een export in lokale tijd noemt het dubbele uur twee keer: eerst zomertijd, dan wintertijd.
+    let local = analyze(
+        "time,energy\n2026-10-25 01:00,1\n2026-10-25 02:00,2\n2026-10-25 02:00,3\n2026-10-25 03:00,4\n",
+        &options,
+    )
+    .unwrap();
+    assert_eq!(local.rows, 4);
+    assert_eq!(local.gaps, 0);
+    assert_eq!(local.coverage_hours, 4.0);
+    assert!(local.warnings.iter().any(|w| w.contains("wintertijd")));
+    assert!(
+        analyze(
+            "time,energy\n2026-10-25 02:00,1\n2026-10-25 02:00,2\n2026-10-25 02:00,3\n",
+            &options
+        )
+        .unwrap_err()
+        .contains("vaker dan twee keer")
+    );
     let daily = ImportOptions {
         period: "day".into(),
         ..options

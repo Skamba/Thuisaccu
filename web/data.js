@@ -45,7 +45,9 @@ window.Data = (() => {
     greater_than: "> ", range: "" };
   const review = { unreviewed: "Nog niet nagekeken", reviewed: "Transcriptie nagekeken", disputed: "Betwist",
     superseded: "Vervangen" };
-  const RESEARCHED_ON = "24 oktober 2026", RESEARCHED_ISO = "2026-10-24";
+  // RESEARCHED_ON en RESEARCHED_ISO: de oudste peildatum (tarieven, regels, eerste sets); de waarschuwing telt daarvandaan.
+  // RESEARCHED_SPAN: alle onderzochte productsets samen (REFERENCE_SETS in api.rs).
+  const RESEARCHED_ON = "24 oktober 2026", RESEARCHED_ISO = "2026-10-24", RESEARCHED_SPAN = "24 tot en met 26 oktober 2026";
   // Prijzen en tarieven veranderen snel. Na drie maanden waarschuwt de interface dat de
   // momentopnamen verouderd kunnen zijn; de gegevens zelf blijven ongewijzigd.
   function priceAge(now = new Date()) {
@@ -329,6 +331,6 @@ window.Data = (() => {
   return {
     catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults
   };
 })();

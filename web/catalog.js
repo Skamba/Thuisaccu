@@ -256,7 +256,7 @@
       actions.append(button("+ Eigen accu of offerte", () => openCandidateDialog(rerender), "secondary"));
       const cmp = await Data.catalog();
       if (!cmp.configurations.length) {
-        view.append(UI.empty("Je catalogus is nog leeg", "Laad de onderzochte uitvoeringen (bronmomentopnamen van 24 oktober 2026) of voeg een eigen accu toe.",
+        view.append(UI.empty("Je catalogus is nog leeg", `Laad de onderzochte uitvoeringen (bronmomentopnamen van ${Data.RESEARCHED_SPAN}) of voeg een eigen accu toe.`,
           button("Laad onderzochte uitvoeringen", event => loadReferences(event.target))));
         return;
       }
@@ -272,8 +272,8 @@
         filters.kind, { onchange: event => { filters.kind = event.target.value; draw(); } });
       view.append(h("div", { class: "toolbar" }, field("Zoek", search), field("Fabrikant", maker), field("Type", kind),
         h("details", { class: "menu" }, h("summary", {}, "Meer"), button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "secondary"))),
-        Data.priceAge().stale ? h("p", { class: "callout", role: "note" }, Data.priceAge().text) : null,
-        h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}. ` +
+        ...(Data.priceAge().stale ? [h("p", { class: "callout", role: "note" }, Data.priceAge().text)] : []),
+        h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}. ` +
           "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
           (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")), list, tray);
       function drawTray() {

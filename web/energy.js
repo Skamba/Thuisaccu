@@ -7,6 +7,12 @@
     toast } = UI;
   const PERIODS = { "5min": "5 min", "10min": "10 min", "15min": "15 min", "30min": "30 min", hour: "1 uur",
     day: "Dag", week: "Week", month: "Maand", year: "Jaar" };
+  // Decimaalteken uit de voorbeeldrijen: alleen een eenduidig patroon telt, anders blijft de keuze staan.
+  function guessDecimal(preview, columns, current) {
+    const cells = preview.flatMap(row => columns.filter(c => c != null).map(c => String(row[c] ?? "").trim()));
+    const comma = cells.some(v => /^-?\d+,\d+$/.test(v)), dot = cells.some(v => /^-?\d+\.\d+$/.test(v));
+    return comma && !dot ? "comma" : dot && !comma ? "dot" : current;
+  }
   const fitBadge = item => { const fit = Data.suitability(item);
     return badge(fit.reason, fit.ok === true ? "success" : fit.ok === false ? "warning" : ""); };
   const title = item => h("span", {}, item.filename, Data.isDemo(item) ? [" ", badge("FICTIEF", "demo")] : null);
@@ -242,6 +248,8 @@
           else if (unit) options.unit = unit[1].toLowerCase();
         if (PERIODS[result.detected_period]) Object.assign(options,
           { period: result.detected_period, mode: "interval" });
+        options.decimal = guessDecimal(result.preview,
+          [options.production_column, options.consumption_column, options.export_column], options.decimal);
         toast(`${n(result.row_count, 0)} rijen ingelezen. Controleer kolommen, eenheid, periode en tijdzone.`);
       }
       function stepColumns(body) {
@@ -312,6 +320,7 @@
             time_column: Math.max(0, guess(/timestamp|datum|date|tijd|time/i)),
             import_column: imported >= 0 ? imported : 1, export_column: exported >= 0 ? exported : 2
           });
+          m.decimal = guessDecimal(result.preview, [m.import_column, m.export_column], m.decimal);
           meter.inspected = result; flow.rerender();
         }), "secondary");
         body.append(field("Meterbestand", fileInput, meter.file ? `Gekozen: ${meter.file.name}` : "CSV, Excel of JSON; maximaal 10 MB."),

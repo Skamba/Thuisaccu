@@ -77,9 +77,14 @@
     contract: "unknown", tariffImport: "", feedin: "indication", tariffExport: "", exportFee: "", variant: "yes",
     objective: "net_present_value", budget: "", horizon: "15", sizing: "value", rangeLow: null, rangeHigh: null
   };
-  let answers = { ...BLANK, ...store.get(STORE, {}) }, yields = null, flow = null;
-  // Concepten van vóór de terugleververgoedingsvraag: een ingevulde vergoeding blijft leidend.
-  if (!("feedin" in store.get(STORE, {})) && answers.tariffExport) answers.feedin = "known";
+  let answers = null, yields = null, flow = null;
+  // Bij elk bezoek opnieuw uit de opslag: andere schermen (zoals een energieprofiel) vullen het concept aan.
+  function load() {
+    const stored = store.get(STORE, {}) || {};
+    answers = { ...BLANK, ...stored };
+    // Concepten van vóór de terugleververgoedingsvraag: een ingevulde vergoeding blijft leidend.
+    if (!("feedin" in stored) && answers.tariffExport) answers.feedin = "known";
+  }
   const save = () => store.set(STORE, answers);
   Data.typicalSources().then(s => { yields = s.pv.annual_kwh_per_kwp; }).catch(() => {});
 
@@ -343,7 +348,7 @@
     return Data.estimateCosts(costCatalog, { kind: p.kind, circuit: p.circuit, manufacturer: p.config.manufacturer_name, phases: p.phases,
       inverterIncluded: p.inverterIncluded, offer: p.offer }, answers).map(line => line.category !== "battery" ? line : {
       ...line, status: "priced", amount_minor: p.offer.upfront_amount_minor,
-      source: `${p.offer.seller}: ${p.offer.source_url} (geraadpleegd ${Data.RESEARCHED_ON})`,
+      source: `${p.offer.seller}: ${p.offer.source_url} (bronmomentopname ${Data.RESEARCHED_SPAN})`,
       notes: `Gepubliceerde prijs inclusief btw${installation}.`
     });
   }
@@ -418,10 +423,23 @@
     const [importId, cmp, costCatalog] = await Promise.all([ensureProfile(), Data.catalog(true), Data.costs()]);
     const curve = await UI.api(`/api/v1/solar/imports/${importId}/capacity`);
     const points = curve.points, max = points[points.length - 1].battery_to_load_kwh;
-    const at = share => points.find(p => p.battery_to_load_kwh >= share * max)?.usable_capacity_kwh;
-    const rangeFor = key => max > 0 ? { low: at(SIZING[key].low), high: at(SIZING[key].high) } : null;
-    // Aandeel van de opbrengst bij de grootste accu, lineair tussen twee punten van de curve; alleen voor de weergave.
     const largest = points[points.length - 1].usable_capacity_kwh;
+    // Capaciteit waarbij een aandeel van de opbrengst gehaald wordt, lineair tussen twee punten van de curve
+    // en afgerond op de stap van de schuifregelaars; het eerste punt erboven zou bij een grof raster ver doorschieten.
+    const at = share => {
+      const target = share * max, i = points.findIndex(p => p.battery_to_load_kwh >= target);
+      if (i <= 0) return points[Math.max(0, i)].usable_capacity_kwh;
+      const [a, b] = [points[i - 1], points[i]];
+      const x = a.usable_capacity_kwh + (b.usable_capacity_kwh - a.usable_capacity_kwh) *
+        (target - a.battery_to_load_kwh) / (b.battery_to_load_kwh - a.battery_to_load_kwh);
+      return Math.round(x * 2) / 2;
+    };
+    const rangeFor = key => {
+      if (!(max > 0)) return null;
+      const low = at(SIZING[key].low);
+      return { low, high: Math.min(largest, Math.max(low + 0.5, at(SIZING[key].high))) };
+    };
+    // Aandeel van de opbrengst bij de grootste accu, lineair tussen twee punten van de curve; alleen voor de weergave.
     const shareAt = capacity => {
       const i = points.findIndex(p => p.usable_capacity_kwh >= capacity);
       if (i <= 0) return (i < 0 ? max : points[0].battery_to_load_kwh) / max;
@@ -559,7 +577,7 @@
               `${chosen.length > included.length ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +
               "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."),
         age.stale ? h("p", { class: "callout", role: "note" }, age.text) : null,
-        h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. ` +
+        h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}; controleer de actuele prijs bij de verkoper. ` +
           "Heb je een offerte, of wil je een accu zonder gepubliceerde prijs meenemen? Gebruik ", link("Zelf doorrekenen", "#/zelf"), "."),
         included.length ? group("included", `Bekijk de ${included.length} accu’s die we doorrekenen`,
           table(["Accu", "Soort", "Bruikbaar", "Ontladen (AC)", "Prijs incl. btw", "Zinvol bereik"], included.map(p => [
@@ -624,6 +642,7 @@
     nav: "Keuzehulp", icon: "help", title: "Welke thuisaccu past bij jou?",
       subtitle: "Vijf stappen in gewone taal. Duurt ongeveer vijf minuten.",
     render(view, actions) {
+      load();
       actions.append(button("Begin opnieuw",
         () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }, "ghost"));
       flow = UI.wizard([
