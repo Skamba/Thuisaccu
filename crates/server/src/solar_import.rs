@@ -196,8 +196,13 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
             let text = text.lines().skip(options.header_row).collect::<Vec<_>>().join("\n");
             let mut reader = csv::ReaderBuilder::new().delimiter(delimiter).has_headers(false).flexible(false).from_reader(text.as_bytes());
             let mut result = Vec::new();
-            for record in reader.records().take(MAX_ROWS + 2) {
-                result.push(record.map_err(|e| format!("CSV: {e}"))?.iter().map(|v| v.trim().to_owned()).collect());
+            // Lege regels tellen niet mee; stoppen zodra er meer dan de kopregel plus MAX_ROWS gegevensrijen zijn,
+            // zodat de controle hieronder een te groot bestand weigert in plaats van het stilzwijgend af te kappen.
+            for record in reader.records() {
+                let row: Vec<String> = record.map_err(|e| format!("CSV: {e}"))?.iter().map(|v| v.trim().to_owned()).collect();
+                if row.iter().all(|cell| cell.is_empty()) { continue; }
+                result.push(row);
+                if result.len() > MAX_ROWS + 1 { break; }
             }
             result
         },

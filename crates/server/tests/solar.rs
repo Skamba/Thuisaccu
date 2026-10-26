@@ -554,3 +554,24 @@ fn combined_meter_files_keep_measured_import_and_export_per_period() {
     assert_eq!(intervals[0].measured_import_wh, Some(500.0));
     assert_eq!(intervals[0].measured_export_wh, Some(750.0));
 }
+
+#[test]
+fn a_blank_line_does_not_let_a_csv_over_the_row_limit_be_cut_off() {
+    // Kopregel, één lege regel en 250.001 gegevensrijen: weigeren, niet stilzwijgend afkappen.
+    let mut text = String::from("time,production\n,\n");
+    for hour in 0..250_001_i64 {
+        let time = chrono::DateTime::from_timestamp(1_767_225_600 + hour * 3600, 0).unwrap();
+        text.push_str(&format!("{},0.5\n", time.format("%Y-%m-%dT%H:%M:%SZ")));
+    }
+    let error = read_table("test.csv", text.as_bytes(), &ImportOptions::default()).unwrap_err();
+    assert_eq!(error, "Maximaal 250.000 gegevensrijen.");
+    // Precies 250.000 gegevensrijen met een lege regel ertussen mag wel.
+    let end = text.rfind("\n2").unwrap();
+    let table = read_table(
+        "test.csv",
+        &text.as_bytes()[..=end],
+        &ImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(table.rows.len(), 250_000);
+}

@@ -333,7 +333,7 @@
       label: `Stresstest: geen terugleververgoeding vanaf ${variantYear}`, from_calendar_year: variantYear,
       export_eur_per_kwh: 0, export_fee_eur_per_kwh: feed.fee
     } : undefined;
-    const candidates = chosen.map(p => ({ key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id,
+    const candidates = chosen.map(p => ({ key: `${p.derived ? "g" : "c"}${p.config.id}`, name: p.name, configuration_id: p.config.id,
       battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
       warranty_stress: p.warrantyStress ?? undefined,
       assumptions: [Data.KEUZEHULP_PREFIX, check?.text, ...p.notes].filter(Boolean).join(" ") }));
@@ -475,8 +475,9 @@
     }
 
     const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
+    // Een stekkeraccu die meer dan 800 W kan, doet ook mee als afgeleide uitvoering op een eigen groep.
     const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c))
-      .map(plugLimit).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? Data.costLinesFor(costCatalog, p, answers) : null }))
+      .flatMap(p => [plugLimit(p), Data.circuitVariant(cmp, p)].filter(Boolean)).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? Data.costLinesFor(costCatalog, p, answers) : null }))
       .map(p => ({ ...p, reason: exclusion(p, labels) }));
     const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s rekenen we door?"));
     if (!products.length) {

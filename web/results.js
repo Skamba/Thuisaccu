@@ -456,7 +456,10 @@ window.Results = (() => {
     const request = run.input.request, p = request.parameters, out = h("div");
     const horizon = run.result.candidates[0]?.years || [];
     const top = shown(all);
-    const rows = [{ label: "Start", values: top.map(c => -c.initial_investment_eur) },
+    // Het startpunt is wat je op tijdstip nul zelf betaalt: met een lening alleen het eigen deel. Afgeleid uit het
+    // eerste jaar, zodat de lijn aansluit bij het cumulatieve verloop (ook bij oudere runs).
+    const start = c => c.years[0] ? c.years[0].cumulative_eur - c.years[0].net_cashflow_eur : -c.initial_investment_eur;
+    const rows = [{ label: "Start", values: top.map(start) },
       ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: top.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
     const marks = [];
     for (const c of top.slice(1)) {

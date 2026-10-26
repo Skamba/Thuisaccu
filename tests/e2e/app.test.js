@@ -452,6 +452,8 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
   assert.match(await page.textContent(".wizard-body"), /binnen je budget blijven/);
   assert.match(await page.textContent(".product-group:last-of-type"), /Boven je budget van €\s1\.500/);
   assert.match(await page.textContent(".product-group:first-of-type"), /begrensd op 800 W/);
+  // Dezelfde stekkeraccu doet ook mee als afgeleide uitvoering op een eigen groep, met de kosten van die groep.
+  assert.match(await page.textContent(".wizard-body"), /eigen groep [\d,]+ kW \(afgeleid\)/);
   // De punten staan op afstand naar accugrootte, niet op gelijke afstand.
   const spread = await page.$eval(".wizard-body figure.chart", figure => {
     const sizes = [...figure.querySelectorAll("tbody td:first-child")]

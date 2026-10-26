@@ -483,6 +483,24 @@ async fn heat_pump_and_ev_from_a_later_year_are_added_only_from_that_year() {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
     assert_eq!(catalog.list_analyses().await.unwrap().len(), 1);
+    // Meer dan tien veranderingen: direct geweigerd, ook als het er duizenden zijn.
+    let mut many = input(id);
+    many["load_changes"] = json!(vec![
+        json!({"kind": "heat_pump", "from_calendar_year": 2028, "annual_kwh": 100});
+        5000
+    ]);
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", many))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        body(response)
+            .await
+            .to_string()
+            .contains("hoogstens 10 veranderingen")
+    );
 }
 
 #[tokio::test]

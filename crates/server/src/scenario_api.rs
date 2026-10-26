@@ -233,6 +233,11 @@ fn validate_request(request: &RunRequest) -> Result<(), ApiError> {
             "Controleer kosten, technische aannames en de meetgrenzen: AC-productie en bruto huishoudelijk verbruik, geen netafname of netexport.",
         ));
     }
+    // De rekenkern weigert ook meer dan tien, maar pas nadat elke verandering over het hele profiel is
+    // uitgerekend; een groot verzoek zou zo minutenlang rekenen voordat het geweigerd wordt.
+    if request.load_changes.len() > 10 {
+        return Err(invalid("Geef hoogstens 10 veranderingen in verbruik op."));
+    }
     if request.title.trim().is_empty()
         || request.title.chars().count() > 200
         || request.site.address.trim().is_empty()
@@ -267,18 +272,6 @@ async fn save_run(
     recalculated_from: Option<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let (profile, periods) = load_profile(catalog, request.solar_import_id).await?;
-    let additions = request
-        .load_changes
-        .iter()
-        .map(|change| {
-            Ok(analysis::LoadAddition {
-                label: crate::typical_profile::load_change_label(change),
-                from_calendar_year: change.from_calendar_year,
-                steady_kwh: crate::typical_profile::load_change(change, &periods)?,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()
-        .map_err(invalid)?;
     let metadata = catalog
         .solar_metadata(request.solar_import_id)
         .await
@@ -298,11 +291,24 @@ async fn save_run(
     }
     let parameters = request.parameters.clone();
     let candidates = request.candidates.clone();
+    let load_changes = request.load_changes.clone();
+    // Ook de extra verbruiksreeksen (een waarde per interval) worden in het blokkerende deel opgebouwd.
     let mut result = crate::blocking(move || {
+        let additions = load_changes
+            .iter()
+            .map(|change| {
+                Ok(analysis::LoadAddition {
+                    label: crate::typical_profile::load_change_label(change),
+                    from_calendar_year: change.from_calendar_year,
+                    steady_kwh: crate::typical_profile::load_change(change, &periods)?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         analysis::analyze_with(&profile, &parameters, &candidates, &additions)
+            .map_err(|e| e.to_string())
     })
     .await?
-    .map_err(|e| invalid(e.to_string()))?;
+    .map_err(invalid)?;
     if metadata["options"]["is_demo"] == true {
         result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
     } else if metadata["options"]["generator"] == crate::typical_profile::GENERATOR {

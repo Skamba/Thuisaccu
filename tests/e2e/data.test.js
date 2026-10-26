@@ -47,6 +47,26 @@ test("elke aanname van describe() wordt herkend door Data.isAssumed", () => {
   }
 });
 
+test("een stekkeraccu die meer dan 800 W kan, krijgt een afgeleide uitvoering op een eigen groep", () => {
+  const stekker = { ...config, name: "1 unit · 5 kWh · stekker" };
+  const cmp = { ...catalog([claim(1, "usable_energy_wh", 5000), claim(2, "continuous_discharge_power_w", 800, "system_ac"),
+    claim(3, "continuous_discharge_power_w", 2500, "unspecified", { source_title: "Andere bron" }),
+    claim(4, "continuous_charge_power_w", 2500, "system_ac")]),
+    texts: [{ id: 5, configuration_id: 1, review_status: "unreviewed", metric_key: "coupling", value: "AC-gekoppeld (stekker)" }],
+    configurations: [stekker] };
+  const base = Data.describe(cmp, stekker);
+  assert.equal(base.dischargeKw, 0.8, "de stekkeruitvoering rekent met de voorkeursmeetgrens");
+  const variant = Data.circuitVariant(cmp, base);
+  assert.equal(variant.name, "Fictief Testaccu · 1 unit · 5 kWh · eigen groep 2,5 kW (afgeleid)");
+  assert.deepEqual([variant.kind, variant.circuit, variant.battery.discharge_power_kw, variant.battery.charge_power_kw], ["fixed", true, 2.5, 2.5]);
+  assert.match(variant.notes.join(" "), /claim #3, Andere bron\) ontladen en 2,5 kW \(claim #4/);
+  assert.equal(Data.isAssumed("discharge_power_kw", variant.notes.join(" ")), true);
+  // Met een eigen-groepuitvoering in de catalogus, of zonder meer dan 800 W: geen afgeleide uitvoering.
+  assert.equal(Data.circuitVariant({ ...cmp, configurations: [stekker, { ...config, id: 2, name: "1 unit · 5 kWh · eigen groep 2,5 kW" }] }, base), null);
+  const small = { ...cmp, numbers: cmp.numbers.filter(c => c.value <= 800 || c.metric_key === "usable_energy_wh") };
+  assert.equal(Data.circuitVariant(small, Data.describe(small, stekker)), null);
+});
+
 test("de 800 W-begrenzing voor een stekkeraccu wordt herkend", () => {
   // Keuzehulp en Zelf doorrekenen begrenzen met Data.plugLimit; de aannamezin moet herkend worden.
   const plug = { kind: "plug", name: "FICTIEF stekker", dischargeKw: 2.4, chargeKw: 3, notes: [],

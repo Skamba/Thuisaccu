@@ -35,7 +35,9 @@ window.Data = (() => {
     for (const c of candidates) {
       const config = cmp.configurations.find(x => x.id === c.configuration_id);
       if (!config || !(c.name === describe(cmp, config).name || c.name.includes(config.product_name))) continue;
-      out.set(c.key, describe(cmp, config));
+      // Een afgeleide uitvoering op een eigen groep heeft hetzelfde nummer als de stekkeruitvoering.
+      const variant = circuitVariant(cmp, describe(cmp, config));
+      out.set(c.key, variant && c.name === variant.name ? variant : describe(cmp, config));
     }
     return out;
   }
@@ -282,8 +284,8 @@ window.Data = (() => {
   // keuzehulp.js: pas ze samen aan. tests/e2e/data.test.js controleert dat elke zin herkend wordt.
   const ASSUMED = {
     usable_capacity_kwh: /Aanname: [\d,]+% van de opgegeven/,
-    charge_power_kw: /Aanname: laadvermogen gelijk|Aanname: laden ingesteld op 800 W/,
-    discharge_power_kw: /Aanname: ontladen ingesteld op 800 W/,
+    charge_power_kw: /Aanname: laadvermogen gelijk|Aanname: laden ingesteld op 800 W|Aanname: afgeleide uitvoering op een eigen groep/,
+    discharge_power_kw: /Aanname: ontladen ingesteld op 800 W|Aanname: afgeleide uitvoering op een eigen groep/,
     ac_round_trip_efficiency_pct: /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
     standby_w: /Aanname: [\d,]+ W sluimerverbruik/,
     annual_capacity_loss_pct: /Aanname: [\d,]+% capaciteitsverlies/,
@@ -429,11 +431,15 @@ window.Data = (() => {
     }
     if (sources.size) notes.push(`Gebruikte bronclaims: ${[...sources].map(([title, list]) => `${title} (${list.join(", ")})`).join("; ")}.`);
     // De kortste geldige productgarantie: voor een stresstest de voorzichtigste claim.
+    // Het hoogste AC-vermogen uit de bronnen, voor een afgeleide uitvoering op een eigen groep (circuitVariant).
+    const highest = metric => numbers.filter(c => c.metric_key === metric && AC_BOUNDARY.includes(c.boundary))
+      .reduce((a, b) => a && a.value >= b.value ? a : b, null);
+    const fullPower = { discharge: highest("continuous_discharge_power_w"), charge: highest("continuous_charge_power_w") };
     const warranty = cmp.warranties.filter(w => live(w) && w.product_months != null).map(w => w.product_months);
     const warrantyYears = warranty.length ? Math.min(...warranty) / 12 : null;
     return {
       config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`,
-      capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, circuit,
+      capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, circuit, fullPower,
       phases, backup: feature("backup"), outdoor: feature("outdoor"),
       inverterIncluded: feature("inverter_included")?.status === "supported", offer, otherOffer,
       warrantyYears,
@@ -464,6 +470,30 @@ window.Data = (() => {
       dischargeKw: Math.min(p.dischargeKw, PLUG_LIMIT_KW), chargeKw: Math.min(p.chargeKw, PLUG_LIMIT_KW),
       battery: { ...p.battery, discharge_power_kw: Math.min(p.battery.discharge_power_kw, PLUG_LIMIT_KW),
         charge_power_kw: Math.min(p.battery.charge_power_kw, PLUG_LIMIT_KW) }, notes };
+  }
+
+  // Een stekkeraccu die volgens de bronnen meer dan 800 W kan, doet ook mee als uitvoering op een eigen groep: met het
+  // hoogste AC-vermogen uit de bronnen en de kosten van een extra groep. Alleen als de catalogus voor dit product
+  // geen eigen-groepuitvoering heeft; `p` komt uit describe(), nog zonder plugLimit. Anders null.
+  const CIRCUIT_NAME = /eigen groep|verdeelkast/i;
+  function circuitVariant(cmp, p) {
+    if (p.kind !== "plug" || !p.battery) return null;
+    const { discharge, charge } = p.fullPower || {};
+    const dischargeKw = discharge ? discharge.value / 1000 : p.dischargeKw;
+    const chargeKw = charge ? charge.value / 1000 : dischargeKw;
+    if (!(dischargeKw > PLUG_LIMIT_KW || chargeKw > PLUG_LIMIT_KW)) return null;
+    const { manufacturer_name: maker, product_name: product } = p.config;
+    if (cmp.configurations.some(c => c.manufacturer_name === maker && c.product_name === product && CIRCUIT_NAME.test(c.name))) return null;
+    const kw = dischargeKw > PLUG_LIMIT_KW ? `eigen groep ${n(dischargeKw, 1)} kW` : `eigen groep, laden ${n(chargeKw, 1)} kW`;
+    const config = /stekker(\s+[\d,]+\s*k?W)?/i.test(p.config.name)
+      ? p.config.name.replace(/stekker(\s+[\d,]+\s*k?W)?/i, kw) : `${p.config.name} · ${kw}`;
+    const claimText = (c, value) => c ? `${n(value, 1)} kW (claim #${c.id}, ${c.source_title})` : `${n(value, 1)} kW (gelijk aan ontladen)`;
+    return { ...p, name: `${maker} ${product} · ${config} (afgeleid)`, kind: "fixed", circuit: true, derived: true,
+      dischargeKw, chargeKw, battery: { ...p.battery, discharge_power_kw: dischargeKw, charge_power_kw: chargeKw },
+      notes: [...p.notes, `Aanname: afgeleide uitvoering op een eigen groep. De bronnen noemen deze stekkerbatterij niet apart ` +
+        `op een eigen groep; gerekend met het hoogste vermogen uit de bronnen: ${claimText(discharge, dischargeKw)} ontladen en ` +
+        `${claimText(charge, chargeKw)} laden, plus een extra groep door een elektricien. Of de fabrikant dat vermogen ` +
+        "vrijgeeft (bijvoorbeeld met een installateurs- of premiumstand), staat in de handleiding of app."] };
   }
 
   // Kostenindicatie voor alle 26 posten. `item`: { kind, circuit, manufacturer, phases, inverterIncluded };
@@ -626,6 +656,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();
