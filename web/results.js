@@ -21,6 +21,8 @@ window.Results = (() => {
     ["cost_uncertainty_pct", "Kostenvariatie gevoeligheid (%)", 0]
   ];
   const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
+  // Zelfde lijst als `finance::is_credit` in de rekenkern: deze posten verlagen de kosten.
+  const CREDITS = ["grant", "vat_refund", "residual_value"];
 
   const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
   const isEstimated = run => run.result.warnings.some(w => /GESCHAT PROFIEL/.test(w));
@@ -162,6 +164,66 @@ window.Results = (() => {
     };
     pick.addEventListener("change", render); render();
     out.append(UI.field("Jaartabel van", pick), target);
+    return out;
+  }
+
+  // Kostenopbouw uit de vastgelegde kostenposten, in het basisscenario (zonder gevoeligheidsvariatie).
+  function costs(run, all, categories) {
+    const request = run.input.request, out = h("div"), top = shown(all).slice(1);
+    const label = key => categories.find(c => c.key === key)?.label || key;
+    const order = key => { const i = categories.findIndex(c => c.key === key); return i < 0 ? Infinity : i; };
+    const linesOf = c => (request.candidates.find(v => v.key === c.key)?.costs || [])
+      .slice().sort((a, b) => order(a.category) - order(b.category));
+    const amount = cost => (cost.status === "priced" ? cost.amount_minor / 100 : 0) * (CREDITS.includes(cost.category) ? -1 : 1);
+    // Grafiek: de positieve startposten per optie; teruggaven staan in de tabel eronder.
+    const keys = [...new Set(top.flatMap(c => linesOf(c)
+      .filter(l => l.timing === "upfront" && amount(l) > 0).map(l => l.category)))].sort((a, b) => order(a) - order(b));
+    if (keys.length) {
+      out.append(chart("stacked", {
+        title: `Startinvestering per kostenpost${more(all) ? ` (beste ${TOP})` : ""}`, unit: "EUR",
+        rows: top.map(c => ({ label: c.name, values: keys.map(k => linesOf(c)
+          .filter(l => l.timing === "upfront" && l.category === k).reduce((sum, l) => sum + amount(l), 0)) })),
+        series: keys.map(k => ({ label: label(k) }))
+      }));
+    }
+    const pick = UI.select(all.slice(1).map(c => [c.key, c.name]), run.result.recommended_key ?? all[1]?.key), target = h("div");
+    const render = () => {
+      const c = all.find(o => o.key === pick.value);
+      if (!c) { target.replaceChildren(); return; }
+      const lines = linesOf(c).filter(l => l.status !== "not_applicable");
+      const source = l => /^https:\/\//.test(l.source) ? UI.external("bron", l.source) : l.source;
+      const row = l => [label(l.category), `${TIMING[l.timing]}${l.year != null ? ` · einde jaar ${l.year}` : ""}`,
+        l.status === "priced" ? money(amount(l)) : Data.costStatus[l.status], source(l)];
+      const group = (timing, total) => {
+        const part = lines.filter(l => l.timing === timing);
+        return part.length ? [...part.map(row), ...(total ? [[h("strong", {}, total[0]), "", h("strong", {}, money(total[1])), ""]] : [])] : [];
+      };
+      const sum = key => c.years.reduce((total, y) => total + (y[key] || 0), 0);
+      const annual = lines.filter(l => l.timing === "annual").reduce((total, l) => total + amount(l), 0);
+      const fromBattery = c.years.reduce((total, y) => total + (y.energy?.battery_to_load_kwh || 0), 0);
+      const usable = request.candidates.find(v => v.key === c.key)?.battery?.usable_capacity_kwh;
+      const skipped = linesOf(c).length - lines.length;
+      target.replaceChildren(
+        table(["Kostenpost", "Moment", "Bedrag", "Bron"], [
+          ...group("upfront", ["Startinvestering", c.initial_investment_eur]),
+          ...group("annual", ["Per jaar, eerste jaar", annual]),
+          ...group("event")
+        ], { caption: `Kostenposten van ${c.name}` }),
+        skipped ? h("p", { class: "help" }, `${skipped} ${skipped === 1 ? "kostenpost is" : "kostenposten zijn"} niet van toepassing en staan er niet bij.`) : null,
+        stats([
+          ["Startinvestering", money(c.initial_investment_eur)],
+          ["Startinvestering per kWh bruikbaar", finite(usable) && usable > 0 ? `${money(c.initial_investment_eur / usable)} per kWh` : "Onbekend"],
+          ["Jaarkosten en latere posten over de looptijd", money(sum("extra_costs_eur"))],
+          ["Leningrente over de looptijd", money(sum("financing_interest_eur"))],
+          ["Extra kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
+          ["Kosten per kWh uit de accu", fromBattery > 0 ? `${money(c.lifetime_extra_costs_eur / fromBattery)} per kWh` : "Niet bepaald"]
+        ]));
+    };
+    pick.addEventListener("change", render); render();
+    out.append(UI.field("Kostenopbouw van", pick), target,
+      h("p", { class: "help" }, "Bedragen zoals vastgelegd bij de berekening; teruggaven tellen negatief. Jaarkosten stijgen met de ingevoerde kostenstijging; " +
+        "de gevoeligheidsvarianten schuiven de kosten nog eens op en de lening telt alleen de rente mee. " +
+        "Kosten per kWh uit de accu zijn alle extra kosten gedeeld door de stroom die je over de looptijd uit de accu gebruikt, niet gedisconteerd."));
     return out;
   }
 
@@ -385,6 +447,7 @@ window.Results = (() => {
       h("h2", {}, result.recommendation), badge(recommended?.name || "Onbekende optie", "accent")));
     view.append(summary(run), tabs([
       { label: "Overzicht", content: overview(run, all) }, { label: "Kasstromen", content: cashflows(run, all) },
+      { label: "Kostenopbouw", content: costs(run, all, categories) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
       { label: "Invoer en aannames", content: inputs(run, categories) },
       { label: `Waarschuwingen (${result.warnings.length})`,

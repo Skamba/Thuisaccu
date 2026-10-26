@@ -185,6 +185,19 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const summary = await page.textContent(".plain");
   assert.match(summary, /Als teruglevering vanaf 2030 niets meer oplevert/);
   assert.match(summary, /geschat uit jaartotalen/);
+  // De kostenopbouw telt de startposten op tot de startinvestering van de gekozen accu.
+  await page.click(`[role=tab]:has-text("Kostenopbouw")`);
+  const costPanel = page.locator("[role=tabpanel]:not([hidden])");
+  assert.match(await costPanel.textContent(), /Startinvestering per kostenpost.*Accu of complete pakketprijs/);
+  const costTable = costPanel.locator("table", { has: page.locator("caption", { hasText: "Kostenposten van" }) });
+  const costCheck = await costTable.evaluate(table => {
+    const value = text => Number(text.replace(/[^\d,−-]/g, "").replace("−", "-").replace(",", "."));
+    const rows = [...table.querySelectorAll("tbody tr")].map(r => [...r.cells].map(c => c.textContent));
+    const end = rows.findIndex(r => r[0] === "Startinvestering");
+    const parts = rows.slice(0, end).filter(r => r[2].includes("€")).reduce((sum, r) => sum + value(r[2]), 0);
+    return { parts, total: value(rows[end][2]) };
+  });
+  assert.ok(costCheck.total > 0 && Math.abs(costCheck.parts - costCheck.total) < 0.02, JSON.stringify(costCheck));
   for (const tab of ["Kasstromen", "Energie", "Gevoeligheid", "Invoer en aannames"]) {
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
