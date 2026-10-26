@@ -56,8 +56,11 @@ window.Compare = (() => {
     const head = h("tr", {}, h("td", {}), columns.map(({ run }) => h("th", { scope: "col" },
       link(run.title, `#/berekeningen/${run.id}`), h("br"), h("small", {}, UI.dateTime(run.created_at_unix_s)),
       Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null,
-      run.result.model_version === Data.MODEL_VERSION ? null : h("p", { class: "callout" },
-        `Gemaakt met een ouder rekenmodel (${run.result.model_version}). Reken opnieuw om eerlijk te vergelijken.`))));
+      Results.outdated(run) ? h("div", { class: "callout" },
+        h("p", {}, `Gemaakt met een ouder rekenmodel (${run.result.model_version}). Reken opnieuw om eerlijk te vergelijken.`),
+        // De nieuwe berekening neemt de plaats van de oude in; de andere kolommen blijven staan.
+        Results.recalculation(run, id => { location.hash = `#/vergelijk/${runs.map(r => r === run ? id : r.id).join("-")}`; }))
+        : null)));
     const body = ROWS.map(([label, hint, value]) => h("tr", {},
       h("th", { scope: "row" }, label, hint ? [h("br"), h("small", {}, hint)] : null),
       columns.map(({ run, rec, option }) => h("td", {}, value(run, rec, option) ?? "—"))));

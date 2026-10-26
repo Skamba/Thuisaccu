@@ -25,6 +25,7 @@ De volgende routes bestaan:
 | `POST /api/v1/analysis/runs` | `201`, JSON met `id` en `result` | Valideren, simuleren, vergelijken en met invoer opslaan |
 | `GET /api/v1/analysis/runs` | `200`, JSON met `runs` | Laatste 100 analyses met oorspronkelijke `input` en `result` |
 | `DELETE /api/v1/analysis/runs/{id}` | `200`, JSON; `404` als de berekening niet bestaat | Eén berekening verwijderen; het profiel blijft staan |
+| `POST /api/v1/analysis/runs/{id}/recalculate` | `201`, JSON met `id` en `result`; `404` als de berekening niet bestaat; `400` als de invoer niet meer past, het profiel weg is of het profiel een andere SHA-256 heeft | Dezelfde invoer opnieuw met het huidige rekenmodel als nieuwe berekening (titel met ‘ · huidig model’); de oude blijft staan. De nieuwe invoer krijgt `recalculated_from`: `run_id`, `title`, `model_version` en per optie de oude `break_even_investment_eur` |
 | `POST /api/v1/locations/search` | `200`, JSON met `results` en `source` | Expliciet een Nederlands adres opzoeken bij PDOK |
 
 De healthresponse is:

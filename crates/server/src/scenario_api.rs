@@ -160,6 +160,63 @@ pub async fn run(
     State(catalog): State<Catalog>,
     Json(request): Json<RunRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    validate_request(&request)?;
+    save_run(&catalog, request, None, None).await
+}
+
+/// Rekent een bewaarde berekening met precies dezelfde invoer opnieuw met het huidige rekenmodel.
+/// De oude blijft staan; de nieuwe legt in `recalculated_from` vast waar hij vandaan komt. Past de
+/// invoer niet meer, of is het profiel weg of veranderd, dan volgt een melding en geen berekening.
+pub async fn recalculate(
+    State(catalog): State<Catalog>,
+    Path(id): Path<i64>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let saved = catalog
+        .analysis(id)
+        .await
+        .map_err(database_error)?
+        .ok_or_else(|| crate::api::missing("Deze berekening bestaat niet (meer)."))?;
+    let mut request: RunRequest = serde_json::from_value(saved.input["request"].clone())
+        .map_err(|_| invalid("De invoer van deze berekening past niet meer bij deze versie van de app. Gebruik ‘Pas aan en reken opnieuw’ en controleer de invoer."))?;
+    let profile = saved.input["profile"]["filename"]
+        .as_str()
+        .unwrap_or("onbekend");
+    if !catalog
+        .solar_import_exists(request.solar_import_id)
+        .await
+        .map_err(database_error)?
+    {
+        return Err(invalid(format!(
+            "Het energieprofiel van deze berekening (‘{profile}’) bestaat niet meer. Importeer het opnieuw en gebruik ‘Pas aan en reken opnieuw’."
+        )));
+    }
+    let expected = saved.input["profile_sha256"].as_str().map(str::to_owned);
+    let suffix = " · huidig model";
+    request.title = request
+        .title
+        .trim_end_matches(suffix)
+        .chars()
+        .take(200 - suffix.chars().count())
+        .chain(suffix.chars())
+        .collect();
+    validate_request(&request)?;
+    let break_even: serde_json::Map<String, Value> = saved.result["candidates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            Some((
+                c["key"].as_str()?.to_owned(),
+                c.get("break_even_investment_eur")?.clone(),
+            ))
+        })
+        .collect();
+    let origin = json!({"run_id": saved.id, "title": saved.title,
+        "model_version": saved.result["model_version"], "break_even_investment_eur": break_even});
+    save_run(&catalog, request, expected, Some(origin)).await
+}
+
+fn validate_request(request: &RunRequest) -> Result<(), ApiError> {
     if !request.costs_confirmed
         || !request.technical_assumptions_confirmed
         || !request.consumption_is_gross
@@ -192,8 +249,17 @@ pub async fn run(
             "Ongeldige coördinaten voor de Nederlandse adresondersteuning.",
         ));
     }
-    validate_quote_basis(&request)?;
-    let (profile, periods) = load_profile(&catalog, request.solar_import_id).await?;
+    validate_quote_basis(request)
+}
+
+/// Rekent een gecontroleerd verzoek door en bewaart het met invoer, profielmetadata en hash.
+async fn save_run(
+    catalog: &Catalog,
+    request: RunRequest,
+    expected_profile: Option<String>,
+    recalculated_from: Option<Value>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let (profile, periods) = load_profile(catalog, request.solar_import_id).await?;
     let additions = request
         .load_changes
         .iter()
@@ -214,7 +280,15 @@ pub async fn run(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&profile).map_err(|e| invalid(e.to_string()))?)
     );
-    let input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
+    if expected_profile.is_some_and(|expected| expected != profile_hash) {
+        return Err(invalid(
+            "Het energieprofiel van deze berekening is sindsdien veranderd; ongewijzigd opnieuw rekenen kan niet. Gebruik ‘Pas aan en reken opnieuw’.",
+        ));
+    }
+    let mut input_snapshot = json!({"request":request,"profile":metadata,"profile_sha256":profile_hash,"cost_sources_researched_on":"2026-10-24"});
+    if let Some(origin) = recalculated_from {
+        input_snapshot["recalculated_from"] = origin;
+    }
     let parameters = request.parameters.clone();
     let candidates = request.candidates.clone();
     let mut result = crate::blocking(move || {

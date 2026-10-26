@@ -550,3 +550,112 @@ async fn quote_basis_is_saved_as_provenance_and_strictly_validated() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn an_old_run_is_recalculated_with_the_same_input_and_links_back_to_the_original() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", input(id)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let current = body(response).await["id"].as_i64().unwrap();
+    let saved = catalog.analysis(current).await.unwrap().unwrap();
+    // Een run van een ouder rekenmodel nabootsen, met een andere grensprijs als herkenningsteken.
+    let store = |input: Value, sha: &str| {
+        let catalog = catalog.clone();
+        let mut result = saved.result.clone();
+        result["model_version"] = json!("nl-self-consumption-v4");
+        result["candidates"][0]["break_even_investment_eur"] = json!(1234.0);
+        let sha = sha.to_owned();
+        async move {
+            catalog
+                .save_analysis(&thuisaccu_storage::analysis::NewAnalysis {
+                    import_id: id,
+                    title: "Oude berekening",
+                    model_version: "nl-self-consumption-v4",
+                    profile_sha256: &sha,
+                    input_json: &input.to_string(),
+                    result_json: &result.to_string(),
+                    now: 0,
+                })
+                .await
+                .unwrap()
+        }
+    };
+    let sha = saved.input["profile_sha256"].as_str().unwrap();
+    let old = store(saved.input.clone(), sha).await;
+    let recalculate = |id: i64| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(post(
+                    &format!("/api/v1/analysis/runs/{id}/recalculate"),
+                    json!(null),
+                ))
+                .await
+                .unwrap();
+            (response.status(), body(response).await)
+        }
+    };
+    let (status, created) = recalculate(old).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let new = catalog
+        .analysis(created["id"].as_i64().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(new.title, "Test projection · huidig model");
+    assert_eq!(
+        new.result["model_version"],
+        thuisaccu_core::analysis::MODEL_VERSION
+    );
+    let mut same = new.input["request"].clone();
+    same["title"] = saved.input["request"]["title"].clone();
+    assert_eq!(same, saved.input["request"], "invoer ongewijzigd");
+    let origin = &new.input["recalculated_from"];
+    assert_eq!(origin["run_id"], old);
+    assert_eq!(origin["title"], "Oude berekening");
+    assert_eq!(origin["model_version"], "nl-self-consumption-v4");
+    assert_eq!(origin["break_even_investment_eur"]["test"], 1234.0);
+    assert!(
+        catalog.analysis(old).await.unwrap().is_some(),
+        "de oude blijft"
+    );
+    // Nog eens herrekenen stapelt de toevoeging in de titel niet.
+    let (_, again) = recalculate(new.id).await;
+    let again = catalog
+        .analysis(again["id"].as_i64().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.title, "Test projection · huidig model");
+
+    // Een veranderd profiel of een invoer die niet meer past: een melding, geen stille aanvulling.
+    let mut tampered = saved.input.clone();
+    tampered["profile_sha256"] = json!(format!("{:064x}", 1));
+    let changed_input = store(tampered, sha).await;
+    let (status, error) = recalculate(changed_input).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        error["message"].as_str().unwrap().contains("veranderd"),
+        "{error}"
+    );
+    let mut broken = saved.input.clone();
+    broken["request"]["parameters"]["objective"] = json!("winst");
+    let broken = store(broken, sha).await;
+    let (status, error) = recalculate(broken).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("past niet meer"),
+        "{error}"
+    );
+    let (status, _) = recalculate(broken + 100).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

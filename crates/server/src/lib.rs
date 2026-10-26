@@ -29,6 +29,10 @@ pub fn app(catalog: Catalog) -> Router {
             "/api/v1/analysis/runs/{id}",
             delete(scenario_api::delete_run),
         )
+        .route(
+            "/api/v1/analysis/runs/{id}/recalculate",
+            post(scenario_api::recalculate),
+        )
         .route("/api/v1/locations/search", post(scenario_api::address))
         .route("/api/v1/health", get(health))
         .route("/api/v1/products", get(products))

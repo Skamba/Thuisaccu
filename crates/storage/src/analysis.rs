@@ -2,7 +2,7 @@ use crate::{
     Catalog, Result,
     solar::{SolarInterval, json},
 };
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -58,6 +58,44 @@ impl Catalog {
                 data.input_json, data.result_json, data.now],
             |row| row.get(0),
         )?)
+    }
+
+    /// Of er een import met dit nummer is, zonder de meetreeks te laden.
+    pub async fn solar_import_exists(&self, id: i64) -> Result<bool> {
+        Ok(self
+            .connection()
+            .query_row("SELECT 1 FROM solar_imports WHERE id = ?", [id], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
+    /// Eén bewaarde berekening met invoer en uitkomst, of `None` als ze niet bestaat.
+    pub async fn analysis(&self, id: i64) -> Result<Option<SavedAnalysis>> {
+        let row = self
+            .connection()
+            .query_row(
+                "SELECT title, created_at_unix_s, input_json, result_json FROM analysis_runs WHERE id = ?",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>("title")?,
+                        r.get::<_, i64>("created_at_unix_s")?,
+                        r.get::<_, String>("input_json")?,
+                        r.get::<_, String>("result_json")?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(|(title, created_at_unix_s, input, result)| {
+            Ok(SavedAnalysis {
+                id,
+                title,
+                created_at_unix_s,
+                input: json(&input)?,
+                result: json(&result)?,
+            })
+        })
+        .transpose()
     }
 
     /// Verwijdert één bewaarde berekening; het profiel blijft staan. `false` als ze niet bestaat.

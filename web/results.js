@@ -3,7 +3,7 @@
 // Resultaat van één bewaarde analyse. Gebruikt uitsluitend de vastgelegde invoer en uitkomst,
 // zodat oudere runs altijd met hun oorspronkelijke aannames worden getoond.
 window.Results = (() => {
-  const { h, badge, button, field, table, stats, chart, tabs, money, kwh, pct, years, number: n, finite, palette } = UI;
+  const { h, link, badge, button, field, table, stats, chart, tabs, money, kwh, pct, years, number: n, finite, palette } = UI;
   const eur0 = value => money(value, { decimals: 0 });
 
   const TECHNICAL = [
@@ -244,7 +244,7 @@ window.Results = (() => {
         h("li", {}, `= ${eur0(total)} startkosten vóór teruggaven`));
     };
     if (quotedOption) list.append(h("li", {}, `Herberekend met de antwoorden uit je offerte, op basis van `,
-      UI.link(`‘${quote.title}’`, `#/berekeningen/${quote.run_id}`), `: ${quote.changes.map(changeText).join("; ")}. ` +
+      link(`‘${quote.title}’`, `#/berekeningen/${quote.run_id}`), `: ${quote.changes.map(changeText).join("; ")}. ` +
       (finite(quotedOption.break_even_investment_eur) && finite(quote.break_even_investment_eur)
         ? (quotedOption.break_even_investment_eur <= 0 && quote.break_even_investment_eur <= 0
           ? `${quotedOption.name} is ook met deze waarden zelfs gratis niet lonend.`
@@ -802,6 +802,41 @@ window.Results = (() => {
       field("Link naar deze berekening", box), h("p", { class: "help" }, `${n(url.length, 0)} tekens.`), h("div", { class: "actions" }, copy), status);
   }
 
+  const outdated = run => run.result.model_version !== Data.MODEL_VERSION;
+  // Rekent een run van een ouder rekenmodel met precies dezelfde invoer opnieuw en geeft het nummer van de
+  // nieuwe aan `open`. Kan dat niet (profiel weg of veranderd), dan blijft de reden bij de knop staan.
+  function recalculation(run, open) {
+    const status = h("p", { class: "help", "aria-live": "polite" });
+    const go = button("Reken opnieuw met het huidige model", () => UI.busy(go, async () => {
+      status.textContent = "";
+      try { open((await UI.api(`/api/v1/analysis/runs/${run.id}/recalculate`, { method: "POST" })).id); }
+      catch (error) { status.textContent = error.message; }
+    }), "secondary");
+    return [go, status];
+  }
+  // Waar een herberekende run vandaan komt, met de grensprijs van de besproken accu ervoor en erna.
+  function recalculatedFrom(run) {
+    const from = run.input.recalculated_from, option = judged(run);
+    if (!from) return null;
+    const before = option && from.break_even_investment_eur?.[option.key], now = option?.break_even_investment_eur;
+    const limit = value => value > 0 ? roundedLimit(value) : "zelfs gratis niet";
+    return h("p", { class: "callout", role: "note" }, "Herberekend met het huidige rekenmodel op basis van ",
+      link(`‘${from.title}’`, `#/berekeningen/${from.run_id}`), ` (${from.model_version}). Invoer ongewijzigd.` +
+      (finite(before) && finite(now) ? ` ${option.name}: lonend tot ${limit(before)} → ${limit(now)}.` : ""));
+  }
+  async function outdatedNote(run, shared) {
+    const note = h("div", { class: "callout", role: "note" }, h("p", {},
+      `Gemaakt met een ouder rekenmodel (${run.result.model_version}); het huidige is ${Data.MODEL_VERSION}. De uitkomst kan ` +
+      "daardoor afwijken van wat de app nu zou berekenen." + (shared ? "" : " Opnieuw rekenen maakt een nieuwe berekening met " +
+      "precies dezelfde invoer; deze blijft bewaard.")));
+    if (shared) return note;
+    const newer = (await Data.runs().catch(() => [])).filter(r => r.input.recalculated_from?.run_id === run.id);
+    UI.append(note, newer.length
+      ? [h("p", {}, "Al opnieuw gerekend: ", newer.map((r, i) => [i ? ", " : "", link(r.title, `#/berekeningen/${r.id}`)]))]
+      : recalculation(run, id => { location.hash = `#/berekeningen/${id}`; }));
+    return note;
+  }
+
   async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
     const result = run.result, request = run.input.request, p = request.parameters, all = options(run);
     const costCatalog = await Data.costs(), categories = costCatalog.categories;
@@ -819,6 +854,7 @@ window.Results = (() => {
       `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · model ${result.model_version} · ${UI.dateTime(run.created_at_unix_s)}`));
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
+    UI.append(view, [outdated(run) ? await outdatedNote(run, shared) : null, recalculatedFrom(run)]);
     // De aanbeveling noemt de optie al; een extra label herhaalt alleen de (soms lange) naam.
     view.append(h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
       h("h2", {}, result.recommendation)));
@@ -833,5 +869,5 @@ window.Results = (() => {
     ]));
   }
 
-  return { render, isFictitious, fromShare, judged, breakEven };
+  return { render, isFictitious, fromShare, judged, breakEven, outdated, recalculation };
 })();

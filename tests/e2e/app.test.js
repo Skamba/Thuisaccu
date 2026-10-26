@@ -651,6 +651,34 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(side, /Wat is anders.*offerte: bruikbare capaciteit 10 kWh → 9,3 kWh.*vaste prijs/);
   assert.doesNotMatch(side, /ouder rekenmodel/);
   assert.match(await page.textContent(".glossary"), /Discontovoet.*kWh en kW/);
+  // Een berekening van een ouder rekenmodel nabootsen (alleen in de pagina): met één klik opnieuw, met
+  // dezelfde invoer, en de nieuwe neemt in de vergelijking de plaats van de oude in.
+  const compareHash = await page.evaluate(() => {
+    const runs = Data.runs;
+    Data.runs = async () => (await runs()).map(r => r.title === "Synthetische offerte"
+      ? { ...r, result: { ...r.result, model_version: "nl-self-consumption-v4" } } : r);
+    const hash = location.hash;
+    location.hash = "#/berekeningen";
+    return hash;
+  });
+  await page.waitForSelector("text=Nieuwe keuzehulp");
+  await page.evaluate(hash => { location.hash = hash; }, compareHash);
+  const old = page.locator("table.compare thead th", { hasText: "ouder rekenmodel" });
+  await old.getByRole("button", { name: "Reken opnieuw met het huidige model" }).click();
+  await page.waitForFunction(hash => location.hash !== hash, compareHash);
+  await page.waitForSelector("table.compare thead >> text=Synthetische offerte · huidig model");
+  const swapped = await page.textContent("table.compare thead");
+  assert.match(swapped, /Synthetische offerte · huidig model.*Synthetische offerte · offerte/);
+  assert.doesNotMatch(swapped, /ouder rekenmodel/);
+  await page.click("table.compare thead >> text=Synthetische offerte · huidig model");
+  await page.waitForSelector("text=Herberekend met het huidige rekenmodel");
+  assert.match(await page.textContent("#view"),
+    /Herberekend met het huidige rekenmodel op basis van ‘Synthetische offerte’ \(nl-self-consumption-v\d+\)\. Invoer ongewijzigd\. .+: lonend tot (€\s*[\d.]+|zelfs gratis niet) → (€\s*[\d.]+|zelfs gratis niet)\./);
+  // De oude blijft bewaard en wijst naar de nieuwe, zodat je niet twee keer opnieuw rekent.
+  await page.click("text=‘Synthetische offerte’");
+  await page.waitForSelector("text=Al opnieuw gerekend");
+  assert.match(await page.textContent("#view"), /ouder rekenmodel \(nl-self-consumption-v4\).*Al opnieuw gerekend: Synthetische offerte · huidig model/);
+  assert.equal(await page.locator("button:has-text('Reken opnieuw met het huidige model')").count(), 0);
   assert.deepEqual(problems, []);
   await close();
 });

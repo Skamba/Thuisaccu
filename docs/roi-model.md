@@ -183,7 +183,7 @@ Optioneel bevat `parameters.export_variant` een tweede set terugleverprijzen (`e
 
 ## Opslag, controle en grenzen
 
-Een analyse bewaart de volledige invoer, gebruikte importmetadata, SHA-256 van het genormaliseerde profiel, onderzoeksdatum, modelversie en resultaat in SQLite. De bronintervallen blijven gekoppeld via import-ID. Historie toont de oorspronkelijke invoer, onafhankelijk van de huidige editor. Een hash detecteert veranderingen maar is geen reservekopie van alle intervallen of een onveranderbaar auditlog.
+Een analyse bewaart de volledige invoer, gebruikte importmetadata, SHA-256 van het genormaliseerde profiel, onderzoeksdatum, modelversie en resultaat in SQLite. De bronintervallen blijven gekoppeld via import-ID. Historie toont de oorspronkelijke invoer, onafhankelijk van de huidige editor. Een hash detecteert veranderingen maar is geen reservekopie van alle intervallen of een onveranderbaar auditlog. Een bewaarde analyse verandert nooit; na een nieuwe `model_version` kan dezelfde invoer opnieuw worden doorgerekend als nieuwe analyse (`recalculated_from` verwijst naar de oude), maar alleen als het profiel nog dezelfde hash heeft.
 
 De referentietests controleren energiebehoud, AC-verliezen, vermogensgrenzen, standby, degradatie, de tariefomslag in 2027, analytisch narekenbare NPV/ROI, financieringsrente, vervanging, keuzecriteria, budget en de optie geen accu.
 
