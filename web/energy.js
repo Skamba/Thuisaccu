@@ -13,6 +13,22 @@
     const comma = cells.some(v => /^-?\d+,\d+$/.test(v)), dot = cells.some(v => /^-?\d+\.\d+$/.test(v));
     return comma && !dot ? "comma" : dot && !comma ? "dot" : current;
   }
+  // Meetperiode uit de tijdstippen van de voorbeeldrijen (ISO of dag-maand-jaar met tijd). Alleen als alle
+  // stappen gelijk zijn en een bekende periode vormen; de server controleert het bestand daarna volledig.
+  function guessPeriod(preview, timeColumn, partColumn) {
+    const minutes = preview.map(row => {
+      const raw = `${row[timeColumn] ?? ""} ${partColumn == null ? "" : row[partColumn] ?? ""}`;
+      const date = raw.match(/(\d{4})-(\d{2})-(\d{2})/) || raw.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
+      const time = raw.match(/(\d{1,2}):(\d{2})/);
+      if (!date || !time) return null;
+      const [y, m, d] = date[1].length === 4 ? [date[1], date[2], date[3]] : [date[3], date[2], date[1]];
+      return Date.UTC(Number(y), Number(m) - 1, Number(d), Number(time[1]), Number(time[2])) / 60000;
+    });
+    if (minutes.length < 3 || minutes.some(v => v == null)) return null;
+    const steps = new Set(minutes.slice(1).map((v, i) => v - minutes[i]));
+    const step = steps.size === 1 ? [...steps][0] : null;
+    return { 5: "5min", 10: "10min", 15: "15min", 30: "30min", 60: "hour" }[step] ?? null;
+  }
   const fitBadge = item => { const fit = Data.suitability(item);
     return badge(fit.reason, fit.ok === true ? "success" : fit.ok === false ? "warning" : ""); };
   const title = item => h("span", {}, item.filename, Data.isDemo(item) ? [" ", badge("FICTIEF", "demo")] : null);
@@ -152,7 +168,7 @@
         consumption_source: "gross", export_column: null, unit: "kwh", mode: "interval", period: "hour",
         timezone: "Europe/Amsterdam", timestamp_position: "start", data_kind: "measured", date_order: "day_first",
         missing_rows: "reject" };
-      const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null };
+      const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null, noProduction: false };
       // Optioneel meterbestand; opties volgen MeterOptions in solar_import.rs.
       const meter = {
         use: false, file: null, inspected: null,
@@ -232,9 +248,12 @@
           exported = guess(/teruglever|export|feed.?in|injectie|returned/i),
           imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen/i);
         const separate = guess(/^(time|tijd|uhrzeit)(\s|$)/i);
+        // Zonder herkenbare opwekkolom de eerste kolom die nergens anders voor dient; een P1-export heeft er geen.
+        const spare = result.headers.findIndex((_, i) => ![time, separate, consumption, exported, imported].includes(i));
+        state.noProduction = production < 0;
         Object.assign(options,
           { time_column: Math.max(0, time),
-            production_column: production >= 0 ? production : Math.min(1, result.headers.length - 1),
+            production_column: production >= 0 ? production : Math.max(0, spare),
             time_part_column: separate >= 0 && separate !== time ? separate : null });
         // P1-exports noemen afname en teruglevering apart; dan is de verbruikskolom geen bruto verbruik.
         if (exported >= 0 && exported !== production) Object.assign(options,
@@ -246,8 +265,10 @@
         const unit = (result.headers[options.production_column] || "").match(/(?:^|[^a-z])(kwh|wh|kw|w)(?:[^a-z]|$)/i);
         if (["kwh", "wh", "kw", "w"].includes(result.detected_unit)) options.unit = result.detected_unit;
           else if (unit) options.unit = unit[1].toLowerCase();
+        const period = guessPeriod(result.preview, options.time_column, options.time_part_column);
         if (PERIODS[result.detected_period]) Object.assign(options,
           { period: result.detected_period, mode: "interval" });
+        else if (period) options.period = period;
         options.decimal = guessDecimal(result.preview,
           [options.production_column, options.consumption_column, options.export_column], options.decimal);
         toast(`${n(result.row_count, 0)} rijen ingelezen. Controleer kolommen, eenheid, periode en tijdzone.`);
@@ -263,7 +284,11 @@
         source.addEventListener("change",
           () => { exportField.hidden = source.value !== "net_meter";
             if (source.value !== "net_meter") options.export_column = null; });
-        body.append(h("h2", {}, "Kolommen en eenheden"), h("div", { class: "grid" },
+        body.append(h("h2", {}, "Kolommen en eenheden"), state.noProduction ? h("p", { class: "callout", role: "note" },
+          "We vinden geen kolom met zonne-opwek. Alleen netafname en teruglevering van de slimme meter is niet genoeg: " +
+          "zonder opwek is niet te zien hoeveel zonnestroom je direct zelf gebruikt. Importeer eerst de export van je " +
+          "omvormer en voeg dit bestand in de volgende stap toe als meterbestand. Geen omvormerdata? Gebruik dan in de " +
+          "keuzehulp je jaartotalen.") : null, h("div", { class: "grid" },
           field("Datum of tijdstip", column("time_column")),
             field("Aparte tijdkolom", column("time_part_column", true)),
             field("Zonne-opwek", column("production_column")),
@@ -321,6 +346,7 @@
             import_column: imported >= 0 ? imported : 1, export_column: exported >= 0 ? exported : 2
           });
           m.decimal = guessDecimal(result.preview, [m.import_column, m.export_column], m.decimal);
+          m.period = guessPeriod(result.preview, m.time_column, m.time_part_column) ?? m.period;
           meter.inspected = result; flow.rerender();
         }), "secondary");
         body.append(field("Meterbestand", fileInput, meter.file ? `Gekozen: ${meter.file.name}` : "CSV, Excel of JSON; maximaal 10 MB."),

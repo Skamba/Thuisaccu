@@ -412,6 +412,26 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await close();
 });
 
+test("alleen een P1-export: uitleg dat opwek nodig is, kwartierperiode herkend", async () => {
+  // Eén synthetische dag met kwartierwaarden van de slimme meter, zonder opwekkolom.
+  const lines = ["Datum;Afname (kWh);Teruglevering (kWh)"];
+  for (let q = 0; q < 96; q++) {
+    const time = `${String(Math.floor(q / 4)).padStart(2, "0")}:${String(q % 4 * 15).padStart(2, "0")}`;
+    lines.push(`02-01-2025 ${time};0,070;0,000`);
+  }
+  const file = path.join(workdir, "p1-dag.csv");
+  fs.writeFileSync(file, `${lines.join("\n")}\n`);
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", file);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  assert.match(await page.textContent(".wizard-body .callout"), /geen kolom met zonne-opwek/);
+  assert.equal(await page.getByLabel("Meetperiode").inputValue(), "15min");
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const file = dutchLocalYear(workdir);
   const { page, problems, close } = await open();

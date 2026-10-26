@@ -138,7 +138,7 @@
       Data.imports().then(list => {
         const fit = list.filter(item => Data.suitability(item).ok === true);
         if (!fit.length) { target.append(h("p", { class: "callout" },
-          "Je hebt nog geen bruikbaar bestand bewaard. Importeer eerst één volledig jaar met opwek en verbruik (of P1-afname en -teruglevering) en kom daarna terug."));
+          "Je hebt nog geen bruikbaar bestand bewaard. Importeer eerst één volledig jaar met opwek en verbruik, of opwek samen met P1-afname en -teruglevering, en kom daarna terug."));
           return; }
         if (!fit.some(item => String(item.id) === answers.importId)) answers.importId = "";
         const control = select([["", "Kies een bewaard profiel…"], ...fit.map(item => [String(item.id), item.filename])], answers.importId,
