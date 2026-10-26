@@ -62,8 +62,10 @@ window.Results = (() => {
         rec.payback_years == null ? `Binnen ${p.horizon_years} jaar verdien je dat bedrag niet terug.` : `Je hebt de investering na ongeveer ${rec.payback_years} jaar terugverdiend. Over ${p.horizon_years} jaar is het netto voordeel ${eur0(rec.npv_eur)} in geld van nu.`));
       list.append(h("li", {},
         `Je gebruikt dan ${pct(rec.first_year.self_consumption_pct)} van je zonnestroom zelf; zonder accu is dat ${pct(base.self_consumption_pct)}.`));
-      if (rec.npv_eur < 0) list.append(h("li", {},
-        "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."));
+      // Vanaf modelversie 4 kan dit alleen bij het doel eigen gebruik; oudere runs met het doel ROI konden het ook.
+      if (rec.npv_eur < 0) list.append(h("li", {}, p.objective === "self_consumption"
+        ? "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."
+        : "Let op: in geld van nu kost deze keuze je over de looptijd geld. Hij wint op ROI, die toekomstige bedragen niet omrekent naar nu."));
       list.append(h("li", {},
         `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
     }

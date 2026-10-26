@@ -619,3 +619,60 @@ fn measured_grid_values_replace_the_estimated_overlap_within_the_hour() {
     invalid[0].measured_import_kwh = Some(0.5);
     assert!(analysis::analyze(&invalid, &parameters(), &[candidate("a", 5.0, 100_000)]).is_err());
 }
+
+#[test]
+fn roi_objective_requires_a_non_negative_npv_like_payback() {
+    // 1 kWh verliesvrij: 4380 keer per jaar 1 kWh van overschot naar tekort, ieder 0,30 − 0,08 €.
+    // Twee jaar à € 963,60 tegen € 1.800: ROI (1927,20 − 1800) / 1800 = 7,07%, maar met 10%
+    // disconto is de NPV −1800 + 963,60/1,1 + 963,60/1,21 = −127,64.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.discount_pct = 10.0;
+    p.objective = Objective::Roi;
+    let r = analysis::analyze(&profile(), &p, &[candidate("battery", 1.0, 180_000)]).unwrap();
+    let c = &r.candidates[0];
+    close(c.roi_pct.unwrap(), 127.2 / 1800.0 * 100.0);
+    close(c.npv_eur, -1800.0 + 963.6 / 1.1 + 963.6 / 1.21);
+    assert_eq!(r.recommended_key, "no_battery");
+    p.discount_pct = 0.0;
+    let r = analysis::analyze(&profile(), &p, &[candidate("battery", 1.0, 180_000)]).unwrap();
+    assert_eq!(r.recommended_key, "battery");
+}
+
+#[test]
+fn years_after_the_operating_life_without_replacement_are_named_in_a_warning() {
+    let mut c = candidate("short", 2.0, 50_000);
+    c.battery.operating_life_years = 2;
+    let mut p = parameters();
+    p.horizon_years = 5;
+    let r = analysis::analyze(&profile(), &p, std::slice::from_ref(&c)).unwrap();
+    close(r.candidates[0].years[2].energy_saving_eur, 0.0);
+    let warning =
+        |r: &analysis::AnalysisResult| r.warnings.iter().find(|w| w.starts_with("short:")).cloned();
+    let text = warning(&r).unwrap();
+    assert!(text.contains("in jaar 3–5 van de looptijd"), "{text}");
+    assert!(!text.contains("jaarkosten"), "{text}");
+
+    // Een vervanging aan het einde van jaar 3 laat alleen jaar 3 zonder werkende accu; een
+    // jaarlijks abonnement loopt ook in dat jaar door.
+    for line in &mut c.costs {
+        if line.category == "battery_replacement" {
+            line.status = CostStatus::Priced;
+            line.timing = CostTiming::Event;
+            line.year = Some(3);
+            line.amount_minor = 50_000;
+        }
+        if line.category == "subscription" {
+            line.status = CostStatus::Priced;
+            line.timing = CostTiming::Annual;
+            line.amount_minor = 1_000;
+        }
+    }
+    let r = analysis::analyze(&profile(), &p, std::slice::from_ref(&c)).unwrap();
+    close(r.candidates[0].years[3].energy_saving_eur, 1927.2);
+    let text = warning(&r).unwrap();
+    assert!(text.contains("in jaar 3 van de looptijd"), "{text}");
+    assert!(text.contains("jaarkosten lopen wel door"), "{text}");
+    c.battery.operating_life_years = 5;
+    assert!(warning(&analysis::analyze(&profile(), &p, &[c]).unwrap()).is_none());
+}

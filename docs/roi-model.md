@@ -1,6 +1,6 @@
 # Nederlandse scenariovergelijking en kostenonderzoek
 
-Modelversie `nl-self-consumption-v3`, bronnen gecontroleerd op 24 oktober 2026. Versie 2 (25 oktober 2026) voegt de verdeling van het verbruik binnen een meetperiode toe; runs met versie 1 rekenden gelijkmatig binnen iedere periode. Versie 3 (25 oktober 2026) gebruikt per periode de gemeten netafname en teruglevering als die bij de import bekend zijn ([Gemeten netafname en teruglevering](#gemeten-netafname-en-teruglevering)); runs met versie 2 schatten de gelijktijdigheid binnen de periode ook dan met de verdeling. De tool vergelijkt opgegeven accu-uitvoeringen met dezelfde woning zonder accu. Het resultaat is een schatting op basis van opgegeven gegevens. De strategie is eigen zonnestroom bewaren voor later huishoudelijk gebruik, met vaste all-in tarieven.
+Modelversie `nl-self-consumption-v4`, bronnen gecontroleerd op 24 oktober 2026. Versie 2 (25 oktober 2026) voegt de verdeling van het verbruik binnen een meetperiode toe; runs met versie 1 rekenden gelijkmatig binnen iedere periode. Versie 3 (25 oktober 2026) gebruikt per periode de gemeten netafname en teruglevering als die bij de import bekend zijn ([Gemeten netafname en teruglevering](#gemeten-netafname-en-teruglevering)); runs met versie 2 schatten de gelijktijdigheid binnen de periode ook dan met de verdeling. Versie 4 (26 oktober 2026) laat bij het doel ROI, net als bij de terugverdientijd, alleen opties met een niet-negatieve NPV winnen; runs met versie 3 konden een optie met positieve ROI maar negatieve NPV aanbevelen. De tool vergelijkt opgegeven accu-uitvoeringen met dezelfde woning zonder accu. Het resultaat is een schatting op basis van opgegeven gegevens. De strategie is eigen zonnestroom bewaren voor later huishoudelijk gebruik, met vaste all-in tarieven.
 
 ## Invoer en adres
 
@@ -34,7 +34,7 @@ Laadtoestand begint leeg en loopt door naar het volgende projectiejaar. Een capa
 Een uurwaarde van 1,1 kWh kan een uur van gelijkmatig 1,1 kW zijn, maar ook een kwartier koken op 3 kW en de rest van het uur 0,5 kW. Een accu met 800 W ontlaadvermogen dekt in het eerste geval 0,8 kWh, in het tweede veel minder. Omgekeerd ontstaan binnen een zonnig uur korte tekorten (waterkoker) en overschotten die een accu kan opvangen, terwijl het uurgemiddelde alleen een overschot laat zien. Met `parameters.load_variation: "households"` (de interface stuurt dit altijd mee) houdt de simulatie hier rekening mee:
 
 - Iedere periode van 5, 10, 15, 30 of 60 minuten wordt opgedeeld in tien even lange delen. Het verbruik per deel is het periodegemiddelde maal een vaste factor, van laag naar hoog. De factoren hangen af van het gemiddelde vermogen in die periode (16 klassen van 0,07 tot ruim 6 kW, lineair geïnterpoleerd) en zijn gemiddelden over 74 huishoudens.
-- Per deel gelden de gewone regels: zonnestroom eerst direct, dan laden tot het laadvermogen, tekort uit de accu tot het ontlaadvermogen. Laadtoestand, standby en verliezen worden daarna per periode verrekend, eerst laden en dan ontladen. De som van de delen is precies het verbruik van de periode.
+- Per deel gelden de gewone regels: zonnestroom eerst direct, dan laden tot het laadvermogen, tekort uit de accu tot het ontlaadvermogen. Laadtoestand, standby en verliezen worden daarna per periode verrekend, eerst laden en dan ontladen. De som van de delen is precies het verbruik van de periode. Die volgorde is een voorzichtige keuze: in een controle met een synthetisch huishouden per minuut (26 oktober 2026; uurmodel met de werkelijke verdeling van ieder uur, opwek binnen het uur gelijk) leverden accu's van 1 tot 10 kWh daarmee 3,1% minder tot 1,1% meer dan chronologisch per minuut; verweven laden en ontladen binnen het uur gaf 1,8% minder tot 3,1% meer.
 - Een optioneel gelijkmatig deel van het verbruik per periode (`steady_consumption_kwh`, bijvoorbeeld warmtepomp en laadpaal in het keuzehulpprofiel) telt in ieder deel volledig mee; alleen het overige verbruik wordt verdeeld en bepaalt de klasse.
 - Opwek blijft binnen de periode gelijkmatig. Andere perioden (bijvoorbeeld minuutdata) blijven gelijkmatig; daar zijn de pieken al grotendeels zichtbaar. Zonder het veld (runs van vóór modelversie 2) geldt `uniform`: gelijkmatig binnen de periode, zoals in modelversie 1.
 
@@ -143,7 +143,7 @@ De terugverdientijd is de eerste jaargrens waarna het cumulatieve resultaat tot 
 De gebruiker kiest het criterium:
 
 - **NPV:** hoogste positieve netto contante waarde tegenover geen accu.
-- **ROI:** hoogste positieve ROI over de horizon.
+- **ROI:** hoogste positieve ROI over de horizon, met niet-negatieve NPV. ROI is ongedisconteerd; zonder die voorwaarde kan een optie winnen die in geld van nu verlies geeft.
 - **Terugverdientijd:** kortste blijvende terugverdientijd, met niet-negatieve NPV.
 - **Eigen gebruik:** hoogste nuttig gebruikte fractie van de zonnestroom in jaar één. Dit mag financieel ongunstig zijn en wordt bij het resultaat vermeld.
 
@@ -158,6 +158,7 @@ De rekenkern voegt waarschuwingen toe die de uitkomst niet veranderen:
 - **Nettarieven vanaf 2029.** Loopt de horizon tot in 2029 of later, dan meldt de run dat de ACM vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven wil invoeren ([ontwerpbesluit van 8 oktober 2026](https://www.acm.nl/nl/publicaties/uitleg-bij-ontwerp-codebesluit-volume-en-tijdsafhankelijke-tarieven-voor-kleine-aansluitingen); ongeveer tweederde van het nettarief gaat afhangen van hoeveel en wanneer je afneemt; definitief besluit begin 2027). Het model rekent met vaste ingevoerde tarieven; een tariefvariant volgt pas als de tariefstructuur vaststaat (zie de [roadmap](roadmap.md)).
 - **Btw-teruggave.** Een ingevoerde teruggave krijgt een waarschuwing: het model rekent alleen eigen gebruik, en volgens de [Belastingdienst](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw) geeft alleen privégebruik geen recht op teruggave; bij aftrek kan btw over privégebruik verschuldigd zijn in het aanschafjaar en de vier jaren daarna.
 - **Subsidie.** Een ingevoerde subsidie telt alleen als ze is toegekend; de waarschuwing vraagt regeling, toekenning en datum bij de kostenpost te noteren.
+- **Na de levensduur.** Werkt een accu in een deel van de looptijd niet meer (leeftijd vanaf de technische gebruiksduur, zonder accuvervanging), dan noemt een waarschuwing die jaren. Ze besparen niets; ingevoerde jaarkosten lopen tot het einde van de looptijd door en worden dan apart genoemd. Pas zo nodig de looptijd aan, voer een vervanging in of zet tijdelijke jaarkosten als gebeurtenissen in.
 
 ### Terugleveringsvariant
 

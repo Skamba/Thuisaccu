@@ -346,6 +346,48 @@ pub fn validate(
     Ok(())
 }
 
+/// Leeftijd van de accu in ieder projectiejaar. Een accuvervanging aan het einde van een jaar
+/// laat het volgende jaar weer op nul beginnen.
+fn battery_ages(c: &Candidate, horizon_years: u32) -> Vec<u32> {
+    let replaced = |year| {
+        c.costs.iter().any(|l| {
+            l.category == "battery_replacement"
+                && l.status == CostStatus::Priced
+                && l.year == Some(year)
+        })
+    };
+    let mut age = 0;
+    (1..=horizon_years)
+        .map(|year| {
+            let current = age;
+            age = if replaced(year) { 0 } else { age + 1 };
+            current
+        })
+        .collect()
+}
+
+/// Aaneengesloten jaren als "3" of "11–15", gescheiden door komma's.
+fn year_ranges(years: &[u32]) -> String {
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    for &year in years {
+        match ranges.last_mut() {
+            Some((_, end)) if *end + 1 == year => *end = year,
+            _ => ranges.push((year, year)),
+        }
+    }
+    ranges
+        .iter()
+        .map(|&(start, end)| {
+            if start == end {
+                start.to_string()
+            } else {
+                format!("{start}–{end}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn project(
     profile: &[EnergyInterval],
     p: &Parameters,
@@ -382,7 +424,7 @@ fn project(
     let mut total_costs = upfront;
     let mut total_savings = 0.0;
     let mut state = 0.0;
-    let mut age = 0;
+    let ages = battery_ages(c, p.horizon_years);
     for year in 1..=p.horizon_years {
         let pv_factor = (1.0 - p.annual_pv_loss_pct / 100.0).powi((year - 1) as i32);
         let load_factor = (1.0 + p.annual_load_growth_pct / 100.0).powi((year - 1) as i32);
@@ -398,7 +440,7 @@ fn project(
         let energy = sizing::simulate_year(
             profile,
             Some(&c.battery),
-            age,
+            ages[(year - 1) as usize],
             pv_factor,
             load_factor,
             state,
@@ -453,13 +495,7 @@ fn project(
             net_cashflow_eur: saving - costs - interest,
             cumulative_eur: cumulative,
         });
-        age += 1;
-        if c.costs.iter().any(|l| {
-            l.category == "battery_replacement"
-                && l.status == CostStatus::Priced
-                && l.year == Some(year)
-        }) {
-            age = 0;
+        if ages.get(year as usize) == Some(&0) {
             // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
             state = 0.0;
         }
@@ -514,7 +550,9 @@ fn choose<'a>(
         }
         let score = match objective {
             Objective::NetPresentValue => npv,
-            Objective::Roi => roi.unwrap_or(f64::NEG_INFINITY),
+            // Net als bij de terugverdientijd: geen optie die in geld van nu verlies geeft.
+            Objective::Roi if npv >= 0.0 => roi.unwrap_or(f64::NEG_INFINITY),
+            Objective::Roi => f64::NEG_INFINITY,
             Objective::Payback => {
                 if npv >= 0.0 {
                     payback.map_or(f64::NEG_INFINITY, |v| -(v as f64))
@@ -652,11 +690,36 @@ pub fn analyze(
     if !grant.is_empty() {
         warnings.push(format!("Subsidie ingevoerd bij {}. Tel een subsidie alleen mee als die is toegekend; regionale regelingen hebben eigen voorwaarden en een beperkt budget. Noteer regeling, toekenning en datum bij de kostenpost.", grant));
     }
+    for c in candidates {
+        let inactive: Vec<u32> = battery_ages(c, parameters.horizon_years)
+            .iter()
+            .zip(1..)
+            .filter(|(age, _)| **age >= c.battery.operating_life_years)
+            .map(|(_, year)| year)
+            .collect();
+        if inactive.is_empty() {
+            continue;
+        }
+        let annual = c.costs.iter().any(|l| {
+            l.timing == CostTiming::Annual && l.status == CostStatus::Priced && l.amount_minor > 0
+        });
+        warnings.push(format!(
+            "{}: na de aangenomen levensduur van {} jaar werkt de accu in jaar {} van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op{}.",
+            c.name,
+            c.battery.operating_life_years,
+            year_ranges(&inactive),
+            if annual {
+                "; de ingevoerde jaarkosten lopen wel door"
+            } else {
+                ""
+            }
+        ));
+    }
     if matches!(parameters.objective, Objective::SelfConsumption) {
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
-        model_version: "nl-self-consumption-v3".into(),
+        model_version: "nl-self-consumption-v4".into(),
         recommended_key: best_key,
         recommendation,
         baseline_first_year: baseline,
