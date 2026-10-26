@@ -338,7 +338,7 @@
           const usable = ofConfig(cmp.numbers, c).filter(v => v.metric_key === "usable_energy_wh"),
             nominal = ofConfig(cmp.numbers, c).find(v => v.metric_key === "nominal_energy_wh");
           const capacity = usable.length === 1 ? `${Data.qualifiers[usable[0].qualifier] || ""}${n(usable[0].value / 1000)} kWh · ${Data.boundaries[usable[0].boundary]}` : usable.length > 1 ? "Meerdere claims" : nominal ? `Onbekend (nominaal ${n(nominal.value / 1000)} kWh)` : "Onbekend";
-          const offer = ofConfig(cmp.offers, c).sort((a, b) => b.observed_at_unix_s - a.observed_at_unix_s)[0];
+          const offer = ofConfig(cmp.offers, c).sort(Data.newestOffer)[0];
           const reviewed = claims.length > 0 && claims.every(v => v.review_status === "reviewed");
           return [box, h("div", {}, h("strong", {}, `${c.manufacturer_name} ${c.product_name}`), h("small", {}, `${c.name} · ${c.product_kind === "battery_module" ? "accumodule" : "accusysteem"}`)),
             capacity, offer ? priceText(offer) : h("span", { class: "unknown" }, "Geen prijs"),
@@ -365,9 +365,13 @@
         c.box.addEventListener("change", () => { state[key] = c.box.checked; draw(); }); return c.element; };
       // Doorrekenen kan alleen binnen een scenario: de gekozen uitvoeringen worden opties in Zelf doorrekenen.
       const calculate = button("Reken deze accu’s door", () => UI.busy(calculate, async () => {
-        const added = await Scenario.addConfigurations(configs.map(c => c.id));
-        toast(added < configs.length ? `${added} van ${configs.length} accu’s toegevoegd; er passen maximaal twaalf opties in één berekening.`
-          : `${added === 1 ? "De accu staat" : `${added} accu’s staan`} als optie in Zelf doorrekenen, met kostenindicaties. Vervang ze door offertebedragen waar je die hebt.`);
+        const { added, already, others } = await Scenario.addConfigurations(configs.map(c => c.id));
+        const full = configs.length - added - already;
+        toast([added ? `${added === 1 ? "De accu staat" : `${added} accu’s staan`} nu als optie in Zelf doorrekenen, met kostenindicaties.` : null,
+          already ? `${already === 1 ? "Eén accu stond" : `${already} accu’s stonden`} er al in.` : null,
+          full ? `${full} niet toegevoegd: er passen maximaal twaalf opties in één berekening.` : null,
+          others ? `Je concept had al ${others === 1 ? "een andere optie" : `${others} andere opties`}; verwijder wat je niet wilt vergelijken.` : null,
+          added ? "Vervang de indicaties door offertebedragen waar je die hebt." : null].filter(Boolean).join(" "));
         location.hash = "#/zelf";
       }));
       actions.append(calculate, button("Exporteer CSV", () => exportComparison(holder.querySelector("table")), "secondary"));

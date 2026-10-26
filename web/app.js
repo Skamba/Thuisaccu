@@ -299,6 +299,11 @@
     document.querySelector(".skip").addEventListener("click",
       event => { event.preventDefault(); $("page-title").focus(); });
     window.addEventListener("hashchange", route);
+    // Ingeklapte uitleg (.fold) hoort op papier; een gesloten <details> toont in de print alleen de kop.
+    window.addEventListener("beforeprint", () => document.querySelectorAll("details.fold:not([open])")
+      .forEach(fold => { fold.open = true; fold.dataset.printOpened = ""; }));
+    window.addEventListener("afterprint", () => document.querySelectorAll("details[data-print-opened]")
+      .forEach(fold => { fold.open = false; delete fold.dataset.printOpened; }));
     const service = $("service");
     if (Local.enabled) $("footer").replaceChildren(
       "Thuisaccu rekent volledig in je browser; je gegevens blijven in deze browser op dit apparaat.");

@@ -80,7 +80,13 @@ window.Compare = (() => {
     ["Terugverdiend na", null, (run, rec, c) => c && years(c.payback_years)],
     // Alleen als minstens één berekening een stresstest heeft; zie render.
     ["Netto voordeel bij de stresstest", "Met de lagere terugleverprijs uit de stresstest", (run, rec, c) =>
-      !run.input.request.parameters.export_variant ? "Geen stresstest" : c?.export_variant && eur0(c.export_variant.npv_eur)]
+      !run.input.request.parameters.export_variant ? "Geen stresstest" : c?.export_variant && eur0(c.export_variant.npv_eur)],
+    // Alleen als minstens één besproken accu een garantiestresstest heeft.
+    ["Lonend tot als hij stopt na de garantie", "Kortere levensduur en sneller capaciteitsverlies", (run, rec, c) => {
+      const w = Results.warranty(run, c);
+      return !c ? null : w ? `${Results.breakEven(w.result.break_even_investment_eur) ?? "Niet berekend"} (${w.operating_life_years} jaar)`
+        : "Niet doorgerekend";
+    }]
   ];
 
   function render(view, runs) {
@@ -100,7 +106,9 @@ window.Compare = (() => {
         Results.recalculation(run, id => { location.hash = `#/vergelijk/${runs.map(r => r === run ? id : r.id).join("-")}`; }))
         : null)));
     const stress = runs.some(run => run.input.request.parameters.export_variant);
-    const body = ROWS.filter(([label]) => stress || label !== "Netto voordeel bij de stresstest").map(([label, hint, value]) => h("tr", {},
+    const guarantee = columns.some(({ run, option }) => Results.warranty(run, option));
+    const body = ROWS.filter(([label]) => (stress || label !== "Netto voordeel bij de stresstest") &&
+      (guarantee || label !== "Lonend tot als hij stopt na de garantie")).map(([label, hint, value]) => h("tr", {},
       h("th", { scope: "row" }, label, hint ? [h("br"), h("small", {}, hint)] : null),
       columns.map(({ run, rec, option }) => h("td", {}, value(run, rec, option) ?? "—"))));
     body.push(h("tr", {}, h("th", { scope: "row" }, "Wat is anders"),

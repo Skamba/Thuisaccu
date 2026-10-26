@@ -73,6 +73,7 @@
     body.append(h("h2", {}, "Je energie"),
       h("p", { class: "lead" },
         "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
+      h("p", { class: "help" }, "Handig om erbij te pakken: je laatste jaarafrekening (verbruik en teruglevering in kWh) en de app of website van je omvormer (opwek per jaar)."),
       pick("panels", "Heb je zonnepanelen?", [["yes", "Ja"], ["no", "Nee"]]),
       pick("data", "Welke gegevens heb je?", [
         ["totals", "Jaartotalen",
@@ -306,16 +307,7 @@
     return budget != null && upfront > budget
       ? `Boven je budget van ${money(budget, { decimals: 0 })}: startkosten ongeveer ${money(upfront, { decimals: 0 })}` : null;
   }
-  // Een stekkeraccu in een gewoon stopcontact rekent met hoogstens 800 W ontladen, zoals het veiligheidsadvies hierboven;
-  // de uitvoeringen op een eigen groep houden hun volle vermogen.
-  const PLUG_LIMIT_KW = 0.8;
-  function plugLimit(p) {
-    if (p.kind !== "plug" || !p.battery || !(p.dischargeKw > PLUG_LIMIT_KW)) return p;
-    return { ...p, name: `${p.name} · begrensd op 800 W`, dischargeKw: PLUG_LIMIT_KW,
-      battery: { ...p.battery, discharge_power_kw: PLUG_LIMIT_KW },
-      notes: [...p.notes, `Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.dischargeKw, 1)} kW. ` +
-        "Of en hoe je dat instelt, staat in de handleiding of app."] };
-  }
+  const plugLimit = Data.plugLimit;
   // Som van de startposten zoals de rekenkern die telt; teruggaven verlagen de kosten.
   const CREDITS = Data.CREDITS;
   const startCosts = lines => lines.filter(l => l.timing === "upfront" && l.status === "priced")
@@ -335,6 +327,7 @@
     } : undefined;
     const candidates = chosen.map(p => ({ key: `c${p.config.id}`, name: p.name, configuration_id: p.config.id,
       battery: p.battery, costs: p.lines, financing: { loan_amount_eur: 0, annual_interest_pct: 0, years: 0 },
+      warranty_stress: p.warrantyStress ?? undefined,
       assumptions: [Data.KEUZEHULP_PREFIX, check?.text, ...p.notes].filter(Boolean).join(" ") }));
     // De titel zegt waarmee is gerekend; de datum staat al bij elke berekening.
     const usage = answers.data === "file" ? null : gross(), solar = answers.panels === "yes" ? production() : null;
@@ -599,7 +592,8 @@
     render(view, actions) {
       load();
       // Wissen is niet terug te draaien; bewaarde berekeningen blijven wel staan.
-      actions.append(button("Begin opnieuw", () => UI.confirm("Opnieuw beginnen?",
+      // Alleen als er iets te wissen is; een eerste bezoek begint niet met een wisknop.
+      if (store.get(STORE, null)) actions.append(button("Begin opnieuw", () => UI.confirm("Opnieuw beginnen?",
         ["Al je antwoorden in de keuzehulp worden gewist. Bewaarde berekeningen onder Mijn berekeningen blijven staan."],
         "Wis mijn antwoorden", () => { answers = { ...BLANK }; store.set(STORE, null); flow.show(0); }), "ghost"));
       flow = UI.wizard([

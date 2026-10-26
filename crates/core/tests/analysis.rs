@@ -77,6 +77,7 @@ fn candidate(key: &str, capacity: f64, price_minor: i64) -> Candidate {
         costs,
         financing: Financing::default(),
         assumptions: "Fictitious reference model for numerical verification".into(),
+        warranty_stress: None,
     }
 }
 
@@ -886,4 +887,46 @@ fn a_horizon_shorter_than_the_battery_life_is_named_in_a_warning() {
             .iter()
             .any(|w| w.contains("levensduur langer dan de looptijd"))
     );
+}
+
+#[test]
+fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone() {
+    // Basis: 15 jaar levensduur over 5 jaar looptijd, elk jaar 8.760 × (0,30 − 0,08) = 1.927,20 besparing.
+    // Stresstest: de accu stopt na 2 jaar, dus 2 × 1.927,20 − 500 = 3.354,40 netto voordeel.
+    let mut c = candidate("garantie", 2.0, 50_000);
+    c.warranty_stress = Some(analysis::BatteryStress {
+        operating_life_years: 2,
+        annual_capacity_loss_pct: 0.0,
+        basis: "Synthetische garantie van 2 jaar".into(),
+    });
+    let mut p = parameters();
+    p.horizon_years = 5;
+    let r = analysis::analyze(&profile(), &p, std::slice::from_ref(&c)).unwrap();
+    let base = &r.candidates[0];
+    close(base.net_profit_eur, 5.0 * 1927.2 - 500.0);
+    let stress = base.warranty_stress.as_ref().unwrap();
+    close(stress.net_profit_eur, 3354.4);
+    close(stress.npv_eur, 3354.4);
+    close(stress.break_even_investment_eur, 3854.4);
+    assert_eq!(stress.payback_years, Some(1));
+    assert_eq!(r.recommended_key, "garantie");
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w
+                .starts_with("Garantiestresstest bij garantie: dezelfde berekening met 2 jaar"))
+    );
+    // Zonder stresstest geen uitkomst; een ongeldige stresstest wordt geweigerd.
+    let plain = candidate("plain", 2.0, 50_000);
+    let r = analysis::analyze(&profile(), &p, &[plain]).unwrap();
+    assert!(r.candidates[0].warranty_stress.is_none());
+    for (life, basis) in [(0, "Garantie"), (2, " ")] {
+        let mut bad = c.clone();
+        bad.warranty_stress = Some(analysis::BatteryStress {
+            operating_life_years: life,
+            annual_capacity_loss_pct: 3.5,
+            basis: basis.into(),
+        });
+        assert!(analysis::analyze(&profile(), &p, &[bad]).is_err());
+    }
 }

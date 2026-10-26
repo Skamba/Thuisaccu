@@ -257,6 +257,15 @@ window.Data = (() => {
   // sluimerverbruik zijn bewust voorzichtig: gemeten stekkeraccu's halen 77–87% heen en terug en
   // gebruiken 3–14 W in rust (docs/keuzehulp.md).
   const FALLBACK = { usableShare: 90, efficiency: 77, standby: 10, degradation: 2, life: 15 };
+  // Garantiestresstest: de accu stopt na de garantie en veroudert sneller. 3,5% per jaar is ongeveer
+  // 70% restcapaciteit na 10 jaar, een gangbare garantiegrens (docs/roi-model.md). Langer dan de
+  // aangenomen levensduur rekent de stresstest niet.
+  const WARRANTY_LOSS = 3.5;
+  const warrantyNote = basis => `${basis}; ${n(WARRANTY_LOSS, 1)}% capaciteitsverlies per jaar is een aanname (ongeveer 70% na 10 jaar)`;
+  const warrantyStress = (years, basis) => years == null || !(years > 0) ? null : {
+    operating_life_years: Math.min(FALLBACK.life, Math.max(1, Math.round(years))), annual_capacity_loss_pct: WARRANTY_LOSS,
+    basis: warrantyNote(basis)
+  };
   // Herkent in de vastgelegde aannametekst van een optie welke technische waarde een aanname is; de
   // offertecheck markeert die. Hoort bij de zinnen in describe() hieronder en bij de 800 W-begrenzing in
   // keuzehulp.js: pas ze samen aan. tests/e2e/data.test.js controleert dat elke zin herkend wordt.
@@ -301,6 +310,7 @@ window.Data = (() => {
     : c.unit === "W" && c.metric_key !== "standby_power_w" ? `${n(c.value / 1000, 1)} kW` : `${n(c.value, 1)}${c.unit === "%" ? "%" : ` ${c.unit}`}`;
 
   // Rekengegevens uit de bronclaims van één uitvoering, met een lijst van aannames en ontbrekende gegevens.
+  const newestOffer = (a, b) => b.observed_at_unix_s - a.observed_at_unix_s || b.upfront_amount_minor - a.upfront_amount_minor;
   function describe(cmp, config) {
     const live = row => row.configuration_id === config.id && !["superseded", "disputed"].includes(row.review_status);
     const numbers = cmp.numbers.filter(live), features = cmp.features.filter(live), texts = cmp.texts.filter(live);
@@ -376,9 +386,14 @@ window.Data = (() => {
     // Alleen aanbiedingen die niet betwist, vervangen of verlopen zijn.
     const now = Date.now() / 1000;
     const offers = cmp.offers.filter(o => live(o) && (o.valid_until_unix_s == null || o.valid_until_unix_s >= now));
-    const offer = offers
-      .filter(o => o.currency === "EUR" && o.minor_unit_exponent === 2 && o.tax_basis === "included")
-      .sort((a, b) => b.observed_at_unix_s - a.observed_at_unix_s)[0] ?? null;
+    // De nieuwste prijs; bij aanbiedingen van hetzelfde moment de hoogste, zodat de volgorde in een bronbestand
+    // niet bepaalt of een accu lonend lijkt. De lagere prijzen worden genoemd.
+    const priced = offers.filter(o => o.currency === "EUR" && o.minor_unit_exponent === 2 && o.tax_basis === "included")
+      .sort(newestOffer);
+    const offer = priced[0] ?? null;
+    const cheaper = priced.filter(o => o !== offer && o.observed_at_unix_s === offer.observed_at_unix_s && o.upfront_amount_minor < offer.upfront_amount_minor);
+    if (cheaper.length) notes.push(`Gerekend met de hoogste gepubliceerde prijs van dat moment; ook gezien: ${cheaper.map(o =>
+      `${UI.money(o.upfront_amount_minor / 100)} bij ${o.seller}`).join(", ")}.`);
     // Een prijs zonder btw of na btw-teruggave wordt niet als aanschafprijs gebruikt, wel genoemd.
     const otherOffer = offer ? null : offers[0] ?? null;
     const phases = claim("phase_count")?.value ?? null;
@@ -388,18 +403,31 @@ window.Data = (() => {
     }
     if (sources.size) notes.push(`Gebruikte bronclaims: ${[...sources].map(([title, list]) => `${title} (${list.join(", ")})`).join("; ")}.`);
     const warranty = cmp.warranties.filter(w => w.configuration_id === config.id && w.product_months != null).map(w => w.product_months);
+    const warrantyYears = warranty.length ? Math.max(...warranty) / 12 : null;
     return {
       config, name: `${config.manufacturer_name} ${config.product_name} · ${config.name}`,
       capacity, chargeKw, dischargeKw, efficiency, standby, notes, missing, coupling, kind, circuit,
       phases, backup: feature("backup"), outdoor: feature("outdoor"),
       inverterIncluded: feature("inverter_included")?.status === "supported", offer, otherOffer,
-      warrantyYears: warranty.length ? Math.max(...warranty) / 12 : null,
+      warrantyYears,
+      warrantyStress: warrantyStress(warrantyYears, `productgarantie van ${n(warrantyYears, warrantyYears % 1 ? 1 : 0)} jaar volgens de bron`),
       battery: capacity != null && dischargeKw != null ? {
         usable_capacity_kwh: capacity, charge_power_kw: chargeKw, discharge_power_kw: dischargeKw,
         ac_round_trip_efficiency_pct: efficiency, standby_w: standby,
         annual_capacity_loss_pct: FALLBACK.degradation, operating_life_years: FALLBACK.life
       } : null
     };
+  }
+
+  // Een stekkeraccu in een gewoon stopcontact rekent met hoogstens 800 W ontladen, zoals het veiligheidsadvies in de keuzehulp;
+  // de uitvoeringen op een eigen groep houden hun volle vermogen. Keuzehulp en Zelf doorrekenen gebruiken allebei deze functie.
+  const PLUG_LIMIT_KW = 0.8;
+  function plugLimit(p) {
+    if (p.kind !== "plug" || !p.battery || !(p.dischargeKw > PLUG_LIMIT_KW)) return p;
+    return { ...p, name: `${p.name} · begrensd op 800 W`, dischargeKw: PLUG_LIMIT_KW,
+      battery: { ...p.battery, discharge_power_kw: PLUG_LIMIT_KW },
+      notes: [...p.notes, `Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.dischargeKw, 1)} kW. ` +
+        "Of en hoe je dat instelt, staat in de handleiding of app."] };
   }
 
   // Kostenindicatie voor alle 26 posten. `item`: { kind, circuit, manufacturer, phases, inverterIncluded };
@@ -553,6 +581,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();

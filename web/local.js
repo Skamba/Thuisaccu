@@ -5,8 +5,26 @@
 // IndexedDB in deze browser. index.html zegt welke van de twee: data-backend="server|browser".
 window.Local = (() => {
   const enabled = document.documentElement.dataset.backend === "browser";
-  const pending = new Map();
-  let worker = null, sequence = 0;
+  const pending = new Map(), LOCK = "thuisaccu-database";
+  let worker = null, sequence = 0, held = !navigator.locks, claiming = null;
+
+  // Eén tabblad tegelijk werkt met de database: elk tabblad houdt een eigen kopie in het geheugen en
+  // bewaart die in zijn geheel, dus twee tabbladen zouden elkaars wijzigingen overschrijven. Een tweede
+  // tabblad wacht (met een melding) tot het eerste sluit. Het slot hoort bij de pagina en niet bij de
+  // worker: een worker die na een fout herstart, geeft de database zo niet aan een ander tabblad.
+  function claim() {
+    claiming ??= held ? Promise.resolve() : new Promise(resolve => {
+      const hold = () => { held = true; banner("elsewhere", null); resolve(); return new Promise(() => {}); };
+      navigator.locks.request(LOCK, { ifAvailable: true }, lock => {
+        if (lock) return hold();
+        banner("elsewhere", "Thuisaccu is al open in een ander tabblad van deze browser. Sluit dat tabblad om hier verder te " +
+          "gaan; twee tabbladen tegelijk zouden elkaars wijzigingen overschrijven.");
+        navigator.locks.request(LOCK, hold);
+        return null;
+      });
+    });
+    return claiming;
+  }
 
   function fail(message) {
     for (const job of pending.values()) job.reject(new Error(message));
@@ -15,11 +33,11 @@ window.Local = (() => {
 
   function call(message, transfer = []) {
     if (!worker) {
-      worker = new Worker("worker.js", { type: "module" });
+      const created = worker = new Worker("worker.js", { type: "module" });
+      claim().then(() => created.postMessage({ type: "owner" }));
       worker.onmessage = ({ data }) => {
         // De worker is na een fout in de module gestopt; het volgende verzoek start een nieuwe.
         if (data.restart) { banner("unsaved", null); fail(data.error); return; }
-        if (data.notice !== undefined) { banner("elsewhere", data.notice); return; }
         const job = pending.get(data.id);
         if (!job) return;
         pending.delete(data.id);
@@ -68,6 +86,7 @@ window.Local = (() => {
 
   // Vervangt de database in deze browser; een ongeldig bestand laat de huidige gegevens staan.
   async function restore(file) {
+    if (!held) throw new Error("Thuisaccu is open in een ander tabblad; sluit dat eerst.");
     const bytes = await file.arrayBuffer();
     await call({ type: "restore", bytes }, [bytes]);
   }

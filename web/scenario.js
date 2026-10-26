@@ -39,7 +39,7 @@ window.Scenario = (() => {
     key: `optie-${Date.now().toString(36)}-${index}`, name: `Eigen optie ${index}`, configuration_id: null,
       kind: "fixed",
     battery: Object.fromEntries(TECH.map(([key]) => [key, ""])), assumptions: "", costs: {},
-      loan: { amount: "0", interest: "0", years: "0" }, ...extra
+      loan: { amount: "0", interest: "0", years: "0" }, warranty: "", ...extra
   });
   function blank() {
     const d = Data.defaults();
@@ -81,13 +81,17 @@ window.Scenario = (() => {
       changes: (request.load_changes || []).map(c => ({ kind: c.kind, year: plain(c.from_calendar_year),
         kwh: plain(c.annual_kwh), charging: c.charging || "evening" })),
       options: request.candidates.map((c, i) => ({
-        key: c.key, name: c.name, configuration_id: c.configuration_id, kind: "fixed", assumptions: c.assumptions,
+        // De soort staat niet in de run; stap 3 leidt hem af uit de catalogus (`resolveKinds`).
+        key: c.key, name: c.name, configuration_id: c.configuration_id, kind: c.configuration_id == null ? "fixed" : null,
+          assumptions: c.assumptions,
         battery: Object.fromEntries(TECH.map(([key]) => [key, plain(c.battery[key])])),
         costs: Object.fromEntries(c.costs.map(l => [l.category,
           { status: l.status, amount: l.status === "priced" ? money2(l.amount_minor) : "",
             year: l.year == null ? "" : plain(l.year), source: l.source, notes: l.notes }])),
         loan: { amount: plain(c.financing.loan_amount_eur), interest: plain(c.financing.annual_interest_pct),
           years: plain(c.financing.years) },
+        warranty: c.warranty_stress ? plain(c.warranty_stress.operating_life_years) : "",
+          warrantyBasis: c.warranty_stress ? { years: c.warranty_stress.operating_life_years, text: c.warranty_stress.basis } : null,
           index: i
       }))
     };
@@ -186,12 +190,21 @@ window.Scenario = (() => {
           year: line.status === "priced" && c.timing === "event" ? parse(line.year) : null,
           source: String(line.source || "").trim(), notes: line.notes || "Invoer in Zelf doorrekenen" };
       });
+      // Optioneel: de garantie voor de stresstest. Een overgenomen herkomst geldt alleen voor dezelfde jaren.
+      let warranty_stress;
+      if (String(option.warranty ?? "").trim()) {
+        const years = parse(option.warranty);
+        if (years == null || !Number.isInteger(years) || years < 1 || years > 30) mine.push("Garantie: vul een heel aantal jaren van 1 tot 30 in, of laat het veld leeg.");
+        else warranty_stress = { operating_life_years: years, annual_capacity_loss_pct: Data.WARRANTY_LOSS,
+          basis: option.warrantyBasis?.years === years ? option.warrantyBasis.text
+            : Data.warrantyNote(`garantie van ${years} jaar, ingevoerd in Zelf doorrekenen`) };
+      }
       if (unknown.length) mine.unshift(`${unknown.length} van ${categories.length} kostenposten ${unknown.length === 1 ? "is" : "zijn"} nog onbekend: ${few(unknown)}.`);
       if (unsourced.length) mine.push(`Geef een bron of aanname bij ${few(unsourced)}.`);
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
         financing: { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
           annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") },
-        assumptions: option.assumptions };
+        assumptions: option.assumptions, warranty_stress };
     });
     // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
     const site = state.site && state.site.address === state.address ? state.site
@@ -366,7 +379,7 @@ window.Scenario = (() => {
     const [cmp, costCatalog] = await Promise.all([Data.catalog(), Data.costs()]);
     const config = cmp.configurations.find(c => String(c.id) === id);
     if (!config) throw new Error("Kies eerst een uitvoering uit de catalogus.");
-    const p = Data.describe(cmp, config);
+    const p = Data.plugLimit(Data.describe(cmp, config));
     const option = blankOption(state.options.length + 1, { name: p.name, configuration_id: config.id, kind: p.kind || "fixed",
       assumptions: `Overgenomen uit de catalogus. ${p.notes.join(" ")}${p.missing.length ? ` Nog in te vullen: ${p.missing.join(", ")}.` : ""}` });
     if (p.battery) for (const [key] of TECH) option.battery[key] = plain(p.battery[key]);
@@ -378,11 +391,14 @@ window.Scenario = (() => {
           annual_capacity_loss_pct: plain(Data.FALLBACK.degradation),
           operating_life_years: String(Data.FALLBACK.life) });
     }
+    if (p.warrantyStress) Object.assign(option, { warranty: plain(p.warrantyStress.operating_life_years),
+      warrantyBasis: { years: p.warrantyStress.operating_life_years, text: p.warrantyStress.basis } });
     fillEstimates(option, costCatalog, p);
     state.options.push(option); persist();
   }
   // Vult alleen posten die nog onbekend zijn; eigen invoer blijft staan.
   function fillEstimates(option, costCatalog, described) {
+    option.kind ??= described?.kind || "fixed";
     const lines = described ? Data.costLinesFor(costCatalog, described, {}, option.kind)
       : Data.estimateCosts(costCatalog, { kind: option.kind, circuit: false, manufacturer: "", phases: null,
         inverterIncluded: option.kind === "plug" }, {});
@@ -403,7 +419,10 @@ window.Scenario = (() => {
     const tech = h("div", { class: "grid" },
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
-      TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)));
+      TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)),
+      field("Garantie (jaar, optioneel)", bindValue(numberInput({ min: "1", max: "30", step: "1", placeholder: "Geen stresstest" }),
+        () => option.warranty, v => { option.warranty = v; }),
+        `Voor de stresstest ‘stopt na de garantie’: dezelfde berekening als de accu na deze jaren stopt en ${n(Data.WARRANTY_LOSS, 1)}% capaciteit per jaar verliest. De keuze verandert er niet door.`));
     const assumptions = field("Bron en aannames van de techniek", bindValue(h("textarea", { rows: "3", required: true }), () => option.assumptions, v => { option.assumptions = v; }),
       "Controleer bruikbare capaciteit, werkelijk AC-vermogen en AC-systeemrendement; kVA en DC-rendement zijn hiervoor onvoldoende.");
     const progress = h("p", { class: "help" }), total = h("p", { class: "cost-total" });
@@ -467,12 +486,22 @@ window.Scenario = (() => {
         h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))));
   }
 
+  // Een overgenomen run weet niet of een catalogusoptie een stekkeraccu is; zonder dat zou ‘Vul open posten’ het
+  // installatiepakket van een vaste accu invullen.
+  function resolveKinds(cmp) {
+    for (const option of state.options.filter(o => o.kind == null)) {
+      const config = cmp.configurations.find(c => c.id === option.configuration_id);
+      option.kind = (config && Data.describe(cmp, config).kind) || "fixed";
+    }
+  }
+
   function stepOptions(body) {
     body.append(h("h2", {}, "Accu-opties en kosten"),
       h("p", { class: "help" },
         "Elke optie wordt vergeleken met geen accu. Ontbrekende specificaties en prijzen worden niet stilzwijgend aangenomen: gebruik de knop voor indicaties of vul je offerte in."));
     const host = h("div", {}, h("p", { class: "help" }, "Laden…")); body.append(host);
     Promise.all([Data.catalog(), Data.costs()]).then(([cmp, costCatalog]) => {
+      resolveKinds(cmp);
       const pickConfig = select([["", "Kies een uitvoering…"],
         ...cmp.configurations.map(c => [String(c.id), `${c.manufacturer_name} · ${c.product_name} · ${c.name}`])],
         "");
@@ -585,16 +614,21 @@ window.Scenario = (() => {
 
   // Uitvoeringen uit de catalogusvergelijking als extra opties in het concept; het concept opent bij de
   // opties, of bij het profiel als dat nog niet gekozen is. Geeft het aantal toegevoegde opties.
+  // Voegt uitvoeringen toe aan het concept; wat er al als optie in staat, komt er niet nog eens bij.
+  // Geeft terug hoeveel er zijn toegevoegd, al in het concept stonden, en hoeveel andere opties er al waren.
   async function addConfigurations(ids) {
     state = { ...blank(), ...store.get(STORE, {}) };
-    let added = 0;
+    const present = new Set(state.options.map(o => o.configuration_id));
+    const others = state.options.filter(o => !ids.includes(o.configuration_id)).length;
+    let added = 0, already = 0;
     for (const id of ids) {
+      if (present.has(id)) { already++; continue; }
       if (state.options.length >= 12) break;
       await addFromCatalog(String(id)); added++;
     }
     clearTimeout(saveTimer);
     store.set(STORE, { ...state, step: state.profile ? 2 : 0 });
-    return added;
+    return { added, already, others };
   }
   // Een concept met minstens één accu-optie; dat gooi je niet zonder te vragen weg.
   const hasDraft = () => (store.get(STORE, {})?.options || []).length > 0;

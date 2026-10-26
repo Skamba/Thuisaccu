@@ -168,6 +168,42 @@ async fn export_variant_is_optional_saved_with_the_run_and_strictly_validated() 
 }
 
 #[tokio::test]
+async fn warranty_stress_is_optional_per_candidate_and_strictly_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut request = input(id);
+    request["candidates"][0]["warranty_stress"] = json!({"operating_life_years":2,"annual_capacity_loss_pct":3.5,"basis":"Synthetische garantie"});
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let run = body(response).await;
+    let candidate = &run["result"]["candidates"][0];
+    // Een accu die na 2 jaar stopt, verdient minder terug dan dezelfde accu met de basisaannames.
+    assert!(
+        candidate["warranty_stress"]["npv_eur"].as_f64().unwrap()
+            < candidate["npv_eur"].as_f64().unwrap()
+    );
+    assert!(candidate["warranty_stress"]["break_even_investment_eur"].is_f64());
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(
+        saved[0].input["request"]["candidates"][0]["warranty_stress"]["operating_life_years"],
+        2
+    );
+    request["candidates"][0]["warranty_stress"]["surprise"] = json!(1);
+    assert_eq!(
+        app.oneshot(post("/api/v1/analysis/runs", request))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
 async fn cost_catalog_covers_every_cost_category() {
     let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
     let response = app

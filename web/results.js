@@ -32,6 +32,13 @@ window.Results = (() => {
       : net === 0 ? "niets meer oplevert" : `nog maar ${cents(net)} cent per kWh oplevert`;
   };
   const breakEven = value => !finite(value) ? null : value <= 0 ? "Zelfs gratis niet" : `Tot ${roundedLimit(value)}`;
+  // De garantiestresstest van een optie: de invoer (jaren, verlies, herkomst) en de uitkomst; ontbreekt in oudere runs
+  // en bij accu's zonder bekende garantie.
+  const warranty = (run, c) => {
+    const input = run.input.request.candidates.find(o => o.key === c?.key)?.warranty_stress;
+    return input && c.warranty_stress ? { ...input, result: c.warranty_stress } : null;
+  };
+  const warrantyLabel = w => `Stopt na ${w.operating_life_years} jaar (garantie)`;
   const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
   const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
@@ -230,7 +237,7 @@ window.Results = (() => {
         (p.export_variant && finite(variantLimit)
           ? ` In de variant ‘${p.export_variant.label}’ ${variantLimit > 0 ? `ligt die grens bij ${roundedLimit(variantLimit)}` : "is hij zelfs gratis niet lonend"}` +
             (variantLimit > limit + 10 ? ": hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost." : ".")
-          : "")));
+          : "") + warrantyText(run, best)));
     }
     const advice = plugAdvice(run, best, plugs, circuit);
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
@@ -326,6 +333,15 @@ window.Results = (() => {
         "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
   }
 
+  // Zin bij ‘Tot welke prijs is het lonend’: wat de grens wordt als de accu na de garantie stopt.
+  function warrantyText(run, c) {
+    const w = warranty(run, c), limit = w?.result.break_even_investment_eur;
+    if (!w || !finite(limit)) return "";
+    return ` Stopt hij na ${w.operating_life_years} jaar, het einde van de garantie, en verliest hij ${pct(w.annual_capacity_loss_pct)} ` +
+      `capaciteit per jaar, dan ${limit > 0 ? `ligt de grens bij ${roundedLimit(limit)}` : "is hij zelfs gratis niet lonend"}` +
+      ` (netto voordeel ${eur0(w.result.npv_eur)}). Garantie is geen levensduur, maar daarna draai je zelf op voor een defect.`;
+  }
+
   function overview(run, all, plugs) {
     const result = run.result, out = h("div", { class: "print-keep" });
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
@@ -348,7 +364,9 @@ window.Results = (() => {
         ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
         c.export_variant && run.input.request.parameters.export_variant
           ? [`NPV zonder vergoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
-            eur0(c.export_variant.npv_eur)] : null
+            eur0(c.export_variant.npv_eur)] : null,
+        warranty(run, c) ? [`Lonend tot als hij ${warrantyLabel(warranty(run, c)).toLowerCase()}`,
+          breakEven(warranty(run, c).result.break_even_investment_eur) ?? "—"] : null
       ].filter(Boolean)))];
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
       card(c),
@@ -994,5 +1012,5 @@ window.Results = (() => {
     ]));
   }
 
-  return { render, isFictitious, fromShare, judged, breakEven, outdated, recalculation };
+  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation };
 })();

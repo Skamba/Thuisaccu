@@ -124,6 +124,20 @@ pub struct Candidate {
     pub costs: Vec<CostLine>,
     pub financing: Financing,
     pub assumptions: String,
+    /// Optionele stresstest met een kortere levensduur en sneller capaciteitsverlies, zoals een
+    /// accu die stopt na de garantie. Ontbreekt in runs van vóór 26 oktober 2026.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warranty_stress: Option<BatteryStress>,
+}
+
+/// Andere levensduur- en verouderingsaannames voor dezelfde accu; al het andere blijft gelijk.
+/// `basis` zegt waar de waarden vandaan komen (bijvoorbeeld de garantie uit de bron).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatteryStress {
+    pub operating_life_years: u32,
+    pub annual_capacity_loss_pct: f64,
+    pub basis: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,7 +171,7 @@ pub struct VariantResult {
     pub roi_pct: Option<f64>,
 }
 
-/// Uitkomst van de terugleveringsvariant, zonder prijs- en kostenstress.
+/// Uitkomst van de terugleveringsvariant of de garantiestresstest, zonder prijs- en kostenstress.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportVariantResult {
     pub npv_eur: f64,
@@ -193,6 +207,9 @@ pub struct CandidateResult {
     pub within_budget: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export_variant: Option<ExportVariantResult>,
+    /// Uitkomst met [`Candidate::warranty_stress`], met verder dezelfde aannames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warranty_stress: Option<ExportVariantResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -396,6 +413,14 @@ pub fn validate(
                 && (1..=30).contains(&b.operating_life_years),
             "Vul capaciteit, werkelijk AC-vermogen, systeemrendement en levensduuraannames geldig in.",
         )?;
+        if let Some(s) = &c.warranty_stress {
+            ensure(
+                bounded(s.annual_capacity_loss_pct, 0.0, 20.0)
+                    && (1..=30).contains(&s.operating_life_years)
+                    && !s.basis.trim().is_empty(),
+                "Vul levensduur, capaciteitsverlies en herkomst van de garantiestresstest geldig in.",
+            )?;
+        }
         let mut categories = std::collections::HashSet::new();
         for line in &c.costs {
             ensure(
@@ -693,6 +718,17 @@ fn project(
         optimistic: variant,
         within_budget: p.budget_eur.is_none_or(|budget| upfront <= budget),
         export_variant: None,
+        warranty_stress: None,
+    }
+}
+
+fn outcome(r: &CandidateResult) -> ExportVariantResult {
+    ExportVariantResult {
+        npv_eur: r.npv_eur,
+        net_profit_eur: r.net_profit_eur,
+        roi_pct: r.roi_pct,
+        payback_years: r.payback_years,
+        break_even_investment_eur: r.break_even_investment_eur,
     }
 }
 
@@ -762,20 +798,22 @@ pub fn analyze_with(
     let mut results = Vec::new();
     for c in candidates {
         let energies = simulate_battery(&profiles, parameters, c);
-        let project =
-            |stress, variant| project(&baselines, &energies, parameters, c, stress, variant);
-        let mut base = project(0, None);
-        let low = project(-1, None);
-        let high = project(1, None);
+        let run = |stress, variant| project(&baselines, &energies, parameters, c, stress, variant);
+        let mut base = run(0, None);
+        let low = run(-1, None);
+        let high = run(1, None);
         if let Some(v) = &parameters.export_variant {
-            let varied = project(0, Some(v));
-            base.export_variant = Some(ExportVariantResult {
-                npv_eur: varied.npv_eur,
-                net_profit_eur: varied.net_profit_eur,
-                roi_pct: varied.roi_pct,
-                payback_years: varied.payback_years,
-                break_even_investment_eur: varied.break_even_investment_eur,
-            });
+            base.export_variant = Some(outcome(&run(0, Some(v))));
+        }
+        // Zelfde accu met een kortere levensduur en sneller verlies; telt niet mee voor de keuze.
+        if let Some(s) = &c.warranty_stress {
+            let mut stressed = c.clone();
+            stressed.battery.operating_life_years = s.operating_life_years;
+            stressed.battery.annual_capacity_loss_pct = s.annual_capacity_loss_pct;
+            let energies = simulate_battery(&profiles, parameters, &stressed);
+            base.warranty_stress = Some(outcome(&project(
+                &baselines, &energies, parameters, c, 0, None,
+            )));
         }
         base.pessimistic = VariantResult {
             npv_eur: low.npv_eur,
@@ -938,6 +976,17 @@ pub fn analyze_with(
             },
             parameters.horizon_years
         ));
+    }
+    for c in candidates {
+        if let Some(s) = &c.warranty_stress {
+            warnings.push(format!(
+                "Garantiestresstest bij {}: dezelfde berekening met {} jaar levensduur en {}% capaciteitsverlies per jaar ({}). Het is een stresstest, geen voorspelling; de keuze hierboven gebruikt de basisaannames.",
+                c.name,
+                s.operating_life_years,
+                format!("{}", s.annual_capacity_loss_pct).replace('.', ","),
+                s.basis.trim()
+            ));
+        }
     }
     if matches!(parameters.objective, Objective::SelfConsumption) {
         warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());

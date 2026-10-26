@@ -27,6 +27,8 @@ let server, base, browser, workdir;
 // Statische site zoals GitHub Pages die levert, in een submap om relatieve paden te toetsen.
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".wasm": "application/wasm" };
+// Vervangt in de browserversie de tekst van worker.js, om fouten na te bootsen; null levert het gebouwde bestand.
+let patchWorker = null;
 function startSite() {
   return new Promise((resolve, reject) => {
     server = http.createServer((request, response) => {
@@ -37,7 +39,8 @@ function startSite() {
         response.writeHead(404).end(); return;
       }
       response.writeHead(200, { "content-type": TYPES[path.extname(file)] || "application/octet-stream" });
-      fs.createReadStream(file).pipe(response);
+      if (relative === "worker.js" && patchWorker) response.end(patchWorker(fs.readFileSync(file, "utf8")));
+      else fs.createReadStream(file).pipe(response);
     });
     server.on("error", reject);
     server.listen(0, "127.0.0.1", () => resolve(`http://127.0.0.1:${server.address().port}/thuisaccu`));
@@ -238,6 +241,14 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     return view.querySelector(".verdict-close")?.textContent;
   }, Number(runHash.match(/\d+/)[0]));
   assert.match(closeCall, /^Bijna even goed: .+\. Netto €\s20 minder, €\s250 goedkoper in aanschaf\. Bij ongunstiger prijzen en kosten komt die zelfs beter uit\. Dat verschil valt binnen de onzekerheid/);
+  // Accu's met een bekende garantie krijgen de garantiestresstest; de kaart noemt de grensprijs daarvan.
+  const stressed = await page.evaluate(async id => {
+    const run = await Data.run(id);
+    return run.input.request.candidates.filter(c => c.warranty_stress)
+      .map(c => run.result.candidates.find(r => r.key === c.key).warranty_stress?.break_even_investment_eur != null);
+  }, Number(runHash.match(/\d+/)[0]));
+  assert.ok(stressed.length > 0 && stressed.every(Boolean));
+  assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Lonend tot als hij stopt na \d+ jaar \(garantie\)/);
   const summary = await page.textContent(".plain");
   // Wint geen accu, dan zegt ‘Dat verandert als’ wat er anders moet, met de stresstest als regel.
   const whatIf = /Dat verandert als:/.test(summary);
@@ -924,6 +935,20 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   const draft = await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")));
   assert.equal(draft.options.length, 2);
   assert.ok(draft.options.every(o => o.configuration_id != null && o.costs.installation?.status !== "unknown"));
+  // Nog eens op de knop: wat al in het concept staat, komt er niet dubbel bij.
+  await page.goBack();
+  await page.click("button:has-text('Reken deze accu’s door')");
+  await page.waitForSelector("text=Profiel en doel");
+  assert.equal((await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")))).options.length, 2);
+  // Een stekkeraccu met meer dan 800 W ontladen rekent hier net als in de keuzehulp met 800 W.
+  const plug = await page.evaluate(async () => {
+    const cmp = await Data.catalog();
+    const config = cmp.configurations.map(c => Data.describe(cmp, c)).find(p => p.kind === "plug" && p.dischargeKw > 0.8)?.config;
+    await Scenario.addConfigurations([config.id]);
+    return JSON.parse(localStorage.getItem("thuisaccu-scenario")).options.find(o => o.configuration_id === config.id);
+  });
+  assert.equal(plug.battery.discharge_power_kw, "0,8");
+  assert.match(plug.assumptions, /ontladen ingesteld op 800 W/);
   assert.deepEqual(problems, []);
   await close();
 });
@@ -1021,5 +1046,28 @@ test("browserversie bewaart gegevens in deze browser en maakt een back-up", { sk
   await second.waitForSelector("table tbody tr", { timeout: 30000 });
   assert.deepEqual([...problems, ...fresh.problems], []);
   await fresh.close();
+  await close();
+});
+
+test("na een fout in de rekenmodule houdt dit tabblad de database", { skip: !BROWSER_MODE, timeout: 60000 }, async () => {
+  // Een worker die op één testpad een fout in de module nabootst, zoals een paniek in Rust.
+  const marker = 'if (data.type === "request") {';
+  patchWorker = body => { assert.ok(body.includes(marker)); return body.replace(marker,
+    `${marker} if (data.path.includes("__fout")) throw new WebAssembly.RuntimeError("test");`); };
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("table tbody tr", { timeout: 30000 });
+  const second = await page.context().newPage();
+  await second.goto(`${base}/#/accus`);
+  await second.waitForSelector("#elsewhere");
+  const failed = await page.evaluate(() => Local.fetch("api/v1/__fout").then(() => null, error => error.message));
+  assert.match(failed, /opnieuw geladen/);
+  // De nieuwe worker krijgt het slot van de pagina; het tweede tabblad blijft wachten.
+  assert.equal(await page.evaluate(() => Local.fetch("api/v1/health").then(r => r.status)), 200);
+  assert.equal(await page.locator("#elsewhere").count(), 0);
+  assert.equal(await second.locator("#elsewhere").count(), 1);
+  await second.close();
+  patchWorker = null;
+  assert.deepEqual(problems, []);
   await close();
 });

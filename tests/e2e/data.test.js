@@ -47,10 +47,14 @@ test("elke aanname van describe() wordt herkend door Data.isAssumed", () => {
   }
 });
 
-test("de 800 W-begrenzing uit de keuzehulp wordt herkend", () => {
-  // Dezelfde zin als in keuzehulp.js; die bouwt hem met het opgegeven vermogen.
-  const keuzehulp = fs.readFileSync(path.join(__dirname, "..", "..", "web", "keuzehulp.js"), "utf8");
-  assert.match(keuzehulp, /`Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact/);
+test("de 800 W-begrenzing voor een stekkeraccu wordt herkend", () => {
+  // Keuzehulp en Zelf doorrekenen begrenzen met Data.plugLimit; de aannamezin moet herkend worden.
+  const plug = { kind: "plug", name: "FICTIEF stekker", dischargeKw: 2.4, notes: [], battery: { discharge_power_kw: 2.4 } };
+  const limited = Data.plugLimit(plug);
+  assert.equal(limited.battery.discharge_power_kw, 0.8);
+  assert.equal(Data.isAssumed("discharge_power_kw", limited.notes.join(" ")), true);
+  const fixed = { ...plug, kind: "fixed" };
+  assert.equal(Data.plugLimit(fixed), fixed);
   assert.equal(Data.isAssumed("discharge_power_kw", "Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact."), true);
   assert.equal(Data.fromKeuzehulp({ assumptions: `${Data.KEUZEHULP_PREFIX} Aanname: …` }), true);
   assert.equal(Data.fromKeuzehulp({ assumptions: "Offerte van de installateur" }), false);
@@ -123,6 +127,26 @@ test("describe(): de nieuwste geldige prijs inclusief btw; zonder btw of verlope
   const excluded = withOffers([offer(1, { tax_basis: "excluded" })]);
   assert.equal(excluded.offer, null);
   assert.equal(excluded.otherOffer.id, 1);
+});
+
+test("describe(): bij prijzen van hetzelfde moment de hoogste, de lagere genoemd", () => {
+  const same = { observed_at_unix_s: 1_700_000_000 };
+  const d = Data.describe({ ...catalog([]), offers: [
+    offer(1, { ...same, upfront_amount_minor: 50933, seller: "Winkel A" }),
+    offer(2, { ...same, upfront_amount_minor: 74900, seller: "Winkel B" })] }, config);
+  assert.equal(d.offer.id, 2);
+  assert.match(d.notes.join(" "), /hoogste gepubliceerde prijs van dat moment; ook gezien: €\s509,33 bij Winkel A/);
+});
+
+test("describe(): de garantiestresstest volgt de productgarantie, hoogstens de aangenomen levensduur", () => {
+  const warranty = months => Data.describe({ ...catalog([]), warranties: [{ configuration_id: 1, product_months: months }] }, config).warrantyStress;
+  assert.deepEqual({ ...warranty(120), basis: undefined },
+    { operating_life_years: 10, annual_capacity_loss_pct: Data.WARRANTY_LOSS, basis: undefined });
+  assert.match(warranty(120).basis, /productgarantie van 10 jaar volgens de bron; 3,5% capaciteitsverlies per jaar is een aanname/);
+  assert.equal(warranty(300).operating_life_years, Data.FALLBACK.life);
+  assert.equal(warranty(24).operating_life_years, 2);
+  // Onbekende garantie: geen stresstest, geen verzonnen getal.
+  assert.equal(Data.describe(catalog([]), config).warrantyStress, null);
 });
 
 test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () => {

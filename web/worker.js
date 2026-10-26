@@ -5,7 +5,7 @@
 // Alleen in de statische site; de lokale server levert dit bestand niet.
 import init, { changes, open, request, restore, snapshot } from "./pkg/thuisaccu_browser.js";
 
-const DATABASE = "thuisaccu", STORE = "bestanden", KEY = "research.sqlite3", LOCK = "thuisaccu-database";
+const DATABASE = "thuisaccu", STORE = "bestanden", KEY = "research.sqlite3";
 
 function stored(mode, action) {
   return new Promise((resolve, reject) => {
@@ -30,21 +30,10 @@ function save() {
   return saving;
 }
 
-// Eén tabblad tegelijk werkt met de database: elk tabblad houdt een eigen kopie in het geheugen en
-// bewaart die in zijn geheel, dus twee tabbladen zouden elkaars wijzigingen overschrijven. Een tweede
-// tabblad wacht (met een melding) tot het eerste sluit en leest dan de bewaarde database in.
-let blocked = false;
-const owner = !navigator.locks ? Promise.resolve() : new Promise(resolve => {
-  const hold = () => { resolve(); return new Promise(() => {}); };
-  navigator.locks.request(LOCK, { ifAvailable: true }, lock => {
-    if (lock) return hold();
-    blocked = true;
-    self.postMessage({ notice: "Thuisaccu is al open in een ander tabblad van deze browser. Sluit dat tabblad om hier verder te " +
-      "gaan; twee tabbladen tegelijk zouden elkaars wijzigingen overschrijven." });
-    navigator.locks.request(LOCK, () => { blocked = false; self.postMessage({ notice: null }); return hold(); });
-    return null;
-  });
-});
+// Eén tabblad tegelijk werkt met de database (zie `claim` in local.js). De pagina stuurt `owner` zodra
+// dit tabblad het slot heeft; pas dan gaat de database open. Tot die tijd is de bewaarde kopie de actuele.
+let blocked = true, own;
+const owner = new Promise(resolve => { own = resolve; });
 
 const loaded = init();
 let ready = Promise.all([loaded, owner])
@@ -53,6 +42,7 @@ let ready = Promise.all([loaded, owner])
 
 self.onmessage = async ({ data }) => {
   const { id } = data;
+  if (data.type === "owner") { blocked = false; own(); return; }
   try {
     if (data.type === "request") {
       await ready;
@@ -83,7 +73,6 @@ self.onmessage = async ({ data }) => {
     } else if (data.type === "restore") {
       // Lukt het bewaren niet, dan gaat de vorige database weer open, zodat een volgende wijziging de
       // back-up niet alsnog over je gegevens heen schrijft.
-      if (blocked) throw new Error("Thuisaccu is open in een ander tabblad; sluit dat eerst.");
       await loaded;
       await owner;
       const previous = await ready.then(() => snapshot(), () => null), wasReady = ready;

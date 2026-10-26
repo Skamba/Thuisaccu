@@ -256,7 +256,9 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
     --accent: #21604b; --accent-ink: #ffffff; --accent-soft: #dcebe2; --warn-bg: #fdf0d8; --warn-ink: #714500;
     --ok-bg: #dcefe3; --ok-ink: #1d5a40; --danger: #a3372b; color-scheme: light;
   }
-  .fold > :not(summary) { display: revert; }
+  /* Knoppen doen op papier niets; de uitleg in .fold klapt app.js open bij afdrukken. */
+  main button, .fold > summary::marker { display: none !important; }
+  .chart svg { max-height: 9cm; }
   .sidebar, .page-head .actions, .wizard-footer, footer, .tabs { display: none !important; }
   body { display: block; }
   [role="tabpanel"] { display: block !important; }
