@@ -258,8 +258,13 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
   await next(page);
   await page.click("button:has-text('Gebruik de indicatie')");
   await next(page);
+  await page.getByLabel("Maximaal budget (€, optioneel)").fill("1500");
   await next(page);
   await page.waitForSelector(".wizard-body figure.chart", { timeout: 30000 });
+  // Boven het budget doet een accu niet mee; een stekkeraccu boven 800 W rekent met 800 W.
+  assert.match(await page.textContent(".wizard-body"), /binnen je budget blijven/);
+  assert.match(await page.textContent(".product-group:last-of-type"), /Boven je budget van €\s1\.500/);
+  assert.match(await page.textContent(".product-group:first-of-type"), /begrensd op 800 W/);
   // De punten staan op afstand naar accugrootte, niet op gelijke afstand.
   const spread = await page.$eval(".wizard-body figure.chart", figure => {
     const sizes = [...figure.querySelectorAll("tbody td:first-child")]

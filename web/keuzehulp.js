@@ -354,8 +354,26 @@
     if (p.missing.length) return `Gegevens ontbreken: ${p.missing.join(" en ")}`;
     if (!p.offer) return p.otherOffer ? "Alleen een prijs zonder btw gepubliceerd" : "Geen gepubliceerde prijs";
     const open = p.lines.filter(l => l.status === "unknown" && l.category !== "battery");
-    return open.length ? `Kosten onbekend: ${open.map(l => labels[l.category]).join(", ")}` : null;
+    if (open.length) return `Kosten onbekend: ${open.map(l => labels[l.category]).join(", ")}`;
+    // Boven het budget kan een accu nooit de aanbeveling worden; hij zou alleen een plek in de berekening innemen.
+    const budget = parse(answers.budget), upfront = startCosts(p.lines);
+    return budget != null && upfront > budget
+      ? `Boven je budget van ${money(budget, { decimals: 0 })}: startkosten ongeveer ${money(upfront, { decimals: 0 })}` : null;
   }
+  // Een stekkeraccu in een gewoon stopcontact rekent met hoogstens 800 W ontladen, zoals het veiligheidsadvies hierboven;
+  // de uitvoeringen op een eigen groep houden hun volle vermogen.
+  const PLUG_LIMIT_KW = 0.8;
+  function plugLimit(p) {
+    if (p.kind !== "plug" || !p.battery || !(p.dischargeKw > PLUG_LIMIT_KW)) return p;
+    return { ...p, name: `${p.name} · begrensd op 800 W`, dischargeKw: PLUG_LIMIT_KW,
+      battery: { ...p.battery, discharge_power_kw: PLUG_LIMIT_KW },
+      notes: [...p.notes, `Aanname: ontladen ingesteld op 800 W voor een gewoon stopcontact; de bron noemt ${n(p.dischargeKw, 1)} kW. ` +
+        "Of en hoe je dat instelt, staat in de handleiding of app."] };
+  }
+  // Som van de startposten zoals de rekenkern die telt; teruggaven verlagen de kosten.
+  const CREDITS = ["grant", "vat_refund", "residual_value"];
+  const startCosts = lines => lines.filter(l => l.timing === "upfront" && l.status === "priced")
+    .reduce((sum, l) => sum + l.amount_minor / 100 * (CREDITS.includes(l.category) ? -1 : 1), 0);
 
   function buildRequest(importId, chosen, check) {
     const d = Data.defaults(), tariffImport = parse(answers.tariffImport), feed = feedIn();
@@ -490,7 +508,7 @@
 
     const labels = Object.fromEntries(costCatalog.categories.map(c => [c.key, c.label]));
     const products = cmp.configurations.filter(c => c.product_kind === "battery_system").map(c => Data.describe(cmp, c))
-      .map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? costLines(p, costCatalog) : null }))
+      .map(plugLimit).map(p => ({ ...p, fit: fit(p) })).map(p => ({ ...p, lines: p.offer ? costLines(p, costCatalog) : null }))
       .map(p => ({ ...p, reason: exclusion(p, labels) }));
     const pickSection = h("section", { class: "panel" }, h("h3", {}, "2. Welke accu’s rekenen we door?"));
     if (!products.length) {
@@ -498,8 +516,10 @@
         button("Laad onderzochte accu’s", event => UI.busy(event.target, async () => { await UI.api("/api/v1/references", { method: "POST" }); Data.invalidateCatalog(); flow.rerender(); })));
       body.append(size, pickSection); return;
     }
-    // Iedere passende accu met een prijs en bekende kosten binnen het bereik doet mee; de gebruiker hoeft niet te kiezen.
-    // Valt er niets binnen, dan gaan de dichtstbijzijnde kleinere en grotere accu mee.
+    // Iedere passende accu met een prijs en bekende kosten doet mee; de gebruiker hoeft niet te kiezen. Het zinvolle bereik
+    // van een doel is een richtlijn: het gaat over energie, terwijl het doel ook terugverdientijd kan zijn. Boven de grens
+    // van de rekenkern gaan de accu's voor die er het dichtst bij liggen. Een eigen bereik filtert wel; valt er niets
+    // binnen, dan gaan de dichtstbijzijnde kleinere en grotere accu mee.
     const distance = p => !range ? 0 : Math.max(0, range.low - p.capacity, p.capacity - range.high);
     const position = p => !range ? "—" : p.capacity < range.low ? "Kleiner" : p.capacity > range.high ? "Groter" : "Binnen";
     const rangeName = () => SIZING[answers.sizing] ? "het zinvolle bereik" : "je eigen bereik";
@@ -512,18 +532,20 @@
     };
     renderPick = () => {
       const eligible = products.filter(p => !p.reason);
+      const filter = range != null && !SIZING[answers.sizing];
       const inside = eligible.filter(p => distance(p) === 0);
       const nearest = side => eligible.filter(side).sort((a, b) => distance(a) - distance(b))[0];
-      const fallback = range != null && !inside.length;
-      const chosen = !range ? eligible : fallback
+      const fallback = filter && !inside.length;
+      const chosen = !filter ? eligible : fallback
         ? [nearest(p => p.capacity < range.low), nearest(p => p.capacity > range.high)].filter(Boolean) : inside;
-      included = chosen.slice().sort((a, b) => a.capacity - b.capacity).slice(0, MAX_CANDIDATES);
-      const outside = eligible.filter(p => !included.includes(p)).map(p => ({ ...p, reason: distance(p) > 0
+      included = chosen.slice().sort((a, b) => distance(a) - distance(b) || a.capacity - b.capacity)
+        .slice(0, MAX_CANDIDATES).sort((a, b) => a.capacity - b.capacity);
+      const outside = eligible.filter(p => !included.includes(p)).map(p => ({ ...p, reason: filter && distance(p) > 0
         ? `${position(p)} dan ${rangeText()}.`
-        : `Binnen ${rangeName()}, maar de berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk.` }));
+        : `De berekening vergelijkt hoogstens ${MAX_CANDIDATES} accu’s tegelijk; deze ligt verder van ${rangeName()}.` }));
       const excluded = [...products.filter(p => p.reason), ...outside].sort((a, b) => a.name.localeCompare(b.name, "nl"));
       const age = Data.priceAge(), soort = { plug: "Stekker", fixed: "Vast", circuit: "Stekker, eigen groep" };
-      const where = range ? `, binnen ${rangeText()} vallen` : "";
+      const where = filter ? `, binnen ${rangeText()} vallen` : "";
       pickBody.replaceChildren(...[
         h("p", {}, !included.length
           ? "Geen enkele accu past bij je antwoorden en heeft tegelijk een gepubliceerde prijs en volledige gegevens."
@@ -531,8 +553,10 @@
             ? `Geen accu met een prijs en volledige gegevens valt binnen ${rangeText()}. We rekenen de dichtstbijzijnde ` +
               `${included.length === 1 ? "accu" : "kleinere en grotere accu"} door en vergelijken met geen accu. ` +
               "Verschuif het bereik om andere accu’s mee te nemen."
-            : `We rekenen ${chosen.length > included.length ? `de ${included.length} kleinste van de ${chosen.length}` : `alle ${included.length}`} ` +
-              `accu’s door die bij je antwoorden passen${where} en waarvan prijs, capaciteit en vermogen bekend zijn, ` +
+            : `We rekenen ${chosen.length > included.length ? `de ${included.length} van de ${chosen.length}` : `alle ${included.length}`} ` +
+              `accu’s door die bij je antwoorden passen${where}${parse(answers.budget) != null ? " en binnen je budget blijven" : ""} ` +
+              "en waarvan prijs, capaciteit en vermogen bekend zijn" +
+              `${chosen.length > included.length ? `, die het dichtst bij ${rangeName()} liggen` : ""}, ` +
               "en vergelijken ze met geen accu. Je hoeft zelf niets te kiezen: de uitkomst laat zien welke optie het beste past bij je doel."),
         age.stale ? h("p", { class: "callout", role: "note" }, age.text) : null,
         h("p", { class: "help" }, `Gegevens en prijzen zijn bronmomentopnamen van ${Data.RESEARCHED_ON}; controleer de actuele prijs bij de verkoper. ` +

@@ -36,7 +36,7 @@ window.UI = (() => {
     ? new Intl.NumberFormat("nl-NL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)
     : "Onbekend";
   const money = (value, { decimals = 2 } = {}) => finite(value)
-    ? `${Number(value) < 0 ? "−" : ""}€ ${number(Math.abs(value), decimals)}`
+    ? `${Number(value) < 0 ? "−" : ""}€ ${number(Math.abs(value), decimals)}`
     : "Onbekend";
   const kwh = (value, decimals = 0) => finite(value) ? `${number(value, decimals)} kWh` : "Onbekend";
   const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals)}%` : "Niet bepaald";
