@@ -40,6 +40,9 @@ jobs:
   e2e:
     name: Browsertests en browserversie (ubuntu-latest)
     runs-on: ubuntu-latest
+    # Normaal ongeveer 5 minuten; het installeren van de systeempakketten voor Chromium duurde soms ruim
+    # 10 minuten. Daarboven hangt er iets en stopt de run, in plaats van zes uur te wachten.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - name: Install stable Rust with the WebAssembly target
