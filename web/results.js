@@ -495,27 +495,27 @@ window.Results = (() => {
   const plain = value => n(value, 2).replace(/,?0+$/, "");
   const withUnit = Data.quoteUnit;
   // [vraag, velden in de offerte, waarde, aannamepatroon, wat geen antwoord is]
+  // [vraag, velden, waarde, toelichting]; of een veld een aanname is, herkent `Data.isAssumed`.
   const CHECK = [
-    ["Bruikbare capaciteit", ["usable_capacity_kwh"], b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`, /Aanname: [\d,]+% van de opgegeven/,
+    ["Bruikbare capaciteit", ["usable_capacity_kwh"], b => `${plain(b.usable_capacity_kwh)} kWh bruikbaar`,
       "Niet de nominale of totale capaciteit: vraag hoeveel kWh je echt kunt gebruiken."],
-    ["Laadvermogen aan de AC-kant", ["charge_power_kw"], b => `${plain(b.charge_power_kw)} kW`, /Aanname: laadvermogen gelijk/,
+    ["Laadvermogen aan de AC-kant", ["charge_power_kw"], b => `${plain(b.charge_power_kw)} kW`,
       "Hoeveel zonnestroom de accu per uur kan opnemen. Een DC- of PV-ingang telt niet."],
-    ["Ontlaadvermogen aan de AC-kant", ["discharge_power_kw"], b => `${plain(b.discharge_power_kw)} kW`, /ontladen ingesteld op 800 W/,
+    ["Ontlaadvermogen aan de AC-kant", ["discharge_power_kw"], b => `${plain(b.discharge_power_kw)} kW`,
       "Wat de accu continu aan je huis levert. kVA is geen kW, en een piek van een paar seconden telt niet."],
     ["Rendement AC → AC, heen en terug", ["ac_round_trip_efficiency_pct"], b => `${plain(b.ac_round_trip_efficiency_pct)}%`,
-      /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
       "‘Tot 95%’, een DC-rendement of het rendement van alleen de batterij is niet hetzelfde."],
-    ["Sluimerverbruik van accu, omvormer en regeling samen", ["standby_w"], b => `${plain(b.standby_w)} W`, /Aanname: [\d,]+ W sluimerverbruik/,
+    ["Sluimerverbruik van accu, omvormer en regeling samen", ["standby_w"], b => `${plain(b.standby_w)} W`,
       "Ook als de accu niets doet. ‘Zit in het rendement’ is geen antwoord."],
     ["Garantie: jaren, cycli of MWh doorvoer en gegarandeerde restcapaciteit", ["operating_life_years", "annual_capacity_loss_pct"],
-      b => `${plain(b.operating_life_years)} jaar levensduur, ${plain(b.annual_capacity_loss_pct)}% capaciteitsverlies per jaar`, /Aanname: [\d,]+% capaciteitsverlies/,
+      b => `${plain(b.operating_life_years)} jaar levensduur, ${plain(b.annual_capacity_loss_pct)}% capaciteitsverlies per jaar`,
       "Garantie is geen levensduur: in de berekening stopt de accu na de levensduur, en garantiejaren zijn vaak korter. Een gegarandeerde " +
         "restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar. Vraag ook wie de garantie geeft, fabrikant of installateur, " +
         "en wat er gebeurt als de installateur stopt."]
   ];
   function quoteCheck(run, all, categories) {
     const request = run.input.request, result = run.result, out = h("div"), target = h("div");
-    const own = input => !/^Keuzehulp\./.test(input.assumptions);
+    const own = input => !Data.fromKeuzehulp(input);
     // Standaard je eigen offerte als die er is, anders de aanbevolen accu of die met de hoogste NPV.
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
     const first = request.candidates.find(own)?.key ?? result.recommended_key ?? best?.key;
@@ -544,8 +544,8 @@ window.Results = (() => {
       const cost = (question, hint, value, keys, fields = []) => { const assumed = assumedCost(...keys) && !fromQuote(fields);
         return { question, hint, fields, value, origin: origin(assumed, fields), assumed }; };
       const list = [
-        ...CHECK.map(([question, fields, value, pattern, hint]) => {
-          const assumed = !mine && pattern.test(input.assumptions) && !fromQuote(fields);
+        ...CHECK.map(([question, fields, value, hint]) => {
+          const assumed = !mine && fields.some(f => Data.isAssumed(f, input.assumptions)) && !fromQuote(fields);
           return { question, hint, fields, value: value(input.battery), origin: origin(assumed, fields), assumed };
         }),
         cost("Wat zit er in de prijs", "Omvormer, installatie, kabels en beveiliging, meterkast, aanmelding: staat alles erin? " +

@@ -178,6 +178,22 @@ window.Data = (() => {
   // sluimerverbruik zijn bewust voorzichtig: gemeten stekkeraccu's halen 77–87% heen en terug en
   // gebruiken 3–14 W in rust (docs/keuzehulp.md).
   const FALLBACK = { usableShare: 90, efficiency: 77, standby: 10, degradation: 2, life: 15 };
+  // Herkent in de vastgelegde aannametekst van een optie welke technische waarde een aanname is; de
+  // offertecheck markeert die. Hoort bij de zinnen in describe() hieronder en bij de 800 W-begrenzing in
+  // keuzehulp.js: pas ze samen aan. tests/e2e/data.test.js controleert dat elke zin herkend wordt.
+  const ASSUMED = {
+    usable_capacity_kwh: /Aanname: [\d,]+% van de opgegeven/,
+    charge_power_kw: /Aanname: laadvermogen gelijk/,
+    discharge_power_kw: /Aanname: ontladen ingesteld op 800 W/,
+    ac_round_trip_efficiency_pct: /Aanname: [\d,]+% rendement|gebruikt als AC → AC-aanname/,
+    standby_w: /Aanname: [\d,]+ W sluimerverbruik/,
+    annual_capacity_loss_pct: /Aanname: [\d,]+% capaciteitsverlies/,
+    operating_life_years: /Aanname: [\d,]+% capaciteitsverlies per jaar en [\d,]+ jaar levensduur/
+  };
+  // De aannametekst van een optie uit de keuzehulp begint zo; een eigen offerte of accu niet.
+  const KEUZEHULP_PREFIX = "Keuzehulp.";
+  const isAssumed = (field, assumptions) => ASSUMED[field]?.test(assumptions) === true;
+  const fromKeuzehulp = candidate => candidate.assumptions.startsWith(KEUZEHULP_PREFIX);
 
   // Meetgrenzen op volgorde van voorkeur. Vermogen en rendement rekenen aan de AC-kant: een
   // DC-waarde (accu DC, DC → DC) mist de omvormer en telt daar niet mee.
@@ -440,7 +456,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
+    RULES, described, CREDITS, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, priceAge, suitability, isDemo, FALLBACK, describe, estimateCosts, isAssumption, DEFAULTS, defaults
