@@ -180,7 +180,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.keyboard.press("End");
   for (const box of await page.$$("fieldset .check input")) await box.check();
   await page.click("button:has-text('Bereken mijn advies')");
-  await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 30000 });
+  // Vijftig accu's doorrekenen duurt met de debug-build in CI zo'n 20 tot ruim 30 seconden.
+  await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
   const runHash = await page.evaluate(() => location.hash);
   const summary = await page.textContent(".plain");
   assert.match(summary, /Als teruglevering vanaf 2030 niets meer oplevert/);
