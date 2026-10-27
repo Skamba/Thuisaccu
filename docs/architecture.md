@@ -6,7 +6,7 @@ Een webapp voor onderzoek, productvergelijking en Nederlandse economische scenar
 
 ## Onderdelen
 
-- `thuisaccu-core`: onafhankelijke domeintypen voor productonderzoek. `sizing` simuleert energiestromen, `finance` berekent rekeningen en kasstromen, `analysis` valideert en vergelijkt kandidaten, doelen en gevoeligheidsvarianten.
+- `thuisaccu-core`: onafhankelijke domeintypen voor productonderzoek. `sizing` simuleert energiestromen, `finance` berekent rekeningen en kasstromen, `analysis` valideert en vergelijkt kandidaten, doelen en gevoeligheidsvarianten, `claims` toetst een belofte van een verkoper aan een bewaarde berekening.
 - `thuisaccu-storage`: rusqlite met één verbinding achter een mutex (native met meegebouwde SQLite, in WebAssembly via `sqlite-wasm-rs`), ingebouwde SQLite-migraties, typed opslagmethoden, vergelijkingsleesmodel, atomische dossier-/opwekimports en bewaarde analyse-invoer/resultaten. Foreign keys en validatie staan ook in het schema.
 - `thuisaccu-server`: Axum-router met catalogus-state; native op Tokio met HTTP. CSV/Excel/JSON-import, Nederlandse PDOK-adreszoekfunctie en scenario-API zijn adapters. Bestandsparsing en simulatie draaien native via `spawn_blocking`. Configuratie en proceslevenscyclus staan in de binary.
 - `thuisaccu-browser`: dezelfde router als WebAssembly-module, zonder netwerkpoort. Exporteert `open(bytes?)`, `request(method, path, contentType, body)` en `snapshot()`.

@@ -553,6 +553,59 @@ test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste ac
   await close();
 });
 
+test("offertecheck: toets wat de verkoper belooft met de getallen van de berekening", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/keuzehulp`);
+  await page.getByLabel("Stroom van het net per jaar (kWh)").fill("3500");
+  await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").fill("2500");
+  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("4000");
+  await next(page);
+  await page.waitForSelector("h2:has-text('Je woning')");
+  await page.click("text=Laten installeren");
+  await next(page);
+  for (const indication of await page.$$("button:has-text('Gebruik de indicatie')")) await indication.click();
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".product-group", { timeout: 30000 });
+  for (const box of await page.$$("fieldset .check input")) await box.check();
+  await page.click(".wizard-footer button:has-text('Bereken mijn advies')");
+  await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  const panel = page.locator("[role=tabpanel]:not([hidden])");
+  await panel.locator("h3:has-text('Toets wat de verkoper belooft')").waitFor();
+  const answer = panel.locator(".claim-answer");
+  assert.equal(await answer.getAttribute("aria-live"), "polite");
+  // Een besparing per jaar in Nederlandse notatie: ‘5.000’ is bij een bedrag 5000 euro.
+  await panel.getByLabel("Beloofde besparing per jaar (€)").fill("5.000");
+  await panel.locator("button:has-text('Toets de belofte')").click();
+  await answer.locator("p").first().waitFor();
+  const saving = await answer.textContent();
+  assert.match(saving, /^Volgens deze berekening bespaart .+ in het eerste jaar €\s[\d.]+/);
+  assert.match(saving, /Om €\s5\.000 te halen moet de besparing [\d.,]+ keer zo hoog zijn, of moet stroom €\s[\d,]+ per kWh kosten \(nu €\s0,26\)\./);
+  assert.match(saving, /Dat valt buiten alle varianten/);
+  assert.match(saving, /er is niets opnieuw gerekend of bewaard/);
+  // Een terugverdientijd in hele jaren; een halve wordt met een melding van de server geweigerd.
+  await panel.locator("label:has-text('Terugverdiend in … jaar')").click();
+  assert.equal(await answer.textContent(), "");
+  const promise = panel.getByLabel("Beloofde terugverdientijd (jaren)");
+  await promise.fill("6,5");
+  await panel.locator("button:has-text('Toets de belofte')").click();
+  await answer.locator("[role=alert]").waitFor();
+  assert.match(await answer.textContent(), /hele jaren/);
+  await promise.fill("6");
+  await panel.locator("button:has-text('Toets de belofte')").click();
+  await page.waitForFunction(() => /Volgens deze berekening/.test(document.querySelector(".claim-answer")?.textContent));
+  assert.match(await answer.textContent(), /terugverdiend na \d+ jaar|zich binnen de looptijd van 15 jaar niet terug/);
+  await panel.locator("summary:has-text('Trucs om naar te vragen')").click();
+  const block = await panel.locator(".claim-block").textContent();
+  assert.match(block, /salderen.*bruikbare capaciteit.*AC → AC.*sluimerverbruik.*dynamisch/s);
+  // Onbekend blijft onbekend: geen ‘null’, ‘undefined’ of ‘NaN’ in het blok (de technische invoer elders op de pagina is JSON).
+  assert.doesNotMatch(block, /\b(null|undefined|NaN)\b/);
+  // De halve terugverdientijd wijst de server bewust af (400); verder geen fouten.
+  assert.deepEqual(problems.filter(p => !/status of 400/.test(p)), []);
+  await close();
+});
+
 test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async () => {
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/keuzehulp`);

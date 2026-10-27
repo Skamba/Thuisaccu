@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use thuisaccu_core::{
-    analysis::{self, Candidate, Parameters},
-    sizing::{self, EnergyInterval, LoadVariation},
+    analysis::{self, Candidate, CandidateResult, Parameters},
+    claims::{self, Claim, ClaimKind},
+    sizing::{self, EnergyInterval, EnergyYear, LoadVariation},
 };
 use thuisaccu_storage::{Catalog, analysis::NewAnalysis};
 
@@ -245,6 +246,58 @@ pub async fn recalculate(
     let origin = json!({"run_id": saved.id, "title": saved.title,
         "model_version": saved.result["model_version"], "break_even_investment_eur": break_even});
     save_run(&catalog, request, expected, Some(origin)).await
+}
+
+/// Wat een verkoper belooft voor één optie van een bewaarde berekening. `kind` is
+/// `annual_saving_eur`, `payback_years` of `self_sufficiency_pct`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimRequest {
+    pub candidate_key: String,
+    pub kind: String,
+    pub value: f64,
+}
+
+/// Toets de belofte: wat er waar zou moeten zijn voor wat de verkoper belooft, met de getallen van
+/// deze berekening. Leest alleen de bewaarde uitkomst; rekent niets opnieuw door en bewaart niets.
+pub async fn check_claim(
+    State(catalog): State<Catalog>,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(request): ApiJson<ClaimRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let kind = ClaimKind::parse(&request.kind).ok_or_else(|| {
+        invalid("Kies wat de verkoper belooft: een besparing per jaar, een terugverdientijd of een zelfvoorziening.")
+    })?;
+    let saved = catalog
+        .analysis(id)
+        .await
+        .map_err(database_error)?
+        .ok_or_else(|| crate::api::missing("Deze berekening bestaat niet (meer)."))?;
+    let outdated = || {
+        invalid(
+            "Deze berekening is te oud om een belofte aan te toetsen. Reken haar opnieuw met het huidige model.",
+        )
+    };
+    let parameters: Parameters =
+        serde_json::from_value(saved.input["request"]["parameters"].clone())
+            .map_err(|_| outdated())?;
+    let candidate = saved.result["candidates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| c["key"].as_str() == Some(request.candidate_key.as_str()))
+        .ok_or_else(|| invalid("Deze accu-optie staat niet in deze berekening."))?;
+    let candidate: CandidateResult =
+        serde_json::from_value(candidate.clone()).map_err(|_| outdated())?;
+    let baseline: Option<EnergyYear> =
+        serde_json::from_value(saved.result["baseline_first_year"].clone()).ok();
+    let claim = Claim {
+        kind,
+        value: request.value,
+    };
+    let answer = claims::check(&candidate, baseline.as_ref(), &parameters, &claim)
+        .map_err(|error| invalid(error.0))?;
+    Ok(Json(json!(answer)))
 }
 
 fn validate_request(request: &RunRequest) -> Result<(), ApiError> {

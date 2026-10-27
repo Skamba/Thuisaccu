@@ -884,6 +884,26 @@ fn simulate_all(
     (baseline, tracks)
 }
 
+/// Het tarief in een prijsvariant: `stress` −1 (ongunstig), 0 (basis) of 1 (gunstig) verschuift de
+/// afnameprijs en de terugleververgoeding elk met de ingevoerde onzekerheid. Een lagere vergoeding
+/// verhoogt de waarde van minder terugleveren.
+pub(crate) fn stressed_tariff(p: &Parameters, stress: i32) -> Tariff {
+    let price_shift = stress as f64 * p.price_uncertainty_pct / 100.0;
+    let mut tariff = p.tariff.clone();
+    tariff.import_eur_per_kwh += tariff.import_eur_per_kwh.abs() * price_shift;
+    tariff.export_eur_per_kwh -= tariff.export_eur_per_kwh.abs() * price_shift;
+    tariff
+}
+
+/// Het tarief binnen de terugleveringsvariant: alleen vergoeding en terugleverkosten wijzigen.
+pub(crate) fn varied_tariff(tariff: &Tariff, v: &ExportVariant) -> Tariff {
+    Tariff {
+        export_eur_per_kwh: v.export_eur_per_kwh,
+        export_fee_eur_per_kwh: v.export_fee_eur_per_kwh,
+        ..tariff.clone()
+    }
+}
+
 fn project(
     baselines: &[EnergyYear],
     energies: &[EnergyYear],
@@ -892,17 +912,9 @@ fn project(
     stress: i32,
     variant: Option<&ExportVariant>,
 ) -> CandidateResult {
-    let price_shift = stress as f64 * p.price_uncertainty_pct / 100.0;
     let cost_factor = 1.0 - stress as f64 * p.cost_uncertainty_pct / 100.0;
-    let mut tariff = p.tariff.clone();
-    tariff.import_eur_per_kwh += tariff.import_eur_per_kwh.abs() * price_shift;
-    tariff.export_eur_per_kwh -= tariff.export_eur_per_kwh.abs() * price_shift;
-    // Een lagere vergoeding verhoogt de waarde van minder terugleveren.
-    let mut varied = tariff.clone();
-    if let Some(v) = variant {
-        varied.export_eur_per_kwh = v.export_eur_per_kwh;
-        varied.export_fee_eur_per_kwh = v.export_fee_eur_per_kwh;
-    }
+    let tariff = stressed_tariff(p, stress);
+    let varied = variant.map_or_else(|| tariff.clone(), |v| varied_tariff(&tariff, v));
     let scaled = |l: &CostLine| {
         if finance::is_credit(&l.category) {
             finance::cost_eur(l, 1.0)

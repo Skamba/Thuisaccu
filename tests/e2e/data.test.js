@@ -853,3 +853,37 @@ test("results.js herkent alleen meldingscodes die de rekenkern kent", () => {
   assert.ok(used.length > 10, "results.js gebruikt meldingscodes");
   for (const code of used) assert.ok(code.endsWith(".") ? known.some(k => k.startsWith(code)) : known.includes(code), code);
 });
+
+test("toets de belofte: het antwoord van de API als zinnen, onbekend blijft onbekend", () => {
+  const base = { candidate_key: "a", name: "FICTIEF A", horizon_years: 15, current_import_eur_per_kwh: 0.26, saving_share: null,
+    import_eur_per_kwh: null, average_annual_saving_eur: null, baseline_pct: null, extra_solar_kwh: null, max_self_sufficiency_pct: null };
+  const variant = (name, value, holds) => ({ variant: name, value, holds });
+  const saving = Results.claimSentences({ ...base, kind: "annual_saving_eur", claimed: 600, calculated: 212, holds: false,
+    saving_share: 600 / 212, import_eur_per_kwh: 0.61, average_annual_saving_eur: 210, within_variants: false,
+    variants: [variant("base", 212, false), variant("pessimistic", 150, false), variant("optimistic", 280, false)] }, "Accu A").join(" ");
+  assert.match(saving, /^Volgens deze berekening bespaart Accu A in het eerste jaar €\s212\. /);
+  assert.match(saving, /Om €\s600 te halen moet de besparing 2,8 keer zo hoog zijn, of moet stroom €\s0,61 per kWh kosten \(nu €\s0,26\)\./);
+  assert.match(saving, /Dat valt buiten alle varianten \(de basisaannames, de ongunstige variant en de gunstige variant\)\.$/);
+  // Zonder exacte stroomprijs (oude run) geen prijs, en een onbekende variant is geen ‘buiten alle varianten’.
+  const old = Results.claimSentences({ ...base, kind: "annual_saving_eur", claimed: 600, calculated: 212, holds: false,
+    saving_share: 600 / 212, within_variants: null, variants: [variant("base", 212, false), variant("pessimistic", null, null)] }, "Accu A").join(" ");
+  assert.doesNotMatch(old, /stroom €|buiten alle/);
+  assert.match(old, /keer zo hoog zijn\. Of een variant het wel haalt, legt deze berekening niet vast\./);
+  const lucky = Results.claimSentences({ ...base, kind: "annual_saving_eur", claimed: 250, calculated: 212, holds: false, saving_share: 250 / 212,
+    within_variants: true, variants: [variant("base", 212, false), variant("optimistic", 280, true)] }, "Accu A").join(" ");
+  assert.match(lucky, /Alleen in de gunstige variant komt het uit\./);
+  const payback = Results.claimSentences({ ...base, kind: "payback_years", claimed: 6, calculated: null, holds: false, saving_share: 1.94,
+    within_variants: false, variants: [variant("base", null, false)] }, "Accu A").join(" ");
+  assert.match(payback, /verdient Accu A zich binnen de looptijd van 15 jaar niet terug\. Om in 6 jaar terugverdiend te zijn moet de besparing 1,9 keer/);
+  const beyond = Results.claimSentences({ ...base, kind: "payback_years", claimed: 20, calculated: null, holds: null,
+    within_variants: null, variants: [variant("base", null, null)] }, "Accu A").join(" ");
+  assert.match(beyond, /20 jaar ligt voorbij de looptijd van 15 jaar/);
+  const met = Results.claimSentences({ ...base, kind: "payback_years", claimed: 10, calculated: 8, holds: true, saving_share: 0.75,
+    within_variants: true, variants: [variant("base", 8, true)] }, "Accu A").join(" ");
+  assert.match(met, /terugverdiend na 8 jaar\. Dat past bij de belofte van 10 jaar; de besparing mag 25% tegenvallen/);
+  const self = Results.claimSentences({ ...base, kind: "self_sufficiency_pct", claimed: 90, calculated: 55, holds: false, baseline_pct: 30,
+    extra_solar_kwh: 1400, max_self_sufficiency_pct: 80, within_variants: false, variants: [variant("base", 55, false)] }, "Accu A").join(" ");
+  assert.match(self, /55% zelfvoorzienend \(zonder accu 30%\)\. Voor 90% moet het huis nog 1\.400 kWh per jaar meer eigen zonnestroom gebruiken\./);
+  assert.match(self, /zelfs met een verliesvrije accu zonder grenzen niet: hoogstens 80%\./);
+  for (const text of [saving, old, lucky, payback, beyond, met, self]) assert.doesNotMatch(text, /null|undefined|NaN/);
+});

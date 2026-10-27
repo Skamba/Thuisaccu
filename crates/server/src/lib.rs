@@ -34,6 +34,10 @@ pub fn app(catalog: Catalog) -> Router {
             "/api/v1/analysis/runs/{id}/recalculate",
             post(scenario_api::recalculate),
         )
+        .route(
+            "/api/v1/analysis/runs/{id}/claims",
+            post(scenario_api::check_claim),
+        )
         .route("/api/v1/locations/search", post(scenario_api::address))
         .route("/api/v1/health", get(health))
         .route("/api/v1/backup", get(api::backup))

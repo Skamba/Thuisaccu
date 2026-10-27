@@ -1059,3 +1059,121 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error["error"], "not_found");
 }
+
+#[tokio::test]
+async fn a_sellers_promise_is_checked_against_a_saved_run_without_saving_anything() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", input(id)))
+        .await
+        .unwrap();
+    let created = body(response).await;
+    let run = created["id"].as_i64().unwrap();
+    let ask = |run: i64, request: Value| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(post(
+                    &format!("/api/v1/analysis/runs/{run}/claims"),
+                    request,
+                ))
+                .await
+                .unwrap();
+            (response.status(), body(response).await)
+        }
+    };
+    let (status, answer) = ask(
+        run,
+        json!({"candidate_key":"test","kind":"annual_saving_eur","value":600}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let first = &created["result"]["candidates"][0]["years"][0];
+    let saving = first["energy_saving_eur"].as_f64().unwrap();
+    assert_eq!(answer["kind"], "annual_saving_eur");
+    assert_eq!(answer["candidate_key"], "test");
+    assert!((answer["calculated"].as_f64().unwrap() - saving).abs() < 1e-9);
+    assert!((answer["saving_share"].as_f64().unwrap() - 600.0 / saving).abs() < 1e-9);
+    // Vanaf 2027 stijgt de besparing in jaar 1 met de vermeden netafname per euro per kWh.
+    let avoided = first["baseline_grid_import_kwh"].as_f64().unwrap()
+        - first["energy"]["grid_import_kwh"].as_f64().unwrap();
+    let price = answer["import_eur_per_kwh"].as_f64().unwrap();
+    assert!((saving + (price - 0.3) * avoided - 600.0).abs() < 1e-6);
+    assert_eq!(answer["current_import_eur_per_kwh"], 0.3);
+    let variants: Vec<&str> = answer["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["variant"].as_str().unwrap())
+        .collect();
+    assert_eq!(variants, ["base", "pessimistic", "optimistic"]);
+    let (status, answer) = ask(
+        run,
+        json!({"candidate_key":"test","kind":"payback_years","value":15}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(answer["horizon_years"], 15);
+    let (status, answer) = ask(
+        run,
+        json!({"candidate_key":"test","kind":"self_sufficiency_pct","value":99}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(answer["holds"], false);
+    assert!(
+        answer["baseline_pct"].is_number() && answer["extra_solar_kwh"].as_f64().unwrap() > 0.0
+    );
+    // Een vraag bewaart niets: er blijft één berekening.
+    assert_eq!(catalog.analysis_summaries().await.unwrap().len(), 1);
+    for request in [
+        json!({"candidate_key":"other","kind":"payback_years","value":5}),
+        json!({"candidate_key":"test","kind":"roi_pct","value":5}),
+        json!({"candidate_key":"test","kind":"payback_years","value":5.5}),
+        json!({"candidate_key":"test","kind":"annual_saving_eur","value":-1}),
+        json!({"candidate_key":"test","kind":"self_sufficiency_pct","value":150}),
+    ] {
+        let (status, answer) = ask(run, request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(answer["error"], "invalid_analysis");
+        assert!(answer["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+    let (status, answer) = ask(
+        run,
+        json!({"candidate_key":"test","kind":"payback_years","value":5,"extra":1}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(answer["error"], "invalid_json");
+    let (status, answer) = ask(
+        run + 1,
+        json!({"candidate_key":"test","kind":"payback_years","value":5}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(answer["error"], "not_found");
+    // Een run waarvan de uitkomst niet meer in het model past, geeft een melding zonder details.
+    let saved = catalog.analysis(run).await.unwrap().unwrap();
+    let broken = catalog
+        .save_analysis(&thuisaccu_storage::analysis::NewAnalysis {
+            import_id: id,
+            title: "Kapot",
+            model_version: "nl-self-consumption-v1",
+            profile_sha256: saved.input["profile_sha256"].as_str().unwrap(),
+            input_json: &saved.input.to_string(),
+            result_json: &json!({"candidates":[{"key":"test"}]}).to_string(),
+            now: 0,
+        })
+        .await
+        .unwrap();
+    let (status, answer) = ask(
+        broken,
+        json!({"candidate_key":"test","kind":"payback_years","value":5}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(answer["message"].as_str().unwrap().contains("opnieuw"));
+}

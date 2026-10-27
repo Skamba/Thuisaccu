@@ -1316,6 +1316,119 @@ window.Results = (() => {
         "restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar. Vraag ook wie de garantie geeft, fabrikant of installateur, " +
         "en wat er gebeurt als de installateur stopt."]
   ];
+  // Toets de belofte: wat een verkoper of advertentie belooft naast de getallen van deze berekening
+  // (`POST /api/v1/analysis/runs/{id}/claims`, `claims::check` in de rekenkern). Een vraag aan een bewaarde run; er
+  // wordt niets opnieuw gerekend of bewaard. [soort, titel, toelichting, label van het getal]
+  const CLAIM_KINDS = [
+    ["annual_saving_eur", "Bespaart € … per jaar", "Een bedrag per jaar; vergeleken met de besparing in het eerste jaar.", "Beloofde besparing per jaar (€)"],
+    ["payback_years", "Terugverdiend in … jaar", "Hele jaren, zonder rente of disconto, zoals de terugverdientijd hier.", "Beloofde terugverdientijd (jaren)"],
+    ["self_sufficiency_pct", "… % zelfvoorzienend", "Deel van je verbruik uit eigen zonnestroom, in het eerste jaar.", "Beloofde zelfvoorziening (%)"]
+  ];
+  const CLAIM_VARIANTS = { base: "de basisaannames", pessimistic: "de ongunstige variant", optimistic: "de gunstige variant",
+    export_variant: "de terugleveringsvariant", warranty_stress: "‘stopt na de garantie’" };
+  // De klassieke trucs achter een mooie belofte: [kop, uitleg].
+  const CLAIM_TRICKS = [
+    ["Gerekend met salderen", "Tot en met 2026 valt teruggeleverde stroom weg tegen afgenomen stroom, vanaf 2027 niet meer. " +
+      "Een besparing ‘met salderen’ of met de terugleververgoeding van nu zegt weinig over de jaren daarna. Vraag met welk jaar en welke vergoeding is gerekend."],
+    ["Nominale in plaats van bruikbare capaciteit", "Een accu van ‘10 kWh’ levert vaak 9 kWh of minder bruikbaar. Vraag de bruikbare capaciteit aan de AC-kant."],
+    ["DC-rendement in plaats van AC → AC", "‘Tot 95%’ gaat meestal over de cellen (DC). Van stopcontact tot stopcontact (AC → AC) gaat er vaak 10 tot 20% verloren."],
+    ["Bruto besparing zonder sluimerverbruik", "Accu en omvormer gebruiken zelf ook stroom, dag en nacht. Vraag of dat in de besparing is afgetrokken."],
+    ["Handel en dynamische tarieven", "Inkomsten uit handel, onbalans of een dynamisch contract rekent deze tool niet mee. Vraag welk deel van de belofte " +
+      "daarvan afhangt, wie het risico draagt en wat abonnement en energiebeheer kosten."],
+    ["Zelfvoorzienend of eigen gebruik", "Zelfvoorziening is het deel van je verbruik uit eigen zonnestroom; eigen gebruik is het deel van je opwek dat je " +
+      "zelf gebruikt. Dat tweede getal is vaak hoger en klinkt mooier."]
+  ];
+  const times = value => UI.number(value, value >= 10 ? 0 : 1);
+  // Het antwoord van de API als gewone zinnen; `name` is de korte naam van de accu. Onbekend blijft onbekend: een
+  // ontbrekende waarde geeft geen zin met nul.
+  function claimSentences(answer, name) {
+    const out = [], { kind, claimed, calculated, holds, saving_share: share, horizon_years: horizon } = answer;
+    const held = (answer.variants || []).filter(v => v.holds === true && v.variant !== "base").map(v => CLAIM_VARIANTS[v.variant]);
+    const checked = (answer.variants || []).filter(v => v.holds != null).map(v => CLAIM_VARIANTS[v.variant]);
+    const list = items => items.length > 1 ? `${items.slice(0, -1).join(", ")} en ${items.at(-1)}` : items[0];
+    const variants = () => {
+      if (holds !== false) return;
+      if (answer.within_variants === true) out.push(`Alleen in ${list(held)} komt het uit.`);
+      else if (answer.within_variants === false) out.push(checked.length > 1
+        ? `Dat valt buiten alle varianten (${list(checked)}).` : "Dat valt buiten wat deze berekening laat zien.");
+      else out.push("Of een variant het wel haalt, legt deze berekening niet vast.");
+    };
+    if (kind === "annual_saving_eur") {
+      if (!finite(calculated)) return ["De besparing in het eerste jaar staat niet in deze berekening."];
+      const average = answer.average_annual_saving_eur;
+      out.push(`Volgens deze berekening bespaart ${name} in het eerste jaar ${eur0(calculated)}` +
+        (finite(average) && Math.abs(average - calculated) > Math.max(5, Math.abs(calculated) * 0.05)
+          ? `, gemiddeld ${eur0(average)} per jaar over ${horizon} jaar.` : "."));
+      if (holds) out.push(`Dat is minstens de beloofde ${eur0(claimed)}: die belofte past bij deze berekening.`);
+      else if (finite(share)) {
+        const price = answer.import_eur_per_kwh;
+        out.push(`Om ${eur0(claimed)} te halen moet de besparing ${times(share)} keer zo hoog zijn` + (finite(price)
+          ? `, of moet stroom ${money(price)} per kWh kosten (nu ${money(answer.current_import_eur_per_kwh)}).` : "."));
+      } else out.push(`In het eerste jaar bespaart deze accu hier niets dat met een hogere besparing of stroomprijs ${eur0(claimed)} wordt.`);
+      variants();
+    } else if (kind === "payback_years") {
+      out.push(finite(calculated) ? `Volgens deze berekening is ${name} terugverdiend na ${years(calculated)}.`
+        : `Volgens deze berekening verdient ${name} zich binnen de looptijd van ${horizon} jaar niet terug.`);
+      if (holds === true) out.push(`Dat past bij de belofte van ${years(claimed)}` + (finite(share) && share < 1
+        ? `; de besparing mag ${pct((1 - share) * 100, 0)} tegenvallen voordat die belofte niet meer klopt.` : "."));
+      else if (holds == null) out.push(`${years(claimed)} ligt voorbij de looptijd van ${horizon} jaar; daarover zegt deze berekening niets.`);
+      else if (finite(share)) out.push(`Om in ${years(claimed)} terugverdiend te zijn moet de besparing ${times(share)} keer zo hoog zijn, met dezelfde kosten.`);
+      else out.push(`Met deze kosten haalt ook een hogere besparing ${years(claimed)} niet.`);
+      variants();
+    } else if (kind === "self_sufficiency_pct") {
+      if (!finite(calculated)) return ["De zelfvoorziening staat niet in deze berekening."];
+      out.push(`Volgens deze berekening is het huis met ${name} in het eerste jaar ${pct(calculated, 0)} zelfvoorzienend` +
+        (finite(answer.baseline_pct) ? ` (zonder accu ${pct(answer.baseline_pct, 0)}).` : "."));
+      if (holds) out.push(`Dat is minstens de beloofde ${pct(claimed, 0)}.`);
+      else {
+        if (finite(answer.extra_solar_kwh)) out.push(`Voor ${pct(claimed, 0)} moet het huis nog ${kwh(answer.extra_solar_kwh)} per jaar meer eigen zonnestroom gebruiken.`);
+        const max = answer.max_self_sufficiency_pct;
+        if (finite(max) && claimed > max + 1e-9) out.push(`Met deze opwek kan dat zelfs met een verliesvrije accu zonder grenzen niet: hoogstens ${pct(max, 0)}.`);
+      }
+    }
+    return out;
+  }
+  // Het blok in de offertecheck. Geldt voor de accu die bij ‘Offertecheck voor’ gekozen is (`pick`).
+  function claimBlock(run, all, pick) {
+    const state = { kind: CLAIM_KINDS[0][0], raw: "" };
+    const label = () => CLAIM_KINDS.find(([key]) => key === state.kind)[3];
+    const value = UI.numberInput({ value: state.raw, oninput: event => { state.raw = event.target.value; } });
+    const valueField = field(label(), value);
+    const live = h("div", { class: "claim-answer", "aria-live": "polite" });
+    const kinds = UI.choice("Wat belooft de verkoper?", UI.uid("belofte"), CLAIM_KINDS.map(([key, title, detail]) => [key, title, detail]),
+      state.kind, kind => {
+        state.kind = kind;
+        valueField.querySelector("label").textContent = label();
+        live.replaceChildren();
+      });
+    const submit = UI.button("Toets de belofte", null, "primary", { type: "submit" });
+    pick.addEventListener("change", () => live.replaceChildren());
+    const form = h("form", { class: "claim-check", novalidate: true, onsubmit: async event => {
+      event.preventDefault();
+      const isMoney = state.kind === "annual_saving_eur", number = UI.parse(state.raw, { money: isMoney });
+      if (number == null) {
+        live.replaceChildren(h("p", { class: "callout", role: "alert" }, UI.parseProblem(state.raw, { money: isMoney }) || "Vul eerst het getal uit de belofte in."));
+        return;
+      }
+      const c = all.find(o => o.key === pick.value);
+      if (!c) return;
+      submit.disabled = true;
+      try {
+        const answer = await UI.api(`/api/v1/analysis/runs/${run.id}/claims`,
+          { method: "POST", json: { candidate_key: c.key, kind: state.kind, value: number } });
+        live.replaceChildren(...claimSentences(answer, c.short ?? c.name).map(text => h("p", {}, text)),
+          h("p", { class: "help" }, "Een vraag aan deze berekening: er is niets opnieuw gerekend of bewaard."));
+      } catch (error) {
+        live.replaceChildren(h("p", { class: "callout", role: "alert" }, error.message));
+      } finally { submit.disabled = false; }
+    } }, kinds, valueField, h("div", { class: "actions" }, submit));
+    return h("section", { class: "claim-block" }, h("h3", {}, "Toets wat de verkoper belooft"),
+      h("p", {}, "Belooft een verkoper of advertentie een besparing, een terugverdientijd of een zelfvoorziening? Vul in wat er staat; " +
+        "het antwoord zegt wat er in jouw situatie waar moet zijn om dat te halen, met de getallen van deze berekening."),
+      form, live,
+      h("details", { class: "fold" }, h("summary", {}, "Trucs om naar te vragen"),
+        h("ul", {}, CLAIM_TRICKS.map(([title, text]) => h("li", {}, h("strong", {}, title), `: ${text}`)))));
+  }
   // Sleutel voor wat de offertecheck per berekening in deze browser onthoudt. Een id kan na verwijderen
   // opnieuw uitgegeven worden; met het tijdstip erbij erft een nieuwe berekening niets van een oude.
   const checkKey = run => run.id != null ? `thuisaccu-offertecheck-${run.id}-${run.created_at_unix_s}` : null;
@@ -1524,7 +1637,9 @@ window.Results = (() => {
     });
     out.append(h("p", {}, "Leg deze lijst naast je offerte. Per vraag staat de waarde waarmee is gerekend; regels gemarkeerd ‘aanname’ komen niet uit een bron " +
       "en staan bovenaan. Vul de waarden uit de offerte in (bijvoorbeeld 9,3 of de totaalprijs) en reken opnieuw; de oude berekening blijft bewaard."),
-      UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, run.id == null ? null : again, print));
+      UI.field("Offertecheck voor", pick), target, h("div", { class: "actions" }, run.id == null ? null : again, print),
+      // Een gedeelde berekening (zonder id) staat niet in de database; de API kan er niets aan vragen.
+      run.id == null ? null : claimBlock(run, all, pick));
     return out;
   }
 
@@ -1843,5 +1958,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, notesOf, messagesOf, lanes, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap, tipping, answer, band, plainName };
+  return { render, notesOf, messagesOf, lanes, checkKey, claimSentences, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap, tipping, answer, band, plainName };
 })();

@@ -1,5 +1,6 @@
 use thuisaccu_core::{
     analysis::{self, Candidate, Objective, Parameters},
+    claims,
     finance::{self, CostLine, CostStatus, CostTiming, ExportFeeBand, Financing, Tariff},
     sizing::{self, Battery, EnergyInterval, LoadVariation},
 };
@@ -1218,4 +1219,179 @@ fn every_warning_and_note_has_a_message_with_a_known_code_in_the_same_order() {
         .unwrap();
     assert_eq!(stress["kind"], "warning");
     assert_eq!(stress["candidate_key"], "lang");
+}
+
+fn claim(kind: claims::ClaimKind, value: f64) -> claims::Claim {
+    claims::Claim { kind, value }
+}
+
+#[test]
+fn a_promised_annual_saving_needs_this_saving_share_or_this_import_price_from_2027() {
+    // Vanaf 2027 (geen salderen) vermijdt de accu van 2 kWh 4380 × 2 = 8760 kWh netafname en evenveel
+    // teruglevering: € 1927,20 in jaar 1 bij € 0,30 afname en € 0,08 vergoeding. Een belofte van € 2500
+    // vraagt 2500 / 1927,2 = 1,297 keer die besparing, of een afnameprijs van
+    // 0,30 + (2500 − 1927,2) / 8760 = € 0,3654 per kWh. Ongunstig (−20%): 8760 × (0,24 − 0,096) =
+    // € 1261,44; gunstig (+20%): 8760 × (0,36 − 0,064) = € 2592,96.
+    let mut p = parameters();
+    p.horizon_years = 5;
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    let c = &r.candidates[0];
+    let kind = claims::ClaimKind::AnnualSavingEur;
+    let answer = claims::check(c, Some(&r.baseline_first_year), &p, &claim(kind, 2500.0)).unwrap();
+    close(answer.calculated.unwrap(), 1927.2);
+    assert_eq!(answer.holds, Some(false));
+    close(answer.saving_share.unwrap(), 2500.0 / 1927.2);
+    close(
+        answer.import_eur_per_kwh.unwrap(),
+        0.30 + (2500.0 - 1927.2) / 8760.0,
+    );
+    close(answer.current_import_eur_per_kwh, 0.30);
+    close(answer.average_annual_saving_eur.unwrap(), 1927.2);
+    let values: Vec<f64> = answer.variants.iter().map(|v| v.value.unwrap()).collect();
+    assert_eq!(values.len(), 3);
+    close(values[1], 1261.44);
+    close(values[2], 2592.96);
+    // Alleen de gunstige variant haalt € 2500.
+    assert_eq!(answer.within_variants, Some(true));
+    let far = claims::check(c, None, &p, &claim(kind, 3000.0)).unwrap();
+    assert_eq!(far.within_variants, Some(false));
+    // Met precies dat afnametarief is de besparing in jaar 1 het beloofde bedrag.
+    p.tariff.import_eur_per_kwh = answer.import_eur_per_kwh.unwrap();
+    let again = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    close(again.candidates[0].years[0].energy_saving_eur, 2500.0);
+    let held = claims::check(&again.candidates[0], None, &p, &claim(kind, 2500.0)).unwrap();
+    assert_eq!(held.holds, Some(true));
+}
+
+#[test]
+fn under_netting_a_battery_that_only_shifts_saves_nothing_and_no_price_fixes_that() {
+    // In 2026 wordt het hele jaar gesaldeerd: netto netafname is met en zonder accu nul, dus de
+    // besparing is € 0 en geen factor of stroomprijs maakt er € 500 van; onbekend, geen nul.
+    let mut p = parameters();
+    p.start_year = 2026;
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    let answer = claims::check(
+        &r.candidates[0],
+        None,
+        &p,
+        &claim(claims::ClaimKind::AnnualSavingEur, 500.0),
+    )
+    .unwrap();
+    close(answer.calculated.unwrap(), 0.0);
+    assert_eq!(answer.holds, Some(false));
+    assert!(answer.saving_share.is_none() && answer.import_eur_per_kwh.is_none());
+}
+
+#[test]
+fn an_old_run_without_grid_import_without_battery_gives_no_price_and_no_variant_savings() {
+    let p = parameters();
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    let mut c = r.candidates[0].clone();
+    c.years[0].baseline_grid_import_kwh = None;
+    c.years[0].baseline_grid_export_kwh = None;
+    let answer = claims::check(
+        &c,
+        None,
+        &p,
+        &claim(claims::ClaimKind::AnnualSavingEur, 3000.0),
+    )
+    .unwrap();
+    close(answer.calculated.unwrap(), 1927.2);
+    // De factor volgt nog wel uit de bewaarde besparing.
+    close(answer.saving_share.unwrap(), 3000.0 / 1927.2);
+    assert!(answer.import_eur_per_kwh.is_none());
+    assert!(answer.variants[1].value.is_none() && answer.variants[1].holds.is_none());
+    assert_eq!(answer.within_variants, None);
+}
+
+#[test]
+fn a_promised_payback_needs_the_saving_share_that_keeps_the_balance_positive_from_that_year() {
+    // € 5000 en € 1927,20 per jaar, zonder disconto: na 3 jaar terugverdiend. ‘In 2 jaar’ vraagt
+    // 5000 / (2 × 1927,2) = 1,297 keer de besparing; ‘in 4 jaar’ haalt de berekening al.
+    let mut p = parameters();
+    p.horizon_years = 5;
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    let c = &r.candidates[0];
+    assert_eq!(c.payback_years, Some(3));
+    let kind = claims::ClaimKind::PaybackYears;
+    let two = claims::check(c, None, &p, &claim(kind, 2.0)).unwrap();
+    close(two.calculated.unwrap(), 3.0);
+    assert_eq!(two.holds, Some(false));
+    close(two.saving_share.unwrap(), 5000.0 / (2.0 * 1927.2));
+    let four = claims::check(c, None, &p, &claim(kind, 4.0)).unwrap();
+    assert_eq!(four.holds, Some(true));
+    close(four.saving_share.unwrap(), 5000.0 / (4.0 * 1927.2));
+    // Terugverdiend aan het eind van de looptijd zonder disconto is hetzelfde als een NPV van nul:
+    // de factor is gelijk aan het kantelpunt `saving_share`.
+    let five = claims::check(c, None, &p, &claim(kind, 5.0)).unwrap();
+    close(
+        five.saving_share.unwrap(),
+        c.tipping_points.as_ref().unwrap().saving_share.unwrap(),
+    );
+    close(five.saving_share.unwrap(), 5000.0 / (5.0 * 1927.2));
+    // Voorbij de looptijd volgt geen factor uit deze berekening; wel dat 3 jaar binnen 10 jaar valt.
+    let ten = claims::check(c, None, &p, &claim(kind, 10.0)).unwrap();
+    assert_eq!(ten.holds, Some(true));
+    assert!(ten.saving_share.is_none());
+    // Een accuvervanging van € 3000 in jaar 4 laat het saldo weer onder nul zakken: blijvend
+    // terugverdiend na 5 jaar. ‘In 3 jaar’ moet ook jaar 4 overleven: 8000 / (4 × 1927,2) = 1,038,
+    // meer dan 5000 / (3 × 1927,2) = 0,865 voor jaar 3 alleen.
+    let mut replaced = candidate("b", 2.0, 500_000);
+    let line = replaced
+        .costs
+        .iter_mut()
+        .find(|l| l.category == "battery_replacement")
+        .unwrap();
+    line.status = CostStatus::Priced;
+    line.timing = CostTiming::Event;
+    line.year = Some(4);
+    line.amount_minor = 300_000;
+    let r = analysis::analyze(&profile(), &p, &[replaced]).unwrap();
+    let c = &r.candidates[0];
+    assert_eq!(c.payback_years, Some(5));
+    let three = claims::check(c, None, &p, &claim(kind, 3.0)).unwrap();
+    close(three.saving_share.unwrap(), 8000.0 / (4.0 * 1927.2));
+    assert_eq!(three.within_variants, Some(false));
+}
+
+#[test]
+fn a_promised_self_sufficiency_needs_extra_solar_use_up_to_production_over_consumption() {
+    // Een accu van 1 kWh dekt de helft van de 8760 kWh verbruik: 50% zelfvoorzienend, zonder accu 0%.
+    // ‘80%’ vraagt 0,3 × 8760 = 2628 kWh meer zelf gebruikte zonnestroom; met 8760 kWh opwek is 100%
+    // de bovengrens.
+    let p = parameters();
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 1.0, 100_000)]).unwrap();
+    let kind = claims::ClaimKind::SelfSufficiencyPct;
+    let c = &r.candidates[0];
+    let answer = claims::check(c, Some(&r.baseline_first_year), &p, &claim(kind, 80.0)).unwrap();
+    close(answer.calculated.unwrap(), 50.0);
+    close(answer.baseline_pct.unwrap(), 0.0);
+    assert_eq!(answer.holds, Some(false));
+    assert_eq!(answer.within_variants, Some(false));
+    close(answer.extra_solar_kwh.unwrap(), 2628.0);
+    close(answer.max_self_sufficiency_pct.unwrap(), 100.0);
+    assert!(answer.saving_share.is_none() && answer.import_eur_per_kwh.is_none());
+    let low = claims::check(c, None, &p, &claim(kind, 40.0)).unwrap();
+    assert_eq!(low.holds, Some(true));
+    close(low.extra_solar_kwh.unwrap(), 0.0);
+}
+
+#[test]
+fn promises_outside_sensible_ranges_are_rejected() {
+    let p = parameters();
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 500_000)]).unwrap();
+    for (kind, value) in [
+        (claims::ClaimKind::AnnualSavingEur, 0.0),
+        (claims::ClaimKind::AnnualSavingEur, f64::NAN),
+        (claims::ClaimKind::PaybackYears, 2.5),
+        (claims::ClaimKind::PaybackYears, 0.0),
+        (claims::ClaimKind::SelfSufficiencyPct, 101.0),
+    ] {
+        assert!(claims::check(&r.candidates[0], None, &p, &claim(kind, value)).is_err());
+    }
+    assert_eq!(
+        claims::ClaimKind::parse("payback_years"),
+        Some(claims::ClaimKind::PaybackYears)
+    );
+    assert_eq!(claims::ClaimKind::parse("roi"), None);
 }
