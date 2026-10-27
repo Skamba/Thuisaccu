@@ -117,6 +117,10 @@ const strayText = page => page.evaluate(() => {
 function syntheticYear(dir) {
   // Teruglevering vóór ‘levering’ (afname, zoals leveranciers het noemen): de kolomkeuze mag ze niet verwarren.
   const inverter = ["tijdstip,opwek_kwh"], meter = ["datum,teruglevering_kwh,levering_kwh"];
+  // Dezelfde meter als cumulatieve tellerstanden per tarief, zoals een P1-logger ze exporteert: T1 overdag, T2 ’s nachts.
+  const readings = ["time,Import T1 kWh,Import T2 kWh,Export T1 kWh,Export T2 kWh"];
+  const counters = [12345.678, 23456.789, 3456.789, 4567.891];
+  const reading = time => readings.push(`${time.toISOString().slice(0, 19)}Z,${counters.map(c => c.toFixed(3)).join(",")}`);
   const start = Date.UTC(2025, 0, 1);
   for (let hour = 0; hour < 8760; hour++) {
     const time = new Date(start + hour * 3600e3), h = time.getUTCHours();
@@ -129,10 +133,17 @@ function syntheticYear(dir) {
     const load = 0.25 + (h >= 17 && h < 22 ? 0.6 : 0);
     meter.push(`${time.toISOString().slice(0, 19)}Z,${Math.max(0, produced - load).toFixed(4)},`
       + `${Math.max(0, load - produced).toFixed(4)}`);
+    reading(time);
+    const tariff = h >= 7 && h < 23 ? 0 : 1;
+    counters[tariff] += Math.max(0, load - produced);
+    counters[2 + tariff] += Math.max(0, produced - load);
   }
-  const files = { inverter: path.join(dir, "omvormer.csv"), meter: path.join(dir, "p1.csv") };
+  reading(new Date(start + 8760 * 3600e3));
+  const files = { inverter: path.join(dir, "omvormer.csv"), meter: path.join(dir, "p1.csv"),
+    readings: path.join(dir, "p1-standen.csv") };
   fs.writeFileSync(files.inverter, `${inverter.join("\n")}\n`);
   fs.writeFileSync(files.meter, `${meter.join("\n")}\n`);
+  fs.writeFileSync(files.readings, `${readings.join("\n")}\n`);
   return files;
 }
 
@@ -572,6 +583,58 @@ test("omvormer- en meterbestand worden één bruikbaar jaarprofiel", async () =>
   assert.match(await page.textContent("dialog[open]"), /Er zijn geen berekeningen op dit profiel/);
   await page.click("dialog[open] button:has-text('Verwijder profiel')");
   await row.waitFor({ state: "detached" });
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("cumulatieve meterstanden per tarief: herkend, opgeteld en een leesfout wordt niet bewaard", async () => {
+  const files = syntheticYear(workdir);
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", files.inverter);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  assert.match(await page.textContent(".wizard-body [role=status]"), /35\.040 rijen ingelezen/);
+  await page.getByLabel("Meetperiode").selectOption("15min");
+  await page.getByLabel("Tijdzone", { exact: true }).selectOption("UTC");
+  await next(page);
+  await page.click("text=Ja, ik heb een P1- of meterexport");
+  await page.setInputFiles(".wizard-body input[type=file]", files.readings);
+  await page.click("button:has-text('Lees meterbestand')");
+  await page.waitForSelector("text=Netafname, tarief 2");
+  // Beide tarieven tellen op, en de oplopende standen zetten de soort waarden.
+  const picked = label => page.getByLabel(label, { exact: true }).evaluate(s => s.selectedOptions[0].textContent);
+  assert.equal(await picked("Netafname"), "2. Import T1 kWh");
+  assert.equal(await picked("Netafname, tarief 2"), "3. Import T2 kWh");
+  assert.equal(await picked("Teruglevering"), "4. Export T1 kWh");
+  assert.equal(await picked("Teruglevering, tarief 2"), "5. Export T2 kWh");
+  assert.equal(await page.getByLabel("Soort waarden").inputValue(), "cumulative");
+  assert.match(await page.textContent(".wizard-body"), /dit lijken meterstanden/);
+  await page.getByLabel("Meetperiode").selectOption("hour");
+  await page.getByLabel("Tijdzone", { exact: true }).selectOption("UTC");
+  // Als waarden per meetperiode gelezen komt het jaar ver boven een huishouden uit: niet te bewaren.
+  await page.getByLabel("Soort waarden").selectOption("interval");
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  assert.match(await page.textContent(".wizard-body .callout.problem"), /ver boven wat een huishouden/);
+  await next(page);
+  assert.equal(await page.locator("text=Bewaar energieprofiel").count(), 0);
+  await page.click(".wizard-footer button:has-text('Vorige')");
+  await page.getByLabel("Soort waarden").selectOption("cumulative");
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  // Hetzelfde verbruik als het meterbestand per uur: 3.285 kWh, met de netafname om na te rekenen.
+  assert.match(await page.textContent(".stats"), /3\.285 kWh/);
+  assert.match(await page.textContent(".wizard-body"), /Gemeten netafname: .+kWh\. Teruglevering: .+jaarafrekening/);
+  assert.equal(await page.locator(".wizard-body .callout.problem").count(), 0);
+  assert.deepEqual(await strayText(page), []);
+  // Een eigen naam verandert alleen de naam; het bestandsformaat volgt nog uit de bestandsnaam.
+  await next(page);
+  await page.getByLabel("Naam van het profiel").fill("Ons jaar met meterstanden");
+  await page.click("button:has-text('Bewaar energieprofiel')");
+  await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+  await page.goto(`${base}/#/energie`);
+  assert.match(await page.locator("tr", { hasText: "Ons jaar met meterstanden" }).textContent(), /Bruikbaar/);
   assert.deepEqual(problems, []);
   await close();
 });

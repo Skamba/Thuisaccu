@@ -8,7 +8,9 @@
 
 use serde_json::Value;
 use thuisaccu_core::{
-    analysis::{self, Candidate, ExportVariant, LoadAddition, Objective, Parameters},
+    analysis::{
+        self, BatteryStress, Candidate, ExportVariant, LoadAddition, Objective, Parameters,
+    },
     finance::{self, CostLine, CostStatus, CostTiming, Financing, Tariff},
     sizing::{Battery, EnergyInterval, LoadVariation},
 };
@@ -261,4 +263,27 @@ fn quarter_hour_year_with_steady_ev_charging() {
     p.objective = Objective::Payback;
     let result = analysis::analyze(&quarterly(), &p, &candidates()).unwrap();
     check("quarterly", &result);
+}
+
+#[test]
+fn hourly_years_after_the_end_of_life_without_replacement_and_with_warranty_stress() {
+    // Een accu die na 4 jaar stopt, zonder vervanging, in een horizon van 8 jaar; de garantietoets
+    // stopt na 3 jaar. Jaren zonder werkende accu moeten precies het jaar zonder accu zijn.
+    let mut p = parameters();
+    p.horizon_years = 8;
+    p.export_variant = None;
+    p.load_variation = LoadVariation::Uniform;
+    let mut short = candidate(
+        "short_life",
+        battery(5.0, 2.5, 88.0, 10.0, 4),
+        costs(&[("battery", CostTiming::Upfront, None, 300_000)]),
+        Financing::default(),
+    );
+    short.warranty_stress = Some(BatteryStress {
+        operating_life_years: 3,
+        annual_capacity_loss_pct: 4.0,
+        basis: "Synthetische garantietoets".into(),
+    });
+    let result = analysis::analyze(&hourly(), &p, &[short]).unwrap();
+    check("end-of-life", &result);
 }

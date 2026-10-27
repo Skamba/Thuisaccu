@@ -43,6 +43,11 @@ pub struct SolarSummary {
     /// afleiding uit netafname en teruglevering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clipped_consumption_kwh: Option<f64>,
+    /// Gemeten netafname en teruglevering over het hele profiel; alleen bij meterdata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_import_kwh: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_export_kwh: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]

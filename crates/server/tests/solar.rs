@@ -623,3 +623,94 @@ fn a_blank_line_does_not_let_a_csv_over_the_row_limit_be_cut_off() {
     .unwrap();
     assert_eq!(table.rows.len(), 250_000);
 }
+
+#[test]
+fn meter_readings_per_tariff_are_summed_and_the_grid_totals_are_kept() {
+    let inverter_options = ImportOptions {
+        period: "15min".into(),
+        ..Default::default()
+    };
+    let inverter = "time,production\n2026-06-01T10:00:00Z,0.25\n2026-06-01T10:15:00Z,0.25\n2026-06-01T10:30:00Z,0.25\n2026-06-01T10:45:00Z,0.25\n2026-06-01T11:00:00Z,0\n2026-06-01T11:15:00Z,0\n2026-06-01T11:30:00Z,0\n2026-06-01T11:45:00Z,0\n";
+    let table = read_table("omvormer.csv", inverter.as_bytes(), &inverter_options).unwrap();
+    let (production, summary) = normalize(&table, &inverter_options).unwrap();
+    // Cumulatieve tellerstanden per tarief, zoals een P1-logger ze exporteert.
+    let meter = "time,import_t1,import_t2,export_t1,export_t2\n\
+        2026-06-01T10:00:00Z,1000.0,2000.0,300.0,400.0\n\
+        2026-06-01T11:00:00Z,1000.2,2000.1,300.5,400.0\n\
+        2026-06-01T12:00:00Z,1000.2,2000.9,300.5,400.0\n";
+    let meter_options = MeterOptions {
+        import_column: 1,
+        import_extra_columns: vec![2],
+        export_column: 3,
+        export_extra_columns: vec![4],
+        mode: "cumulative".into(),
+        period: "hour".into(),
+        timezone: "UTC".into(),
+        ..Default::default()
+    }
+    .as_import_options();
+    let table = read_table("meter.csv", meter.as_bytes(), &meter_options).unwrap();
+    let (grid, _) = normalize(&table, &meter_options).unwrap();
+    let (intervals, combined) = combine_with_meter(&production, &summary, &grid, "UTC").unwrap();
+    // Uur 10: afname 0,2 + 0,1 kWh, teruglevering 0,5 kWh; uur 11: afname 0 + 0,8 kWh.
+    assert_eq!(intervals.len(), 2);
+    assert!((intervals[0].measured_import_wh.unwrap() - 300.0).abs() < 1e-6);
+    assert!((intervals[0].measured_export_wh.unwrap() - 500.0).abs() < 1e-6);
+    assert!((combined.grid_import_kwh.unwrap() - 1.1).abs() < 1e-9);
+    assert!((combined.grid_export_kwh.unwrap() - 0.5).abs() < 1e-9);
+    // Bruto = 1 + 0,3 − 0,5 en 0 + 0,8 − 0 = 1,6 kWh.
+    assert!((combined.consumption_kwh.unwrap() - 1.6).abs() < 1e-9);
+    // Zonder meterdata geen nettotalen.
+    assert_eq!(summary.grid_import_kwh, None);
+}
+
+#[test]
+fn extra_columns_need_their_own_main_column_and_count_once() {
+    let text = "time,production,import_t1,import_t2,export_t1,export_t2\n2026-06-01T10:00:00Z,1,0.2,0.1,0.5,0\n";
+    let p1 = ImportOptions {
+        consumption_column: Some(2),
+        consumption_extra_columns: vec![3],
+        consumption_source: "net_meter".into(),
+        export_column: Some(4),
+        export_extra_columns: vec![5],
+        ..Default::default()
+    };
+    let summary = analyze(text, &p1).unwrap();
+    // 1 + (0,2 + 0,1) − (0,5 + 0) = 0,8 kWh.
+    assert!((summary.consumption_kwh.unwrap() - 0.8).abs() < 1e-9);
+    assert!((summary.grid_import_kwh.unwrap() - 0.3).abs() < 1e-9);
+    let twice = ImportOptions {
+        export_extra_columns: vec![3],
+        ..p1.clone()
+    };
+    assert!(analyze(text, &twice).unwrap_err().contains("één keer"));
+    let without_main = ImportOptions {
+        consumption_extra_columns: vec![3],
+        ..Default::default()
+    };
+    assert!(
+        analyze(text, &without_main)
+            .unwrap_err()
+            .contains("kies die eerst")
+    );
+    let many = ImportOptions {
+        production_extra_columns: vec![2, 3, 4, 5],
+        ..Default::default()
+    };
+    assert!(analyze(text, &many).unwrap_err().contains("hoogstens vier"));
+    // Een lege extra kolom telt als ontbrekende waarde, ook bij overslaan.
+    let skipped = analyze(
+        "time,production,import_t1,import_t2,export_t1,export_t2\n2026-06-01T10:00:00Z,1,0.2,,0.5,0\n2026-06-01T11:00:00Z,1,0.2,0.1,0.5,0\n",
+        &ImportOptions {
+            missing_rows: "skip".into(),
+            ..p1.clone()
+        },
+    )
+    .unwrap();
+    assert_eq!(skipped.rows, 1);
+    // Zonder extra kolommen blijven de bewaarde instellingen (en daarmee de dubbelcontrole) gelijk.
+    let stored = serde_json::to_value(ImportOptions::default()).unwrap();
+    assert!(stored.get("consumption_extra_columns").is_none());
+    let stored = serde_json::to_value(MeterOptions::default()).unwrap();
+    assert!(stored.get("import_extra_columns").is_none());
+}

@@ -223,6 +223,8 @@ fn reference_drafts(key: &str, json: &str) -> Result<Vec<CandidateDraft>, ApiErr
 
 struct Upload {
     filename: String,
+    /// Eigen naam voor het profiel; de bestandsnaam bepaalt alleen het bestandsformaat.
+    name: Option<String>,
     bytes: Vec<u8>,
     options: ImportOptions,
     /// Optioneel meterbestand (netafname en teruglevering) naast het omvormerbestand.
@@ -260,6 +262,7 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
     let mut options_seen = false;
     let mut meter_file = None;
     let mut meter_options: Option<MeterOptions> = None;
+    let mut name = None;
     while let Some(field) = multipart.next_field().await.map_err(multipart_error)? {
         match field.name() {
             Some("file") => {
@@ -295,6 +298,19 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
                 )
                 .map_err(|e| bad_request(format!("Importinstellingen: {e}")))?;
             }
+            Some("name") => {
+                if name.is_some() {
+                    return Err(bad_request("De naam is dubbel meegestuurd."));
+                }
+                let text = field.text().await.map_err(multipart_error)?;
+                let text = text.trim();
+                if text.is_empty() || text.chars().count() > 240 {
+                    return Err(bad_request(
+                        "Geef het profiel een naam van 1 tot 240 tekens.",
+                    ));
+                }
+                name = Some(text.to_owned());
+            }
             _ => return Err(bad_request("Onbekend uploadveld.")),
         }
     }
@@ -317,6 +333,7 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
     };
     Ok(Upload {
         filename,
+        name,
         bytes,
         options,
         meter,
@@ -415,6 +432,10 @@ pub async fn save_solar(
             s => format!("{}min", s / 60),
         });
         filename = format!("{} + {}", input.filename, meter.filename);
+    }
+    if let Some(name) = &input.name {
+        options["source_filename"] = json!(input.filename);
+        filename.clone_from(name);
     }
     let sha256 = if input.meter.is_some() {
         format!("{:x}", hasher.finalize())

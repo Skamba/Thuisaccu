@@ -39,12 +39,21 @@ pub struct ImportOptions {
     pub time_column: usize,
     pub time_part_column: Option<usize>,
     pub production_column: usize,
+    /// Kolommen die bij de opwekkolom worden opgeteld, bijvoorbeeld een tweede omvormer.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub production_extra_columns: Vec<usize>,
     pub consumption_column: Option<usize>,
+    /// Kolommen die bij de verbruikskolom worden opgeteld, zoals netafname in tarief 2 (dal).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub consumption_extra_columns: Vec<usize>,
     /// `gross`: de verbruikskolom is bruto huishoudelijk verbruik. `net_meter`: de
     /// verbruikskolom is netafname en `export_column` netteruglevering (bijvoorbeeld P1);
     /// bruto verbruik = opwek + netafname − teruglevering.
     pub consumption_source: String,
     pub export_column: Option<usize>,
+    /// Kolommen die bij de terugleverkolom worden opgeteld, zoals teruglevering in tarief 2.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub export_extra_columns: Vec<usize>,
     pub unit: String,
     pub mode: String,
     pub period: String,
@@ -66,9 +75,12 @@ impl Default for ImportOptions {
             time_column: 0,
             time_part_column: None,
             production_column: 1,
+            production_extra_columns: Vec::new(),
             consumption_column: None,
+            consumption_extra_columns: Vec::new(),
             consumption_source: "gross".into(),
             export_column: None,
+            export_extra_columns: Vec::new(),
             unit: "kwh".into(),
             mode: "interval".into(),
             period: "hour".into(),
@@ -93,7 +105,13 @@ pub struct MeterOptions {
     pub time_column: usize,
     pub time_part_column: Option<usize>,
     pub import_column: usize,
+    /// Kolommen die bij de netafname worden opgeteld; een slimme meter telt per tarief (T1 en T2).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub import_extra_columns: Vec<usize>,
     pub export_column: usize,
+    /// Kolommen die bij de teruglevering worden opgeteld.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub export_extra_columns: Vec<usize>,
     pub unit: String,
     pub mode: String,
     pub period: String,
@@ -114,7 +132,9 @@ impl Default for MeterOptions {
             time_column: 0,
             time_part_column: None,
             import_column: 1,
+            import_extra_columns: Vec::new(),
             export_column: 2,
+            export_extra_columns: Vec::new(),
             unit: base.unit,
             mode: base.mode,
             period: "15min".into(),
@@ -139,9 +159,12 @@ impl MeterOptions {
             time_column: self.time_column,
             time_part_column: self.time_part_column,
             production_column: self.import_column,
+            production_extra_columns: self.import_extra_columns.clone(),
             consumption_column: Some(self.export_column),
+            consumption_extra_columns: self.export_extra_columns.clone(),
             consumption_source: "gross".into(),
             export_column: None,
+            export_extra_columns: Vec::new(),
             unit: self.unit.clone(),
             mode: self.mode.clone(),
             period: self.period.clone(),
@@ -683,21 +706,70 @@ pub fn normalize(
     }) {
         return Err("De aparte tijdkolom moet verschillen van de overige gekozen kolommen.".into());
     }
+    let extras = [
+        &options.production_extra_columns,
+        &options.consumption_extra_columns,
+        &options.export_extra_columns,
+    ];
+    if extras.iter().any(|columns| columns.len() > 3) {
+        return Err("Tel per waarde hoogstens vier kolommen op.".into());
+    }
+    if (!options.consumption_extra_columns.is_empty() && options.consumption_column.is_none())
+        || (!options.export_extra_columns.is_empty() && options.export_column.is_none())
+    {
+        return Err("Een extra kolom telt op bij een gekozen kolom; kies die eerst.".into());
+    }
+    // Per meetwaarde de hoofdkolom plus de kolommen die erbij opgeteld worden.
+    let sources = |main: usize, extra: &[usize]| -> Vec<usize> {
+        std::iter::once(main).chain(extra.iter().copied()).collect()
+    };
+    let production_sources = sources(options.production_column, &options.production_extra_columns);
+    let consumption_sources = options
+        .consumption_column
+        .map(|col| sources(col, &options.consumption_extra_columns));
+    let export_sources = options
+        .export_column
+        .map(|col| sources(col, &options.export_extra_columns));
+    if extras.iter().any(|columns| !columns.is_empty()) {
+        let mut used: Vec<usize> = production_sources
+            .iter()
+            .chain(consumption_sources.iter().flatten())
+            .chain(export_sources.iter().flatten())
+            .copied()
+            .chain([options.time_column])
+            .chain(options.time_part_column)
+            .collect();
+        let count = used.len();
+        used.sort_unstable();
+        used.dedup();
+        if used.len() != count {
+            return Err("Elke kolom mag maar één keer meetellen.".into());
+        }
+    }
+    let value_columns: Vec<usize> = production_sources
+        .iter()
+        .chain(consumption_sources.iter().flatten())
+        .chain(export_sources.iter().flatten())
+        .copied()
+        .collect();
     let mut readings = Vec::new();
     let mut skipped_rows = 0;
     let mut repeated = BTreeMap::new();
     for (index, row) in table.rows.iter().enumerate() {
         if options.missing_rows == "skip"
-            && (cell(row, options.production_column).is_ok_and(|v| v.trim().is_empty())
-                || options
-                    .consumption_column
-                    .into_iter()
-                    .chain(options.export_column)
-                    .any(|col| cell(row, col).is_ok_and(|v| v.trim().is_empty())))
+            && value_columns
+                .iter()
+                .any(|&col| cell(row, col).is_ok_and(|v| v.trim().is_empty()))
         {
             skipped_rows += 1;
             continue;
         }
+        let sum = |columns: &[usize]| -> Result<f64, String> {
+            columns
+                .iter()
+                .map(|&col| cell(row, col).and_then(|raw| parse_number(raw, &options.decimal)))
+                .sum()
+        };
         let mut read = || -> Result<_, String> {
             let timestamp = if let Some(column) = options.time_part_column {
                 // Een datumcel uit een spreadsheet komt als datum met middernacht; de tijd staat ernaast.
@@ -712,15 +784,9 @@ pub fn normalize(
             };
             Ok((
                 parse_time(&timestamp, timezone, &options.date_order, &mut repeated)?,
-                parse_number(cell(row, options.production_column)?, &options.decimal)?,
-                options
-                    .consumption_column
-                    .map(|col| cell(row, col).and_then(|raw| parse_number(raw, &options.decimal)))
-                    .transpose()?,
-                options
-                    .export_column
-                    .map(|col| cell(row, col).and_then(|raw| parse_number(raw, &options.decimal)))
-                    .transpose()?,
+                sum(&production_sources)?,
+                consumption_sources.as_deref().map(sum).transpose()?,
+                export_sources.as_deref().map(sum).transpose()?,
             ))
         };
         readings.push(read().map_err(|e| format!("Gegevensrij {}: {e}", index + 1))?);
@@ -953,6 +1019,16 @@ fn summarize(
             .collect(),
         warnings,
         clipped_consumption_kwh: None,
+        grid_import_kwh: intervals
+            .iter()
+            .map(|i| i.measured_import_wh)
+            .sum::<Option<f64>>()
+            .map(|wh| wh / 1000.0),
+        grid_export_kwh: intervals
+            .iter()
+            .map(|i| i.measured_export_wh)
+            .sum::<Option<f64>>()
+            .map(|wh| wh / 1000.0),
     })
 }
 

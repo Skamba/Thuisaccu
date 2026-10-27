@@ -18,6 +18,31 @@
     const comma = cells.some(v => /^-?\d+,\d+$/.test(v)), dot = cells.some(v => /^-?\d+\.\d+$/.test(v));
     return comma && !dot ? "comma" : dot && !comma ? "dot" : current;
   }
+  // Een meetwaarde die de meter per tarief telt (T1 en T2, normaal en dal): de eerste kolom plus de kolom die erbij
+  // optelt. Een totaalkolom gaat voor, zodat niets dubbel telt; zonder tariefnaam alleen de eerste kolom.
+  function tariffColumns(headers, pattern, not = /$^/) {
+    const all = headers.flatMap((name, i) => pattern.test(name) && !not.test(name) ? [i] : []);
+    const total = all.find(i => /tota/i.test(headers[i]));
+    if (total != null) return [total];
+    const tariffs = all.filter(i => /\bt[12]\b|tarief|tariff|normaal|\bdal\b|\blaag\b|\bhoog\b|peak|\bhigh\b|\blow\b/i.test(headers[i]));
+    return tariffs.length >= 2 ? tariffs.slice(0, 2) : all.slice(0, 1);
+  }
+  // Meterstanden in plaats van energie per periode: in de voorbeeldrijen lopen alle gekozen kolommen alleen op, en
+  // minstens één staat ver boven de stappen (een teller op 12.345 kWh die per kwartier 0,1 kWh oploopt).
+  function looksCumulative(preview, columns, decimal) {
+    const series = columns.filter(c => c != null).map(c => preview.map(row => {
+      const raw = String(row[c] ?? "").trim();
+      return raw === "" ? NaN : Number(decimal === "comma" ? raw.replace(/\./g, "").replace(",", ".") : raw.replace(/,/g, ""));
+    }));
+    if (preview.length < 3 || !series.length ||
+      series.some(values => values.some((v, i) => !Number.isFinite(v) || (i > 0 && v < values[i - 1])))) return false;
+    return series.some(values => {
+      const step = (values.at(-1) - values[0]) / (values.length - 1);
+      return step > 0 && values[0] >= 100 * step;
+    });
+  }
+  const CUMULATIVE_NOTE = "De waarden in de eerste rijen lopen steeds verder op: dit lijken meterstanden. Daarom staat " +
+    "‘Soort waarden’ op ‘Cumulatieve meterstanden’. Zijn het toch waarden per meetperiode, kies dan ‘Per meetperiode’.";
   // ‘2025-01’ wordt ‘jan’; loopt de reeks over twee kalenderjaren, dan met het jaar erbij (‘jul 2025’).
   function monthLabel(label, months) {
     if (!/^\d{4}-\d{2}$/.test(label)) return label;
@@ -65,6 +90,9 @@
         ["Dekking", `${n(summary.coverage_hours, 0)} uur`], ["Ontbrekende perioden", n(summary.gaps, 0)]]),
       h("p", { class: "help" },
         `Van ${when(summary.from_unix_s)} tot ${when(summary.to_unix_s)}${fileZone ? ` · bestand gelezen in tijdzone ${fileZone}` : ""}`),
+      summary.grid_import_kwh != null ? h("p", {}, `Gemeten netafname: ${kwh(summary.grid_import_kwh)}. Teruglevering: ` +
+        `${kwh(summary.grid_export_kwh)}. Vergelijk dit met je jaarafrekening over dezelfde periode; een groot verschil wijst ` +
+        "meestal op een verkeerde kolom, eenheid of soort waarden.") : null,
       summary.interval_surplus_kwh != null ? h("p", {},
         `Opwek boven verbruik per meetperiode: ${kwh(summary.interval_surplus_kwh)}. Verbruik boven opwek: ${kwh(summary.interval_deficit_kwh)}. Dit zijn optellingen per meetperiode, geen accubesparing.`) : null,
       chart("bar",
@@ -195,18 +223,19 @@
       // Opties volgen ImportOptions in crates/server/src/solar_import.rs.
       const options = { profile: "generic", sheet: null, header_row: 0, delimiter: "auto", decimal: "dot",
         time_column: 0, time_part_column: null, production_column: 1, consumption_column: null,
-        consumption_source: "gross", export_column: null, unit: "kwh", mode: "interval", period: "hour",
+        consumption_extra_columns: [], consumption_source: "gross", export_column: null, export_extra_columns: [], unit: "kwh", mode: "interval", period: "hour",
         timezone: "Europe/Amsterdam", timestamp_position: "start", data_kind: "measured", date_order: "day_first",
         missing_rows: "reject" };
       // `clock`: een tijdstip dat door de klokwisseling niet bestaat, bij de stap waar je de tijdzone kiest.
+      // `cumulative`: de kolommen lijken meterstanden; dat staat er bij de keuze.
       const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null, noProduction: false,
-        clock: null };
+        clock: null, cumulative: false };
       // Optioneel meterbestand; opties volgen MeterOptions in solar_import.rs.
       const meter = {
-        use: false, file: null, inspected: null,
+        use: false, file: null, inspected: null, cumulative: false,
         options: {
           sheet: null, header_row: 0, delimiter: "auto", decimal: "dot", time_column: 0, time_part_column: null,
-          import_column: 1, export_column: 2, unit: "kwh", mode: "interval", period: "15min",
+          import_column: 1, import_extra_columns: [], export_column: 2, export_extra_columns: [], unit: "kwh", mode: "interval", period: "15min",
           timezone: "Europe/Amsterdam", timestamp_position: "start", date_order: "day_first", missing_rows: "reject"
         }
       };
@@ -215,7 +244,8 @@
         meter.use && [fileKey(meter.file), meter.options]]);
       const multipart = (withMeter = true) => {
         const body = new FormData();
-        body.append("file", state.file, state.name.trim() || state.file.name);
+        // De bestandsnaam bepaalt het formaat (de extensie); een eigen naam gaat apart mee, alleen bij bewaren.
+        body.append("file", state.file, state.file.name);
         body.append("options", JSON.stringify(options));
         if (withMeter && meter.use) {
           body.append("meter_file", meter.file, meter.file.name);
@@ -223,6 +253,8 @@
         }
         return body;
       };
+      // Zonder eigen naam heet een profiel naar het bestand, of naar beide bestanden (zoals de server dat doet).
+      const defaultName = () => meter.use && meter.file ? `${state.file.name} + ${meter.file.name}` : state.file.name;
       const bindTo = target => (control, key, cast = v => v) => {
         control.addEventListener("change", () => { target[key] = cast(control.value); state.previewed = null; });
         return control;
@@ -246,16 +278,17 @@
         other.addEventListener("change", () => changed(other.value.trim()));
         const fields = [field("Tijdzone", pick, help), otherField];
         if (state.clock?.which !== which) return fields;
-        const use = (zone, text) => button(text, () => {
+        const use = (zone, text, kind) => button(text, () => {
           state.clock = null; changed(zone); flow.rerender();
           toast(`Tijdzone: ${zoneLabel(zone)}. Klik op Volgende om opnieuw te controleren.`);
-        }, "secondary");
-        return [...fields, h("div", { class: "callout wide", role: "alert" },
-          h("p", {}, state.clock.message),
+        }, kind);
+        return [...fields, h("div", { class: "callout wide problem", role: "alert" },
+          h("h3", { tabindex: "-1" }, "Je bestand loopt niet mee met de zomertijd"),
+          h("p", { class: "small" }, state.clock.message),
           h("p", {}, "Zo’n tijdstip komt voor als je export het hele jaar dezelfde kloktijd gebruikt, zonder zomertijd. " +
             "Meestal is dat wintertijd; sommige apparaten gebruiken UTC. Piekt de opwek op een zonnige zomerdag rond " +
             "12:40, dan is het wintertijd; rond 11:40 is het UTC (bij panelen op het zuiden)."),
-          h("p", { class: "actions" }, use("Etc/GMT-1", "Lees als wintertijd (UTC+1)"), use("UTC", "Lees als UTC")))];
+          h("p", { class: "actions" }, use("Etc/GMT-1", "Lees als wintertijd (UTC+1)"), use("UTC", "Lees als UTC", "secondary")))];
       }
       const headerOptions = (headers, optional) => [
         ...(optional ? [["", "Niet beschikbaar"]] : []),
@@ -266,11 +299,16 @@
         optional) => bind(select(headerOptions(state.inspected.headers, optional), options[key] ?? ""), key, toColumn);
       const meterColumn = (key, optional) =>
         bindMeter(select(headerOptions(meter.inspected.headers, optional), meter.options[key] ?? ""), key, toColumn);
+      // Eén kolom die bij een meetwaarde optelt (tarief 2); de opties bewaren een lijst.
+      const toExtra = v => v === "" ? [] : [Number(v)];
+      const extraColumn = key => bind(select(headerOptions(state.inspected.headers, true), options[key][0] ?? ""), key, toExtra);
+      const meterExtra = key =>
+        bindMeter(select(headerOptions(meter.inspected.headers, true), meter.options[key][0] ?? ""), key, toExtra);
 
       function stepFile(body) {
         const profile = PROFILES[options.profile];
         const fileInput = h("input", { type: "file", accept: ".csv,.tsv,.txt,.xlsx,.xls,.ods,.json", required: !state.file,
-          onchange: event => { state.file = event.target.files[0] || null; state.name = state.file?.name || ""; state.inspected = null; state.previewed = null; } });
+          onchange: event => { state.file = event.target.files[0] || null; state.inspected = null; state.previewed = null; } });
         const drop = h("label", { class: "drop" },
           h("strong", {}, state.file ? `Gekozen: ${state.file.name}` : "Kies of sleep een bestand hierheen"),
           h("small", {}, "CSV, Excel of JSON; maximaal 10 MB en 250.000 rijen."), fileInput);
@@ -278,7 +316,7 @@
         drop.addEventListener("dragleave", () => drop.classList.remove("over"));
         drop.addEventListener("drop",
           event => { event.preventDefault(); drop.classList.remove("over"); const file = event.dataTransfer.files[0];
-            if (file) { state.file = file; state.name = file.name; state.inspected = null; flow.rerender(); } });
+            if (file) { state.file = file; state.inspected = null; flow.rerender(); } });
         const platform = select(Object.entries(PROFILES).map(([key, [label]]) => [key, label]), options.profile, { onchange: event => {
           options.profile = event.target.value; state.inspected = null;
           if (options.profile === "pvgis") Object.assign(options,
@@ -302,15 +340,18 @@
         const sent = signature(), result = await UI.api("/api/v1/solar/inspect", { method: "POST", body: multipart() });
         if (sent !== signature()) throw new Error("De instellingen zijn veranderd. Lees het bestand opnieuw.");
         state.inspected = result; state.sheets = result.sheets;
-        const guess = pattern => result.headers.findIndex(name => pattern.test(name));
+        const guess = (pattern, not = /$^/) => result.headers.findIndex(name => pattern.test(name) && !not.test(name));
+        // ‘Energie (Wh)’ of ‘Opbrengst’ is opwek, behalve als de naam ook verbruik of het net noemt.
         const time = guess(/timestamp|datum|date|tijd|time/i),
-          production = guess(/production|produced|opwek|generation|erzeugung|ertrag|^P$|^value$|^energy|yield/i);
+          production = guess(/production|produced|opwek|opbrengst|generation|erzeugung|ertrag|^P$|^value$|^energ|yield/i,
+            /verbruik|consum|afname|import|export|teruglever|levering|grid/i);
         const consumption = guess(/consumption|consumed|verbruik|verbrauch/i),
-          exported = guess(/teruglever|export|feed.?in|injectie|returned/i),
-          imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen/i);
+          exports = tariffColumns(result.headers, /teruglever|export|feed.?in|injectie|returned/i),
+          imports = tariffColumns(result.headers, /netafname|afname|import|delivered|from.?grid|bezogen/i, /teruglever|export|returned/i),
+          exported = exports[0] ?? -1, imported = imports[0] ?? -1;
         const separate = guess(/^(time|tijd|uhrzeit)(\s|$)/i);
         // Zonder herkenbare opwekkolom de eerste kolom die nergens anders voor dient; een P1-export heeft er geen.
-        const spare = result.headers.findIndex((_, i) => ![time, separate, consumption, exported, imported].includes(i));
+        const spare = result.headers.findIndex((_, i) => ![time, separate, consumption, ...exports, ...imports].includes(i));
         state.noProduction = production < 0;
         Object.assign(options,
           { time_column: Math.max(0, time),
@@ -318,10 +359,11 @@
             time_part_column: separate >= 0 && separate !== time ? separate : null });
         // P1-exports noemen afname en teruglevering apart; dan is de verbruikskolom geen bruto verbruik.
         if (exported >= 0 && exported !== production) Object.assign(options,
-          { consumption_source: "net_meter", export_column: exported,
-            consumption_column: consumption >= 0 ? consumption : imported >= 0 ? imported : null });
+          { consumption_source: "net_meter", export_column: exported, export_extra_columns: exports.slice(1),
+            consumption_column: consumption >= 0 ? consumption : imported >= 0 ? imported : null,
+            consumption_extra_columns: consumption < 0 ? imports.slice(1) : [] });
         else Object.assign(options,
-          { consumption_source: "gross", export_column: null,
+          { consumption_source: "gross", export_column: null, export_extra_columns: [], consumption_extra_columns: [],
             consumption_column: consumption >= 0 ? consumption : null });
         const unit = (result.headers[options.production_column] || "").match(/(?:^|[^a-z])(kwh|wh|kw|w)(?:[^a-z]|$)/i);
         if (["kwh", "wh", "kw", "w"].includes(result.detected_unit)) options.unit = result.detected_unit;
@@ -330,9 +372,11 @@
         if (PERIODS[result.detected_period]) Object.assign(options,
           { period: result.detected_period, mode: "interval" });
         else if (period) options.period = period;
-        options.decimal = guessDecimal(result.preview,
-          [options.production_column, options.consumption_column, options.export_column], options.decimal);
-        toast(`${n(result.row_count, 0)} rijen ingelezen. Controleer kolommen, eenheid, periode en tijdzone.`);
+        const values = [options.production_column, options.consumption_column, ...options.consumption_extra_columns,
+          options.export_column, ...options.export_extra_columns];
+        options.decimal = guessDecimal(result.preview, values, options.decimal);
+        state.cumulative = !result.detected_unit && looksCumulative(result.preview, values, options.decimal);
+        if (state.cumulative) options.mode = "cumulative";
       }
       function stepColumns(body) {
         const r = state.inspected, opts = (pairs, key) => bind(select(pairs, options[key]), key);
@@ -340,21 +384,35 @@
           ["net_meter", "Netafname uit de slimme meter (P1)"]],
           options.consumption_source),
           "consumption_source");
-        const exportField = field("Teruglevering naar het net (P1)", column("export_column", true));
-        exportField.hidden = options.consumption_source !== "net_meter";
-        source.addEventListener("change",
-          () => { exportField.hidden = source.value !== "net_meter";
-            if (source.value !== "net_meter") options.export_column = null; });
-        UI.append(body, [h("h2", {}, "Kolommen en eenheden"), state.noProduction ? h("p", { class: "callout", role: "note" },
+        // Alleen bij P1-data: de terugleverkolom en per meetwaarde een kolom voor tarief 2 die erbij optelt.
+        const p1Fields = [
+          field("Teruglevering naar het net (P1)", column("export_column", true)),
+          field("Netafname, tarief 2", extraColumn("consumption_extra_columns"), "Telt op bij de netafname, als je meter normaal en dal apart telt."),
+          field("Teruglevering, tarief 2", extraColumn("export_extra_columns"), "Telt op bij de teruglevering.")];
+        const showP1 = () => p1Fields.forEach(f => { f.hidden = options.consumption_source !== "net_meter"; });
+        showP1();
+        source.addEventListener("change", () => {
+          if (source.value !== "net_meter") Object.assign(options,
+            { export_column: null, consumption_extra_columns: [], export_extra_columns: [] });
+          showP1();
+        });
+        const noProduction = state.noProduction ? h("p", { class: "callout", role: "note" },
           "We vinden geen kolom met zonne-opwek. Alleen netafname en teruglevering van de slimme meter is niet genoeg: " +
           "zonder opwek is niet te zien hoeveel zonnestroom je direct zelf gebruikt. Importeer eerst de export van je " +
           "omvormer en voeg dit bestand in de volgende stap toe als meterbestand. Geen omvormerdata? Gebruik dan in de " +
-          "keuzehulp je jaartotalen.") : null, h("div", { class: "grid" },
+          "keuzehulp je jaartotalen.") : null;
+        // Kies je zelf een opwekkolom, dan is de melding dat er geen is niet meer van toepassing.
+        const production = column("production_column");
+        production.addEventListener("change", () => { state.noProduction = false; noProduction?.remove(); });
+        UI.append(body, [h("h2", {}, "Kolommen en eenheden"),
+          h("p", { class: "lead", role: "status" }, `${n(r.row_count, 0)} rijen ingelezen. Controleer kolommen, eenheid, ` +
+            "periode en tijdzone."), noProduction,
+          state.cumulative ? h("p", { class: "callout", role: "note" }, CUMULATIVE_NOTE) : null, h("div", { class: "grid" },
           field("Datum of tijdstip", column("time_column")),
             field("Aparte tijdkolom", column("time_part_column", true)),
-            field("Zonne-opwek", column("production_column")),
+            field("Zonne-opwek", production),
           field("Verbruik of netafname", column("consumption_column", true)),
-            field("Wat staat in die kolom?", source), exportField,
+            field("Wat staat in die kolom?", source), ...p1Fields,
           field("Eenheid",
             opts([["kwh", "kWh (energie)"], ["wh", "Wh (energie)"], ["kw", "kW (gemiddeld vermogen)"],
               ["w", "W (gemiddeld vermogen)"]],
@@ -398,14 +456,20 @@
           const result = await UI.api("/api/v1/solar/inspect", { method: "POST", body });
           const guess = (pattern, not = /$^/) => result.headers.findIndex(name => pattern.test(name) && !not.test(name));
           // ‘Levering’ is afname vanuit de leverancier gezien; ‘Teruglevering’ bevat hetzelfde woord.
-          const imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen|levering/i, /teruglever|export|returned/i);
-          const exported = guess(/teruglever|export|feed.?in|injectie|returned/i);
+          // Telt de meter per tarief, dan tellen beide kolommen op.
+          const imported = tariffColumns(result.headers, /netafname|afname|import|delivered|from.?grid|bezogen|levering/i,
+            /teruglever|export|returned/i);
+          const exported = tariffColumns(result.headers, /teruglever|export|feed.?in|injectie|returned/i);
           Object.assign(m, {
             time_column: Math.max(0, guess(/timestamp|datum|date|tijd|time/i)),
-            import_column: imported >= 0 ? imported : 1, export_column: exported >= 0 ? exported : 2
+            import_column: imported[0] ?? 1, import_extra_columns: imported.slice(1),
+            export_column: exported[0] ?? 2, export_extra_columns: exported.slice(1)
           });
-          m.decimal = guessDecimal(result.preview, [m.import_column, m.export_column], m.decimal);
+          const values = [m.import_column, ...m.import_extra_columns, m.export_column, ...m.export_extra_columns];
+          m.decimal = guessDecimal(result.preview, values, m.decimal);
           m.period = guessPeriod(result.preview, m.time_column, m.time_part_column) ?? m.period;
+          meter.cumulative = looksCumulative(result.preview, values, m.decimal);
+          if (meter.cumulative) m.mode = "cumulative";
           meter.inspected = result; flow.rerender();
         }), "secondary");
         body.append(field("Meterbestand", fileInput, meter.file ? `Gekozen: ${meter.file.name}` : "CSV, Excel of JSON; maximaal 10 MB."),
@@ -417,10 +481,13 @@
           h("p", { class: "actions" }, read));
         if (!meter.inspected) return;
         const opts = (pairs, key) => bindMeter(select(pairs, meter.options[key]), key);
-        body.append(h("div", { class: "grid" },
+        body.append(meter.cumulative ? h("p", { class: "callout", role: "note" }, CUMULATIVE_NOTE) : "", h("div", { class: "grid" },
           field("Datum of tijdstip", meterColumn("time_column")),
             field("Aparte tijdkolom", meterColumn("time_part_column", true)),
-          field("Netafname", meterColumn("import_column")), field("Teruglevering", meterColumn("export_column")),
+          field("Netafname", meterColumn("import_column")),
+            field("Netafname, tarief 2", meterExtra("import_extra_columns"), "Telt op bij de netafname."),
+          field("Teruglevering", meterColumn("export_column")),
+            field("Teruglevering, tarief 2", meterExtra("export_extra_columns"), "Telt op bij de teruglevering."),
           field("Eenheid",
             opts([["kwh", "kWh (energie)"], ["wh", "Wh (energie)"], ["kw", "kW (gemiddeld vermogen)"],
               ["w", "W (gemiddeld vermogen)"]],
@@ -435,8 +502,8 @@
           field("Datumnotatie",
             opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
           field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
-          h("p", { class: "help" }, "Dubbele tarieven (normaal en dal)? Tel ze vooraf op tot één kolom voor afname en één voor teruglevering. " +
-            "Cumulatieve P1-meterstanden kunnen direct; de eerste stand is dan alleen het beginpunt."),
+          h("p", { class: "help" }, "Telt je meter per tarief (normaal en dal, T1 en T2)? Kies dan bij ‘tarief 2’ de tweede kolom; " +
+            "die wordt per meetperiode opgeteld. Cumulatieve P1-meterstanden kunnen direct; de eerste stand is dan alleen het beginpunt."),
           h("h3", {}, "Eerste rijen"), table(meter.inspected.headers, meter.inspected.preview));
       }
       // Al na de kolommen een controle van het omvormerbestand, zodat een fout in tijd of getallen bij de
@@ -454,7 +521,11 @@
           state.clock = { which, message: error.message }; flow.rerender();
           // De melding staat bij het tijdzoneveld, met de knoppen om het op te lossen; een foutmelding onderin
           // zou die op een telefoon bedekken.
-          flow.element.querySelector(".wizard-body .callout[role=alert]")?.scrollIntoView({ block: "center" });
+          // Een eerdere melding onderin zou de knoppen bedekken.
+          document.getElementById("toasts")?.replaceChildren();
+          const callout = flow.element.querySelector(".wizard-body .callout[role=alert]");
+          callout?.scrollIntoView({ block: "center" });
+          callout?.querySelector("h3")?.focus({ preventScroll: true });
           throw Object.assign(new Error("Een tijdstip in het bestand past niet bij de tijdzone; zie de melding bij Tijdzone."),
             { shown: true });
         }
@@ -463,19 +534,28 @@
         // Zonder meter is dit al de volledige controle; anders volgt die na de meterstap.
         if (combined === meter.use) { state.summary = summary; state.previewed = sent; }
       }
+      // Totalen ver boven een huishouden zijn een leesfout; zo’n profiel wordt niet bewaard.
+      async function plausible() {
+        if (!Data.implausible(state.summary)) return;
+        flow.element.querySelector(".wizard-body .callout")?.scrollIntoView({ block: "center" });
+        throw new Error("Pas eerst bij Kolommen of Meter de soort waarden of de eenheid aan.");
+      }
       function stepCheck(body) {
         const problem = Data.unusableText(state.summary);
         UI.append(body, [h("h2", {}, "Controle"),
-          problem ? h("div", { class: "callout", role: "note" }, h("p", {}, problem)) : null,
+          problem ? h("div", { class: Data.implausible(state.summary) ? "callout problem" : "callout", role: "note" },
+            h("p", {}, problem)) : null,
           summaryView(state.summary, options.timezone)]);
       }
       function stepSave(body) {
-        const name = input({ value: state.name, required: true, maxlength: "240",
+        const name = input({ value: state.name || defaultName(), required: true, maxlength: "240",
           oninput: event => { state.name = event.target.value; } });
         const save = button("Bewaar energieprofiel", () => UI.busy(save, async () => {
           if (!UI.validate(body)) return;
           if (state.previewed !== signature()) throw new Error("De instellingen zijn veranderd; controleer het overzicht opnieuw.");
-          const result = await UI.api("/api/v1/solar/imports", { method: "POST", body: multipart() });
+          const form = multipart(), own = state.name.trim();
+          if (own && own !== defaultName()) form.append("name", own);
+          const result = await UI.api("/api/v1/solar/imports", { method: "POST", body: form });
           toast("Energieprofiel bewaard. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel opgeslagen.");
           location.hash = `#/energie/${result.id}`;
         }));
@@ -491,7 +571,7 @@
         async validate(index, body) {
           if (!UI.validate(body)) return false;
           // De volgende stap opent pas na een geslaagde controle door de server.
-          const work = { 0: inspect, 1: () => preview(false), 2: preview }[index];
+          const work = { 0: inspect, 1: () => preview(false), 2: preview, 3: plausible }[index];
           if (!work) return true;
           try { await work(); return true; } catch (error) { if (!error.shown) toast(error.message, true); return false; }
         }

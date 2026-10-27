@@ -330,6 +330,8 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             .collect(),
         warnings,
         clipped_consumption_kwh: None,
+        grid_import_kwh: None,
+        grid_export_kwh: None,
     };
     let solar_label = request
         .solar

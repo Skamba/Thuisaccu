@@ -63,7 +63,10 @@ pub fn app(catalog: Catalog) -> Router {
         .layer(DefaultBodyLimit::max(21 * 1024 * 1024));
     #[cfg(not(target_family = "wasm"))]
     let router = with_assets(router).layer(axum::middleware::from_fn(same_site));
-    router.fallback(not_found).with_state(catalog)
+    router
+        .method_not_allowed_fallback(method_not_allowed)
+        .fallback(not_found)
+        .with_state(catalog)
 }
 
 /// Alleen verzoeken van deze app zelf. Een andere website kan zijn domeinnaam naar 127.0.0.1 laten
@@ -246,6 +249,17 @@ async fn products(
 #[derive(Serialize)]
 struct ErrorResponse {
     error: &'static str,
+}
+
+/// Een bestaand adres met een andere methode; axum zet de `Allow`-header er zelf bij.
+async fn method_not_allowed() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        Json(serde_json::json!({
+            "error": "method_not_allowed",
+            "message": "Deze methode wordt op dit adres niet ondersteund.",
+        })),
+    )
 }
 
 async fn not_found() -> (StatusCode, Json<ErrorResponse>) {

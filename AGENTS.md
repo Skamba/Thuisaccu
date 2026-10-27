@@ -64,7 +64,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 ## Database en migraties
 
 - Migraties in `crates/storage/migrations/` staan met `include_str!` in `crates/storage/src/migrations.rs` en worden bij het openen toegepast. De boekhouding gebruikt de tabel `_sqlx_migrations` met SHA-384-controlegetallen, compatibel met databases van eerdere versies (SQLx). Een nieuwe migratie krijgt ook een regel in `MIGRATIONS`.
-- **Wijzig nooit een bestaande migratie**; bestaande databases hebben de checksum al vastgelegd. Voeg een nieuw bestand toe met het volgende volgnummer (`0004_….sql`).
+- **Wijzig nooit een bestaande migratie**; bestaande databases hebben de checksum al vastgelegd. Voeg een nieuw bestand toe met het volgende volgnummer (nu `0006_….sql`).
 - Het schema bewaakt ook zelf validatie (foreign keys, CHECK-constraints, metricgrenzen). Houd schema- en Rust-validatie in lijn en werk [docs/data-model.md](docs/data-model.md) bij.
 - Meervoudige inserts (dossiers, imports, runs) gebeuren transactioneel; bij één ongeldige claim wordt alles teruggerold.
 

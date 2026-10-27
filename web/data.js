@@ -268,8 +268,14 @@ window.Data = (() => {
   }
 
   // Geschiktheid van een bewaard profiel voor een berekening; uitsluitend op basis van importmetadata.
+  // Meer dan 100.000 kWh opwek of verbruik per jaar past niet bij een huishouden: meestal zijn meterstanden als
+  // energie per meetperiode gelezen, of Wh als kWh. Een controleregel van de app; korter dan een jaar telt het totaal.
+  const IMPLAUSIBLE_KWH_PER_YEAR = 100000;
+  const implausible = s => Math.max(s.production_kwh, s.consumption_kwh ?? 0) >
+    IMPLAUSIBLE_KWH_PER_YEAR * Math.max(1, s.coverage_hours / 8760);
   function suitability(item) {
     const s = item.summary, o = item.options;
+    if (implausible(s)) return { ok: false, reason: "Onwaarschijnlijk hoge totalen" };
     if (s.consumption_kwh == null) return { ok: false, reason: "Verbruik ontbreekt" };
     if (s.gaps !== 0) return { ok: false, reason: "Gaten in de meetreeks" };
     if (![8760, 8784].some(hours => Math.abs(s.coverage_hours - hours) < 0.001)) return { ok: false,
@@ -292,6 +298,10 @@ window.Data = (() => {
   function unusableText(s) {
     const tail = " Je kunt het bewaren om te bekijken, maar niet doorrekenen. Exporteer een volledig jaar, of gebruik in de " +
       "keuzehulp je jaartotalen van de jaarafrekening.";
+    if (implausible(s)) return `Dit bestand komt uit op ${n(Math.max(s.production_kwh, s.consumption_kwh ?? 0), 0)} kWh. Dat ` +
+      "is ver boven wat een huishouden opwekt of gebruikt. Meestal bevat het bestand meterstanden (een teller die steeds " +
+      "oploopt) terwijl ‘Per meetperiode’ is gekozen, of zijn Wh als kWh gelezen. Kies bij Kolommen of Meter ‘Cumulatieve " +
+      "meterstanden’ of de juiste eenheid.";
     if (s.consumption_kwh == null) return "Dit bestand heeft alleen opwek, geen verbruik van het huis. Voor een berekening is ook " +
       "het bruto verbruik nodig; voeg bij het importeren een meterbestand toe (netafname en teruglevering)." + tail;
     if (s.gaps !== 0) return `Er ontbreken ${n(s.gaps, 0)} meetperioden. Voor een berekening is één aaneengesloten jaar nodig.` + tail;
@@ -754,6 +764,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();

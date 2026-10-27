@@ -250,6 +250,11 @@ async fn health_rejects_unsupported_methods() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(response.headers()["allow"], "GET,HEAD");
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1024).await.unwrap()).unwrap();
+    assert_eq!(body["error"], "method_not_allowed");
+    assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
 }
 
 #[tokio::test]

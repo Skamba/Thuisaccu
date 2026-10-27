@@ -402,6 +402,52 @@ async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
 }
 
 #[tokio::test]
+async fn an_own_profile_name_is_saved_apart_from_the_file_name_and_is_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let form = |name: Option<&str>| {
+        let mut body = String::from(
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"options\"\r\n\r\n{\"timezone\":\"UTC\"}\r\n--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"export.csv\"\r\nContent-Type: text/csv\r\n\r\ntime,production\n2026-06-01T10:00:00Z,1\n2026-06-01T11:00:00Z,2\n\r\n",
+        );
+        if let Some(name) = name {
+            body += &format!(
+                "--test-boundary\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n{name}\r\n"
+            );
+        }
+        body += "--test-boundary--\r\n";
+        Request::post("/api/v1/solar/imports")
+            .header(
+                "content-type",
+                "multipart/form-data; boundary=test-boundary",
+            )
+            .body(Body::from(body))
+            .unwrap()
+    };
+    for refused in ["   ", &"x".repeat(241)] {
+        let response = app.clone().oneshot(form(Some(refused))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    assert!(catalog.list_solar().await.unwrap().is_empty());
+
+    let plain = app.clone().oneshot(form(None)).await.unwrap();
+    assert_eq!(plain.status(), StatusCode::CREATED);
+    let named = app.oneshot(form(Some(" Ons huis 2026 "))).await.unwrap();
+    assert_eq!(named.status(), StatusCode::CREATED);
+    let imports = catalog.list_solar().await.unwrap();
+    let by_name = |name: &str| imports.iter().find(|i| i.filename == name).unwrap();
+    assert!(
+        by_name("export.csv")
+            .options
+            .get("source_filename")
+            .is_none()
+    );
+    assert_eq!(
+        by_name("Ons huis 2026").options["source_filename"],
+        "export.csv"
+    );
+}
+
+#[tokio::test]
 async fn an_inverter_and_a_meter_file_of_six_mb_each_fit_and_a_too_large_form_gets_a_dutch_message()
 {
     let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());

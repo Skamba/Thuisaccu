@@ -355,4 +355,11 @@ test("importcontrole: een niet door te rekenen profiel krijgt uitleg in gewone t
   assert.match(Data.unusableText({ ...full, gaps: 3 }), /Er ontbreken 3 meetperioden/);
   assert.match(Data.unusableText({ ...full, coverage_hours: 4 }), /dekt 4 uur\..+bewaren om te bekijken, maar niet doorrekenen/);
   assert.match(Data.unusableText({ ...full, coverage_hours: 24 * 200 }), /dekt 200 dagen/);
+  // Meterstanden als waarden per periode gelezen: ver boven een huishouden, ook bij een kort bestand.
+  const counted = { ...full, production_kwh: 3000, consumption_kwh: 273062961 };
+  assert.match(Data.unusableText(counted), /273\.062\.961 kWh.+Cumulatieve meterstanden/);
+  assert.equal(Data.suitability({ summary: counted, options: {} }).ok, false);
+  assert.ok(Data.implausible({ ...full, production_kwh: 150000, coverage_hours: 72 }));
+  // Twee jaar van 90.000 kWh is per jaar nog binnen de grens.
+  assert.ok(!Data.implausible({ ...full, production_kwh: 0, consumption_kwh: 180000, coverage_hours: 2 * 8760 }));
 });

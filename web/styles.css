@@ -110,6 +110,10 @@ input.range { padding: 0; border: 0; background: none; accent-color: var(--accen
 /* Blokken */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--pad); margin-bottom: 1rem; }
 .callout { background: var(--soft); border-left: 4px solid var(--accent); padding: .8rem 1rem; border-radius: 0 var(--radius) var(--radius) 0; }
+/* Een melding die je eerst moet oplossen, zoals een tijdstip dat niet past bij de tijdzone. */
+.callout.problem { background: var(--warn-bg); border-left-color: var(--danger); }
+.callout.problem h3 { margin: 0 0 .4rem; }
+.callout p.small { font-size: .88rem; }
 .banner { background: var(--warn-bg); color: var(--warn-ink); font-weight: 700; padding: .8rem 1rem; border-radius: var(--radius); }
 .warning { color: var(--warn-ink); background: var(--warn-bg); padding: .4rem .6rem; border-radius: .4rem; }
 /* Een meldingsgebied dat altijd bestaat (aria-live), maar leeg niets inneemt. */

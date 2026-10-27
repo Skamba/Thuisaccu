@@ -578,21 +578,21 @@ fn simulate_all(
         let (pv_factor, load_factor) = factors(p, year);
         let load_year = sizing::LoadYear::new(
             profiles.year(p.start_year + year - 1),
+            pv_factor,
             load_factor,
             p.load_variation,
         );
-        baseline.push(sizing::simulate_load_year(
-            &load_year, None, 0, pv_factor, 0.0,
-        ));
+        let none = sizing::simulate_load_year(&load_year, None, 0, 0.0);
         for (((battery, ages), track), state) in batteries.iter().zip(&mut tracks).zip(&mut states)
         {
-            let energy = sizing::simulate_load_year(
-                &load_year,
-                Some(battery),
-                ages[(year - 1) as usize],
-                pv_factor,
-                *state,
-            );
+            let age = ages[(year - 1) as usize];
+            // Een uitgediende accu zonder restlading werkt als geen accu: hetzelfde jaar, zonder
+            // het opnieuw door te rekenen.
+            let energy = if age >= battery.operating_life_years && *state == 0.0 {
+                none.clone()
+            } else {
+                sizing::simulate_load_year(&load_year, Some(battery), age, *state)
+            };
             // Restlading van de oude accu levert geen opbrengst in de nieuwe accu op.
             *state = if ages.get(year as usize) == Some(&0) {
                 0.0
@@ -601,6 +601,7 @@ fn simulate_all(
             };
             track.push(energy);
         }
+        baseline.push(none);
     }
     (baseline, tracks)
 }

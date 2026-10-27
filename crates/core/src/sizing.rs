@@ -105,27 +105,55 @@ struct Split {
     dischargeable: f64,
 }
 
-fn split(
-    production: f64,
-    steady: f64,
-    variable: f64,
-    shape: &[f64],
-    charge_limit: f64,
-    discharge_limit: f64,
-) -> Split {
-    let share = 1.0 / shape.len() as f64;
-    let mut s = Split::default();
-    for q in shape {
-        let part = steady + variable * q;
-        let surplus = (production - part).max(0.0);
-        let deficit = (part - production).max(0.0);
-        s.direct += production.min(part) * share;
-        s.surplus += surplus * share;
-        s.deficit += deficit * share;
-        s.chargeable += surplus.min(charge_limit) * share;
-        s.dischargeable += deficit.min(discharge_limit) * share;
+/// Overschot en tekort per deel van een meetperiode. Hangt niet af van de accu, dus alle opties en
+/// stresstests in hetzelfde jaar delen het; per accu volgen alleen nog de vermogensgrenzen.
+struct Bands {
+    count: usize,
+    surplus: [f64; BANDS],
+    deficit: [f64; BANDS],
+    direct: f64,
+    surplus_total: f64,
+    deficit_total: f64,
+}
+
+impl Bands {
+    fn new(production: f64, steady: f64, variable: f64, shape: &[f64]) -> Self {
+        let share = 1.0 / shape.len() as f64;
+        let mut b = Self {
+            count: shape.len(),
+            surplus: [0.0; BANDS],
+            deficit: [0.0; BANDS],
+            direct: 0.0,
+            surplus_total: 0.0,
+            deficit_total: 0.0,
+        };
+        for (k, q) in shape.iter().enumerate() {
+            let part = steady + variable * q;
+            let surplus = (production - part).max(0.0);
+            let deficit = (part - production).max(0.0);
+            b.direct += production.min(part) * share;
+            b.surplus_total += surplus * share;
+            b.deficit_total += deficit * share;
+            b.surplus[k] = surplus;
+            b.deficit[k] = deficit;
+        }
+        b
     }
-    s
+
+    fn split(&self, charge_limit: f64, discharge_limit: f64) -> Split {
+        let share = 1.0 / self.count as f64;
+        let mut s = Split {
+            direct: self.direct,
+            surplus: self.surplus_total,
+            deficit: self.deficit_total,
+            ..Default::default()
+        };
+        for k in 0..self.count {
+            s.chargeable += self.surplus[k].min(charge_limit) * share;
+            s.dischargeable += self.deficit[k].min(discharge_limit) * share;
+        }
+        s
+    }
 }
 
 /// Overschot en tekort volgens de meter in plaats van de geschatte verdeling. Zonder accu is
@@ -173,43 +201,53 @@ pub fn simulate_year(
     initial_storage: f64,
     variation: LoadVariation,
 ) -> EnergyYear {
-    let year = LoadYear::new(profile, load_factor, variation);
-    simulate_load_year(&year, battery, age, pv_factor, initial_storage)
+    let year = LoadYear::new(profile, pv_factor, load_factor, variation);
+    simulate_load_year(&year, battery, age, initial_storage)
 }
 
-/// Verbruik van een projectiejaar met de verdeling per meetperiode alvast berekend. De verdeling
-/// hangt alleen af van profiel, verbruiksfactor en variatie, dus alle opties en stresstests in
-/// hetzelfde jaar delen haar.
+/// Opwek en verbruik van een projectiejaar met overschot en tekort per deel van elke meetperiode
+/// alvast berekend. Die hangen alleen af van profiel, PV- en verbruiksfactor en variatie, dus alle
+/// opties en stresstests in hetzelfde jaar delen ze.
 pub struct LoadYear<'a> {
     profile: &'a [EnergyInterval],
+    pv_factor: f64,
     load_factor: f64,
-    /// Leeg bij `Uniform`; anders per meetperiode een verdeling (of `None`: gelijkmatig).
-    shapes: Vec<Option<[f64; BANDS]>>,
+    bands: Vec<Bands>,
 }
 
 impl<'a> LoadYear<'a> {
-    pub fn new(profile: &'a [EnergyInterval], load_factor: f64, variation: LoadVariation) -> Self {
-        let shapes = if variation == LoadVariation::Uniform {
-            Vec::new()
-        } else {
-            profile
-                .iter()
-                .map(|i| {
-                    let load = i.consumption_kwh * load_factor;
-                    let steady =
-                        (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
-                    spread(
-                        variation,
-                        i.duration_hours,
-                        (load - steady) / i.duration_hours,
-                    )
-                })
-                .collect()
-        };
+    pub fn new(
+        profile: &'a [EnergyInterval],
+        pv_factor: f64,
+        load_factor: f64,
+        variation: LoadVariation,
+    ) -> Self {
+        let bands = profile
+            .iter()
+            .map(|i| {
+                let production = i.production_kwh * pv_factor;
+                let load = i.consumption_kwh * load_factor;
+                let steady =
+                    (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
+                // Zonder verdeling (gelijkmatig) is de hele periode één deel.
+                let shape = spread(
+                    variation,
+                    i.duration_hours,
+                    (load - steady) / i.duration_hours,
+                );
+                Bands::new(
+                    production,
+                    steady,
+                    load - steady,
+                    shape.as_ref().map_or(&[1.0][..], |s| &s[..]),
+                )
+            })
+            .collect();
         Self {
             profile,
+            pv_factor,
             load_factor,
-            shapes,
+            bands,
         }
     }
 }
@@ -219,10 +257,9 @@ pub fn simulate_load_year(
     year: &LoadYear,
     battery: Option<&Battery>,
     age: u32,
-    pv_factor: f64,
     initial_storage: f64,
 ) -> EnergyYear {
-    let (profile, load_factor) = (year.profile, year.load_factor);
+    let (profile, pv_factor, load_factor) = (year.profile, year.pv_factor, year.load_factor);
     let active = battery.filter(|b| age < b.operating_life_years);
     let capacity = active.map_or(0.0, |b| {
         b.usable_capacity_kwh * (1.0 - b.annual_capacity_loss_pct / 100.0).powi(age as i32)
@@ -238,22 +275,13 @@ pub fn simulate_load_year(
     for (index, i) in profile.iter().enumerate() {
         let production = i.production_kwh * pv_factor;
         let load = i.consumption_kwh * load_factor;
-        let steady = (i.steady_consumption_kwh.unwrap_or(0.0) * load_factor).clamp(0.0, load);
-        let shape = year.shapes.get(index).copied().flatten();
         let (charge_limit, discharge_limit) = active.map_or((0.0, 0.0), |b| {
             (
                 b.charge_power_kw * i.duration_hours,
                 b.discharge_power_kw * i.duration_hours,
             )
         });
-        let s = split(
-            production,
-            steady,
-            load - steady,
-            shape.as_ref().map_or(&[1.0][..], |s| &s[..]),
-            charge_limit,
-            discharge_limit,
-        );
+        let s = year.bands[index].split(charge_limit, discharge_limit);
         let s = match (i.measured_import_kwh, i.measured_export_kwh) {
             (Some(imported), Some(exported)) => measured(
                 s,
@@ -331,7 +359,7 @@ pub fn capacity_curve(
     capacities_kwh: &[f64],
     variation: LoadVariation,
 ) -> Vec<CapacityPoint> {
-    let load_year = LoadYear::new(profile, 1.0, variation);
+    let load_year = LoadYear::new(profile, 1.0, 1.0, variation);
     capacities_kwh
         .iter()
         .map(|&capacity| {
@@ -345,8 +373,8 @@ pub fn capacity_curve(
                 operating_life_years: 2,
             };
             let battery = (capacity > 0.0).then_some(&ideal);
-            let warm_up = simulate_load_year(&load_year, battery, 0, 1.0, 0.0);
-            let year = simulate_load_year(&load_year, battery, 1, 1.0, warm_up.end_storage_kwh);
+            let warm_up = simulate_load_year(&load_year, battery, 0, 0.0);
+            let year = simulate_load_year(&load_year, battery, 1, warm_up.end_storage_kwh);
             CapacityPoint {
                 usable_capacity_kwh: capacity,
                 battery_to_load_kwh: year.battery_to_load_kwh,
