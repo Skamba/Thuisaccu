@@ -617,12 +617,21 @@ window.Results = (() => {
     };
     for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
       { class: "callout" }, warning));
+    // Een rangnummer (de volgorde van je doel) koppelt kaart, grafiek en tabel zonder op kleur te leunen.
+    const numbered = (c, label) => c.key === "no_battery" ? label : `${all.indexOf(c)}. ${label}`;
+    // De grafiek vergelijkt alle getoonde opties in één beeld; daarom vóór de kaarten, die per optie de details geven.
+    out.append(chart("range", {
+      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP}${shown(all).length > TOP + 1 ? ", je offerte" : ""} en geen accu)` : ""}`, unit: "€",
+      rows: shown(all).map(c => ({ label: numbered(c, c.short), color: c.color,
+        values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
+      series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
+    }));
     // Per accu dezelfde vier getallen en woorden als het korte antwoord; de rest ingeklapt. Geen accu is
     // de vergelijkingsbasis en krijgt geen kaart vol nullen.
     const card = c => c.key === "no_battery" ? [h("h3", {}, c.name),
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
       h("p", { class: "help" }, "De vergelijkingsbasis: geen investering en geen besparing. Elke accu is met deze situatie vergeleken; " +
-        "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, c.name),
+        "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, numbered(c, c.name)),
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
       c.quoted ? badge("Je offerte", "success") : null,
       c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
@@ -642,19 +651,13 @@ window.Results = (() => {
       kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(undefined, c.name)) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s` +
-      (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; onder de grafiek staan ze allemaal."));
-    out.append(chart("range", {
-      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP}${shown(all).length > TOP + 1 ? ", je offerte" : ""} en geen accu)` : ""}`, unit: "€",
-      rows: shown(all).map(c => ({ label: c.short, color: c.color,
-        values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
-      series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
-    }));
+      (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; hieronder staan ze allemaal."));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
       out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Aansluiting", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
-        c.key === result.recommended_key || c.quoted ? h("span", {}, c.name,
-          c.key === result.recommended_key ? [" ", badge("Aanbevolen", "accent")] : null, c.quoted ? [" ", badge("Je offerte", "success")] : null) : c.name,
+        c.key === result.recommended_key || c.quoted ? h("span", {}, numbered(c, c.name),
+          c.key === result.recommended_key ? [" ", badge("Aanbevolen", "accent")] : null, c.quoted ? [" ", badge("Je offerte", "success")] : null) : numbered(c, c.name),
         c.key === "no_battery" ? "—" : connectionText(c, kinds), eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
         eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
@@ -678,7 +681,8 @@ window.Results = (() => {
       ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: top.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
     const marks = [];
     for (const c of top.slice(1)) {
-      if (c.payback_years != null) marks.push({ at: String(p.start_year + Math.max(c.payback_years, 1) - 1), symbol: "✓",
+      // Terugverdiend na jaar 0 (geen startinvestering) hoort bij het startpunt, niet bij het eerste jaar.
+      if (c.payback_years != null) marks.push({ at: c.payback_years === 0 ? "Start" : String(p.start_year + c.payback_years - 1), symbol: "✓",
         label: `${c.short}: blijvend terugverdiend na jaar ${c.payback_years}` });
       for (const cost of request.candidates.find(v => v.key === c.key)?.costs || []) {
         if (cost.status === "priced" && ["battery_replacement",
@@ -686,8 +690,15 @@ window.Results = (() => {
           symbol: "↧", label: `${c.short}: vervanging einde jaar ${cost.year}` });
       }
     }
-    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.short, color: c.color })), marks }),
-      h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging."));
+    out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.key === "no_battery" ? c.short : `${all.indexOf(c)}. ${c.short}`, color: c.color })), marks }),
+      h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging." +
+        // De terugverdientijd telt de hele investering op tijdstip nul (`payback_flows` in de rekenkern); de lijn volgt
+        // wat je betaalt, met een lening dus alleen het eigen deel en daarna de aflossingen.
+        (top.some(c => request.candidates.find(v => v.key === c.key)?.financing?.loan_amount_eur > 0)
+          ? " Met een lening volgt de lijn wat je werkelijk betaalt: bij de start alleen je eigen deel, daarna de rente en " +
+            "aflossingen. De terugverdientijd telt de hele investering bij de start, zoals zonder lening; het ✓ kan daardoor " +
+            "later staan dan het jaar waarin de lijn boven nul komt."
+          : "")));
     // Een jaartabel van geen accu is overal nul: begin bij de offerte, anders bij het advies of de beste accu.
     const first = quoted(run)?.key ?? (run.result.recommended_key !== "no_battery" ? run.result.recommended_key
       : all.find(c => c.key !== "no_battery")?.key ?? run.result.recommended_key);
@@ -1036,7 +1047,9 @@ window.Results = (() => {
         return element;
       };
       const grid = table(["Vraag aan de installateur", "Gerekend met", "Offerte zegt", "Klopt"],
-        list.map(r => [h("span", {}, h("strong", {}, r.question), h("br"), h("small", {}, r.hint)),
+        // Op het scherm staat de toelichting ingeklapt, zodat de vragen onder elkaar te overzien zijn; papier toont alles.
+        list.map(r => [h("span", {}, h("strong", {}, r.question), paper ? h("small", {}, r.hint)
+          : h("details", { class: "quote-hint" }, h("summary", {}, "Waarom vragen?"), h("small", {}, r.hint))),
           h("span", {}, r.value, " ", r.origin), cell(c, r, paper), tick(r)]),
         { className: "quote-check", stack: true });
       if (paper) return grid;
@@ -1353,13 +1366,13 @@ window.Results = (() => {
       "opnieuw berekend, dus controleer de aannames en vertrouw alleen links van iemand die je kent." +
       (run.shared_of > result.candidates.length ? ` De link bevat ${result.candidates.length} van de ${run.shared_of} ` +
         "doorgerekende accu’s: de aanbevolen accu en de beste opties." : "")));
-    // De tarieven bepalen de uitkomst het meest; ze staan hier, niet alleen onder Invoer en aannames.
+    // De tarieven bepalen de uitkomst het meest; ze staan hier, niet alleen onder het tabblad Invoer.
     const t = p.tariff, price = v => `${money(v, { decimals: Math.abs(v * 100 - Math.round(v * 100)) < 1e-9 ? 2 : 4 })} per kWh`;
     const meta = [h("p", { class: "help" },
       `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${UI.dateTime(run.created_at_unix_s)}`),
       h("p", { class: "help rates" }, `Gerekend met stroom ${price(t.import_eur_per_kwh)} · terugleververgoeding ` +
         `${price(t.export_eur_per_kwh)} · terugleverkosten ${t.export_fee_bands?.length ? "volgens staffel" : price(t.export_fee_eur_per_kwh)} · ` +
-        `prijsverandering ${pct(t.annual_price_change_pct)} per jaar · discontovoet ${pct(p.discount_pct)}. Alles staat onder Invoer en aannames.`)];
+        `prijsverandering ${pct(t.annual_price_change_pct)} per jaar · discontovoet ${pct(p.discount_pct)}. Alles staat onder het tabblad Invoer.`)];
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
     if (outdated(run)) view.append(await outdatedNote(run, shared));
@@ -1379,7 +1392,7 @@ window.Results = (() => {
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
-      { label: "Invoer en aannames", content: inputs(run, categories, all) }
+      { label: "Invoer", content: inputs(run, categories, all) }
     ], 0, "Onderdelen van de uitkomst");
     // Op een telefoon staan de tabbladen een paar schermen lager; deze knop springt erheen (alleen op een smal scherm).
     const jump = h("button", { type: "button", class: "ghost jump-tabs", onclick: () => {
@@ -1400,5 +1413,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent };
 })();

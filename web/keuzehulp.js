@@ -75,6 +75,8 @@
     h("ul", {}, sources.map(([title, url]) => h("li", {}, external(title, url)))), h("p", { class: "help" }, `Geraadpleegd op ${Data.RESEARCHED_ON}.`));
 
   function stepEnergy(body) {
+    // Een meetbestand bevat de opwek van bestaande panelen; panelen die nog komen, rekenen we met jaartotalen.
+    if (answers.panels === "planned" && answers.data !== "totals") { answers.data = "totals"; save(); }
     body.append(h("h2", {}, "Je energie"),
       h("p", { class: "lead" },
         "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
@@ -89,13 +91,14 @@
         "doorgaan om dat met je eigen cijfers te zien. Komen er panelen? Kies dan ‘Nog niet, ze komen eraan’.")] : []),
       ...(answers.panels === "planned" ? [h("p", { class: "callout", role: "note" },
         "We rekenen alsof de panelen er al een heel jaar liggen. Wat je nu van het net haalt, is dan je totale verbruik; " +
-        "teruglevering heb je nog niet. Bewaar daarna gerust ook een berekening zonder panelen en zet ze naast elkaar.")] : []),
-      pick("data", "Welke gegevens heb je?", [
+        "teruglevering heb je nog niet. Een meetbestand gebruiken we hier niet: daar staat de opwek van de nieuwe panelen " +
+        "nog niet in. Bewaar daarna gerust ook een berekening zonder panelen en zet ze naast elkaar.")] : []),
+      ...(answers.panels === "planned" ? [] : [pick("data", "Welke gegevens heb je?", [
         ["totals", "Jaartotalen",
           "Van je jaarafrekening en de app van je omvormer. We maken er een geschat uurprofiel van."],
         ["file", "Een bestand met uur- of kwartierwaarden",
           "Een export van je omvormer of slimme meter (P1). Nauwkeuriger."]
-      ]));
+      ])]));
     if (answers.data === "file") {
       const target = h("div");
       body.append(target,

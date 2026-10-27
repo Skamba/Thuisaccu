@@ -343,7 +343,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     return { parts, total: value(rows[end][2]) };
   });
   assert.ok(costCheck.total > 0 && Math.abs(costCheck.parts - costCheck.total) < 0.02, JSON.stringify(costCheck));
-  for (const tab of ["Kasstromen", "Energie", "Gevoeligheid", "Invoer en aannames"]) {
+  for (const tab of ["Kasstromen", "Energie", "Gevoeligheid", "Invoer"]) {
     await page.click(`[role=tab]:has-text("${tab}")`);
   }
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
@@ -460,8 +460,11 @@ test("keuzehulp met panelen die nog komen: afname is het hele verbruik, opwek ui
   await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("3500");
   await next(page);
   assert.match(await page.textContent(".wizard-body"), /Komen de panelen nog\? Kies dan .*‘Nog niet, ze komen eraan’/);
+  // Een meetbestand bevat de nieuwe panelen nog niet; dan rekenen we met jaartotalen.
+  await page.click("label:has-text('Een bestand met uur- of kwartierwaarden')");
   await page.click("label:has-text('Nog niet, ze komen eraan')");
   assert.match(await page.textContent(".wizard-body .callout"), /alsof de panelen er al een heel jaar liggen/);
+  assert.equal(await page.locator("text=Welke gegevens heb je?").count(), 0);
   assert.equal(await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").count(), 0);
   await page.getByLabel("Verwachte opwek per jaar (kWh)").fill("");
   await page.getByLabel("Of: vermogen van je panelen (kWp)").fill("");

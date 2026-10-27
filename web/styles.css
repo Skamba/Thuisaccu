@@ -185,7 +185,11 @@ td strong, th strong { display: block; }
   /* Tabbladen in drie kolommen, dus drie regels ongeacht het lettertype: alle tabbladen, ook de waarschuwingen,
      blijven in beeld. Een lange naam loopt binnen zijn vak door op een tweede regel. */
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .1rem; }
-  .tabs [role="tab"] { padding: .35rem .3rem; font-size: .875rem; text-align: center; overflow-wrap: anywhere; hyphens: auto; }
+  /* Iets kleiner, zodat ‘Waarschuwingen’ en ‘Kostenopbouw’ heel blijven; alleen een te lang woord breekt nog. Het
+     gekozen tabblad krijgt een vlak, zodat ook over drie regels duidelijk is welk tabblad open staat. */
+  /* `[role=tablist]` gaat voor de algemene regel verderop, die anders de opvulling weer breed maakt. */
+  .tabs[role="tablist"] [role="tab"] { padding: .35rem .2rem; font-size: .8rem; text-align: center; overflow-wrap: anywhere; line-height: 1.25; }
+  .tabs[role="tablist"] [aria-selected="true"] { background: var(--accent-soft); }
   /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
   .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
   /* Vergelijkingen: de rijnaam op een eigen regel over de volle breedte en de waarden eronder naast elkaar, zodat twee
@@ -209,6 +213,13 @@ td strong, th strong { display: block; }
   table.stack td > .badge { justify-self: start; align-self: start; }
   table.stack td[data-label=""] { display: block; }
   table.stack td[data-label=""]::before { content: none; }
+  /* Offertecheck: de vraag als kop over de volle breedte, ‘Gerekend met’ en ‘Offerte zegt’ naast elkaar met het label
+     erboven, en ‘Klopt’ zonder het kolomlabel (het vakje heet al zo). */
+  table.quote-check.stack tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: .5rem; }
+  table.quote-check.stack td { display: block; padding: .3rem .75rem; }
+  table.quote-check.stack td::before { display: block; margin-bottom: .15rem; }
+  table.quote-check.stack td:first-child, table.quote-check.stack td:last-child { grid-column: 1 / -1; }
+  table.quote-check.stack td:first-child::before, table.quote-check.stack td:last-child::before { content: none; }
 }
 .claim + .claim { border-top: 1px dashed var(--line); margin-top: .4rem; padding-top: .4rem; }
 .source summary { font-weight: 500; font-size: .8rem; }
@@ -219,7 +230,7 @@ button[aria-busy="true"] { cursor: progress; }
 button[aria-busy="true"]::after { content: " …"; }
 input[type="file"]::file-selector-button { font: inherit; font-weight: 600; margin-right: .75rem; padding: .45rem .9rem; border: 1px solid var(--accent);
   border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--accent); cursor: pointer; }
-.tabs [role="tab"] { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: .55rem .65rem; }
+.tabs [role="tab"] { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: .55rem .5rem; }
 .tabs [role="tab"].has-warnings { color: var(--warn-ink); }
 .tabs [aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1.25rem; border-bottom: 1px solid var(--line); }
@@ -300,6 +311,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .chart-text { fill: currentColor; font-size: 12px; }
 /* De smalle tekening wordt op een telefoon nog iets verkleind; zo blijft de tekst ongeveer 11 px. */
 .chart svg.narrow .chart-text { font-size: 14px; }
+/* Boven de balken loopt de nullijn door de tekst; een rand in de achtergrondkleur houdt de letters leesbaar. */
+.chart svg.narrow .chart-text { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .chart-grid { stroke: var(--line); }
 .chart-axis { stroke: currentColor; stroke-width: 1.3; }
 .chart-mark { stroke: var(--muted); stroke-dasharray: 3 4; }

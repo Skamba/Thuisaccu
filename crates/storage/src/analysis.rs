@@ -102,6 +102,8 @@ fn profile_warnings<'de, D: serde::Deserializer<'de>>(
         .collect())
 }
 
+/// Wat de lijst nodig heeft om dezelfde accu te bespreken als de uitkomst (`rank` in `web/results.js`): budget en de
+/// score van elk doel. Oudere runs missen sommige velden; die blijven dan weg.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SummaryCandidate {
     #[serde(default)]
@@ -110,6 +112,20 @@ pub struct SummaryCandidate {
     pub name: String,
     #[serde(default)]
     pub npv_eur: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub within_budget: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roi_pct: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payback_years: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_year: Option<SummaryFirstYear>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryFirstYear {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_consumption_pct: Option<f64>,
 }
 
 pub struct NewAnalysis<'a> {

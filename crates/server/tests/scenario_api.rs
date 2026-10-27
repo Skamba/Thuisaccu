@@ -956,6 +956,13 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
     let candidate = &newest["result"]["candidates"][0];
     assert_eq!(candidate["key"], "test");
     assert!(candidate["npv_eur"].is_number());
+    // Met budget en de score van elk doel rangschikt de lijst de opties zoals de uitkomst.
+    assert!(candidate["within_budget"].is_boolean());
+    assert!(candidate["first_year"]["self_consumption_pct"].is_number());
+    assert_eq!(
+        candidate["first_year"].as_object().map(|o| o.len()),
+        Some(1)
+    );
     assert!(candidate.get("years").is_none());
     assert_eq!(
         newest["result"]["model_version"],

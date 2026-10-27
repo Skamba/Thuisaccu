@@ -478,6 +478,58 @@ test("rank() volgt de regels van de rekenkern: verlies telt niet mee, bij gelijk
   assert.equal(Results.judged(none).key, Results.rank(none)[0].key);
 });
 
+test("De berekeningenlijst bespreekt met de samenvatting dezelfde accu als de uitkomst, bij elk doel", () => {
+  const option = (key, npv_eur, extra = {}) => ({ key, name: `FICTIEF ${key}`, npv_eur, roi_pct: null, payback_years: null,
+    within_budget: true, first_year: { self_consumption_pct: 50, grid_import_kwh: 1 }, years: [{}], ...extra });
+  const candidates = [option("klein", -237, { roi_pct: -10, payback_years: 14, first_year: { self_consumption_pct: 60 } }),
+    option("groot", 5284, { within_budget: false, roi_pct: 40, payback_years: 6, first_year: { self_consumption_pct: 80 } }),
+    option("middel", -50, { roi_pct: -2, first_year: { self_consumption_pct: 70 } })];
+  // Dezelfde velden als `SummaryCandidate` in crates/storage/src/analysis.rs.
+  const summary = c => ({ key: c.key, name: c.name, npv_eur: c.npv_eur, within_budget: c.within_budget, roi_pct: c.roi_pct,
+    payback_years: c.payback_years, first_year: { self_consumption_pct: c.first_year.self_consumption_pct } });
+  for (const objective of ["net_present_value", "roi", "payback", "self_consumption"]) {
+    const run = { input: { request: { parameters: { objective } } }, result: { recommended_key: "no_battery", candidates } };
+    const listed = { ...run, result: { ...run.result, candidates: candidates.map(summary) } };
+    assert.equal(Results.judged(listed).key, Results.judged(run).key, objective);
+    assert.notEqual(Results.judged(run).key, "groot", objective);
+  }
+});
+
+test("whatIf(): eerst de grensprijs van de besproken accu, dan de beste accu boven het budget", () => {
+  const run = (candidates, budget_eur = 1600) => ({ input: { request: { parameters: { objective: "net_present_value", budget_eur },
+    candidates: candidates.map(c => ({ key: c.key, costs: [] })) } }, result: { recommended_key: "no_battery", candidates } });
+  const klein = { key: "klein", name: "FICTIEF klein", npv_eur: -237, within_budget: true, initial_investment_eur: 1500,
+    break_even_investment_eur: 1263 };
+  const groot = { key: "groot", name: "FICTIEF groot", npv_eur: 5284, within_budget: false, initial_investment_eur: 2000,
+    break_even_investment_eur: 7284 };
+  const lines = Array.from(Results.whatIf(run([klein, groot]), klein));
+  assert.equal(lines.length, 2);
+  // 1.263 naar beneden op € 10: 1.260.
+  assert.match(lines[0], /^FICTIEF klein minder kost dan ongeveer €\s1\.260 \(nu €\s1\.500\)\.$/);
+  assert.match(lines[1], /^je budget ruimer is: FICTIEF groot kost €\s2\.000, meer dan je budget van €\s1\.600, en levert netto €\s5\.284 op/);
+  // Is de besproken accu zelf de lonende boven het budget, dan alleen de budgetregel.
+  const own = Array.from(Results.whatIf(run([groot]), groot));
+  assert.deepEqual(own.length, 1);
+  assert.match(own[0], /^je budget ruimer is: FICTIEF groot/);
+  // Zelfs gratis niet lonend: geen prijs om naar te streven.
+  const free = Array.from(Results.whatIf(run([{ ...klein, break_even_investment_eur: -40 }]), { ...klein, break_even_investment_eur: -40 }));
+  assert.match(free[0], /zelfs gratis niet lonend/);
+});
+
+test("perCent(): 1 cent meer netto terugleverwaarde, met de hand na te rekenen; zonder teruglevering niets", () => {
+  const run = { input: { request: { parameters: { start_year: 2027, discount_pct: 0,
+    tariff: { annual_price_change_pct: 0, export_fee_bands: [] } } } } };
+  const option = exports => ({ years: [{ year: 1, baseline_grid_export_kwh: exports[0], energy: { grid_export_kwh: exports[1] } }] });
+  // Zonder accu 1.000 kWh teruggeleverd, met accu 400: de rekening is € 10 lager, de accu € 6 minder waard.
+  const cent = Results.perCent(run, option([1000, 400]));
+  assert.ok(Math.abs(cent.bill - 10) < 1e-9 && Math.abs(cent.npv + 6) < 1e-9, JSON.stringify(cent));
+  assert.equal(Results.perCent(run, option([0, 0])), null);
+  // Met een staffel is de waarde per kWh niet één getal.
+  const banded = { input: { request: { parameters: { ...run.input.request.parameters,
+    tariff: { annual_price_change_pct: 0, export_fee_bands: [{}] } } } } };
+  assert.equal(Results.perCent(banded, option([1000, 400])), null);
+});
+
 test("trimmed(): een kopie van een grote berekening houdt de beste vijf en de beste vaste accu", () => {
   context.Scenario = { MAX_OPTIONS: 12 };
   const candidates = Array.from({ length: 14 }, (_, i) => ({ key: `p${i}`, name: `FICTIEF ${i}`, npv_eur: 1000 - i,
