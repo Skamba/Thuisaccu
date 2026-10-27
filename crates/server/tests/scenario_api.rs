@@ -250,6 +250,61 @@ async fn the_connection_is_an_optional_label_that_is_stored_and_does_not_change_
 }
 
 #[tokio::test]
+async fn bill_totals_are_an_optional_comparison_that_is_stored_and_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut request = input(id);
+    let plain = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    let plain = body(plain).await;
+    request["bill_totals"] = json!({"grid_import_kwh": 2400.0, "grid_export_kwh": 1900.0});
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    // Rekent niet mee.
+    assert_eq!(
+        body(response).await["result"]["candidates"][0]["npv_eur"],
+        plain["result"]["candidates"][0]["npv_eur"]
+    );
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(
+        saved[0].input["request"]["bill_totals"]["grid_export_kwh"],
+        1900.0
+    );
+    for totals in [
+        json!({"grid_import_kwh": -1.0, "grid_export_kwh": 1900.0}),
+        json!({"grid_import_kwh": 2400.0, "grid_export_kwh": 2_000_000.0}),
+    ] {
+        request["bill_totals"] = totals;
+        assert_eq!(
+            app.clone()
+                .oneshot(post("/api/v1/analysis/runs", request.clone()))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    request["bill_totals"] =
+        json!({"grid_import_kwh": 2400.0, "grid_export_kwh": 1900.0, "year": 2025});
+    assert_eq!(
+        app.oneshot(post("/api/v1/analysis/runs", request))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(catalog.list_analyses().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn the_sizing_range_is_an_optional_explanation_that_is_stored_and_strictly_validated() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());
@@ -952,17 +1007,8 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
     assert!(parameters["tariff"]["import_eur_per_kwh"].is_number());
     assert!(parameters["tariff"].get("export_eur_per_kwh").is_none());
     assert_eq!(newest["input"]["profile"]["options"]["is_demo"], true);
-    // Van de invoer per optie alleen de accupost, om een totaalprijs uit een offerte te herkennen.
-    let options = newest["input"]["request"]["candidates"].as_array().unwrap();
-    assert_eq!(options[0]["key"], "test");
-    assert!(
-        options[0]["costs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|l| l["category"] == "battery")
-    );
-    assert!(options[0].get("battery").is_none());
+    // Van de invoer per optie alleen een totaalprijs uit een offerte; deze run heeft er geen.
+    assert!(newest["input"]["request"].get("candidates").is_none());
     let candidate = &newest["result"]["candidates"][0];
     assert_eq!(candidate["key"], "test");
     assert!(candidate["npv_eur"].is_number());

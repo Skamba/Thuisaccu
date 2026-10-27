@@ -44,9 +44,13 @@ pub struct SummaryRequest {
     /// Bij een herberekening uit de offertecheck: welke optie de offerte is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_basis: Option<SummaryQuote>,
-    /// Per optie alleen de accupost, zodat de lijst een totaalprijs uit een offerte in Zelf doorrekenen herkent
-    /// zoals de uitkomst (`quoteKey` in `web/results.js`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Alleen de opties met een totaalprijs uit een offerte op de accupost, met alleen die post, zodat de lijst
+    /// je offerte uit Zelf doorrekenen herkent zoals de uitkomst (`quoteKey` in `web/results.js`).
+    #[serde(
+        default,
+        deserialize_with = "quoted_candidates",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub candidates: Vec<SummaryRequestCandidate>,
 }
 
@@ -54,7 +58,7 @@ pub struct SummaryRequest {
 pub struct SummaryRequestCandidate {
     #[serde(default)]
     pub key: String,
-    #[serde(default, deserialize_with = "battery_line")]
+    #[serde(default, deserialize_with = "quote_total_line")]
     pub costs: Vec<SummaryCost>,
 }
 
@@ -70,15 +74,28 @@ pub struct SummaryCost {
     pub source: String,
 }
 
-/// Houdt van de kostenposten alleen de accupost.
-fn battery_line<'de, D: serde::Deserializer<'de>>(
+/// De bron op de accupost als die de totaalprijs uit een offerte draagt (`QUOTE_TOTAL` in `web/data.js`).
+pub const QUOTE_TOTAL_SOURCE: &str = "Offerte (totaalprijs inclusief btw)";
+
+/// Houdt van de kostenposten alleen een geprijsde accupost met een totaalprijs uit een offerte.
+fn quote_total_line<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Vec<SummaryCost>, D::Error> {
     let all = Vec::<SummaryCost>::deserialize(deserializer)?;
     Ok(all
         .into_iter()
-        .filter(|l| l.category == "battery")
+        .filter(|l| {
+            l.category == "battery" && l.status == "priced" && l.source == QUOTE_TOTAL_SOURCE
+        })
         .collect())
+}
+
+/// Houdt alleen de opties die zo'n accupost hebben; de rest zou de lijst per run kilobytes groter maken.
+fn quoted_candidates<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<SummaryRequestCandidate>, D::Error> {
+    let all = Vec::<SummaryRequestCandidate>::deserialize(deserializer)?;
+    Ok(all.into_iter().filter(|c| !c.costs.is_empty()).collect())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

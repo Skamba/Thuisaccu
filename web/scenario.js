@@ -120,7 +120,7 @@ window.Scenario = (() => {
     // De prijsopbouw hoort bij de totaalprijs; zonder die wijziging vervalt hij. Is het bedrag op de accupost daarna
     // aangepast, dan telt de opbouw vanaf dat bedrag; is het geen totaalprijs uit de offerte meer, dan vervalt hij.
     const { price, ...rest } = state.basis || {};
-    const total = option?.costs.find(l => l.category === "battery" && l.status === "priced" && l.source === Data.QUOTE_TOTAL);
+    const total = Data.quoteTotalLine(option);
     const current = price && total && changes.some(c => c.field === "upfront_eur") ? { ...price, total_eur: total.amount_minor / 100 } : null;
     return changes.length ? { ...rest, changes, ...(current ? { price: current } : {}) } : null;
   }

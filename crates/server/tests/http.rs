@@ -393,6 +393,14 @@ fn interface_constants_match_the_core_and_the_api() {
         .map(|c| format!("\"{c}\""))
         .join(", ");
     assert!(data.contains(&format!("const CREDITS = [{credits}];")));
+    assert!(data.contains(&format!(
+        "const QUOTE_TOTAL = \"{}\";",
+        thuisaccu_storage::analysis::QUOTE_TOTAL_SOURCE
+    )));
+    assert!(data.contains(&format!(
+        "const LAST_NETTING_YEAR = {};",
+        thuisaccu_core::finance::LAST_NETTING_YEAR
+    )));
     let start = data.find("const QUOTE_FIELDS = [").unwrap();
     let block = &data[start..start + data[start..].find("]];").unwrap()];
     // De volgorde is die van de interface; alleen de verzameling moet gelijk zijn.

@@ -57,7 +57,7 @@ window.Results = (() => {
   }
   // Het bedrag op de accupost als dat een totaalprijs uit een offerte is (‘Eén totaalprijs uit een offerte invullen’), of null.
   const quoteTotalOf = candidate => {
-    const line = candidate?.costs?.find(l => l.category === "battery" && l.status === "priced" && l.source === Data.QUOTE_TOTAL);
+    const line = Data.quoteTotalLine(candidate);
     return line ? line.amount_minor / 100 : null;
   };
   // De optie uit je offerte: herberekend vanuit de offertecheck, of in Zelf doorrekenen de enige optie met een totaalprijs
@@ -235,6 +235,37 @@ window.Results = (() => {
       "Dat verschil valt binnen de onzekerheid; kies tussen die twee op prijs, veiligheid, aansluiting of garantie.");
   }
 
+  // Twee of meer opties met een totaalprijs uit een offerte (Zelf doorrekenen), van gunstig naar ongunstig: per offerte
+  // de optie, de offerteprijs, het ontlaadvermogen en hoeveel de startkosten moeten zakken om lonend te worden (null als
+  // hij al lonend is of zelfs gratis niet). Null bij minder dan twee of bij een herberekende offerte.
+  function quotesCompared(run) {
+    const request = run.input.request;
+    if (request.quote_basis) return null;
+    const inputs = new Map((request.candidates || []).map(c => [c.key, c]));
+    const quotes = run.result.candidates.filter(c => quoteTotalOf(inputs.get(c.key)) != null)
+      .sort((a, b) => b.npv_eur - a.npv_eur).map(c => {
+        const limit = c.break_even_investment_eur;
+        return { option: c, total: quoteTotalOf(inputs.get(c.key)), kw: inputs.get(c.key).battery?.discharge_power_kw,
+          cut: finite(limit) && limit > 0 && c.initial_investment_eur > limit ? c.initial_investment_eur - limit : null };
+      });
+    return quotes.length < 2 ? null : quotes;
+  }
+
+  function quotesSide(run) {
+    const quotes = quotesCompared(run);
+    if (!quotes) return null;
+    const [first, second] = quotes.map(q => q.option), gap = first.npv_eur - second.npv_eur;
+    const cuts = quotes.filter(q => q.cut != null).map(q => `${q.option.name} wordt lonend als de startkosten ${eur0(q.cut)} lager uitvallen`);
+    return h("div", { class: "verdict-for" }, h("p", {}, h("strong", {}, `Je ${quotes.length} offertes naast elkaar. `),
+      Math.round(gap) >= 1 ? `${first.name} komt ${eur0(gap)} beter uit dan ${second.name}, in geld van nu.`
+        : `${first.name} en ${second.name} komen ongeveer gelijk uit.`,
+      cuts.length ? ` ${cuts.join("; ")}.` : "",
+      " Vergelijk ook garantie, vermogen en wat er bij de installatie inbegrepen is."),
+      table(["Offerte", "Offerteprijs", "Ontladen", "Lonend tot", "Netto voordeel"], quotes.map(q => [q.option.name,
+        eur0(q.total), finite(q.kw) ? `${n1(q.kw)} kW` : null, breakEven(q.option.break_even_investment_eur), eur0(q.option.npv_eur)]),
+      { caption: "Je offertes, binnen deze aannames", stack: true, numeric: [1, 2, 3, 4] }));
+  }
+
   // Bij een herberekende offerte: of de prijs uit de offerte binnen de grens valt.
   function quoteLead(run, option) {
     const limit = option.break_even_investment_eur, start = option.initial_investment_eur, basis = run.input.request.quote_basis;
@@ -318,6 +349,7 @@ window.Results = (() => {
         : result.recommendation.includes(option.name) ? "Voor deze accu:" : `Voor ${option.name}:`),
         stats(figures(run, option, true)), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
           : h("p", { class: "verdict-for" }, other)) : closeCall(run, option)] : null,
+      quote ? null : quotesSide(run),
       rec && !quote && sizeNote(run, option) ? h("p", { class: "verdict-for" }, sizeNote(run, option)) : null,
       stress ? h("p", { class: "verdict-warn" }, h("strong", {}, "Let op de garantie. "), stress) : null,
       isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
@@ -402,15 +434,28 @@ window.Results = (() => {
     const gap = salderenGap(run);
     if (gap) {
       const saving = best?.years?.[0]?.energy_saving_eur;
-      list.append(h("li", {}, `Zonder salderen betaal je in jaar 1 zonder accu ongeveer ${eur0(gap.eur)} meer dan met salderen: ` +
-        `${kwh(gap.kwh)} teruglevering die salderen tegen ${money(gap.import)} per kWh wegstreepte, levert nu ${money(gap.export)} ` +
-        "per kWh op; terugleverkosten betaal je in beide gevallen (ter vergelijking; de berekening rekent zonder salderen). " +
-        (finite(saving) && saving > 0 ? (saving >= gap.eur ? `${best.name} bespaart in jaar 1 ${eur0(saving)}, meer dan dat verschil. `
-          : `${best.name} haalt daarvan ${eur0(saving)} terug (${n(saving / gap.eur * 100, 0)}%). `) : "") +
-        "Verbruik verschuiven naar zonuren of een ander contract dicht ook een deel van het verschil."));
+      // Eén korte zin met de kern; de som eronder, zodat de zin niet de hele lijst overneemt.
+      const back = finite(saving) && saving > 0 ? Math.min(saving, gap.eur) : null;
+      list.append(h("li", {}, `Het einde van salderen kost je in jaar 1 zonder accu ongeveer ${eur0(gap.eur)}` +
+        (back == null ? "." : saving >= gap.eur ? `; de accu hierboven bespaart in jaar 1 ${eur0(saving)}, meer dan dat.`
+          : `; de accu hierboven haalt daarvan ${eur0(saving)} terug (${n(saving / gap.eur * 100, 0)}%).`),
+        h("dl", { class: "sum-lines" },
+          h("dt", {}, "Wegvallend voordeel"), h("dd", {}, `${kwh(gap.kwh)} teruglevering × (${money(gap.import)} − ` +
+            `${money(gap.export)}) per kWh = ${eur0(gap.eur)} per jaar`),
+          back == null ? null : [h("dt", {}, "De accu haalt terug"), h("dd", {}, `${eur0(saving)} per jaar`)],
+          back == null || saving >= gap.eur ? null : [h("dt", {}, "Blijft over"), h("dd", {}, `${eur0(gap.eur - saving)} per jaar`)]),
+        h("small", {}, "Met salderen streepte die teruglevering netafname weg tegen het leveringstarief; nu levert hij de " +
+          "terugleververgoeding op. Terugleverkosten betaal je in beide gevallen. Alleen ter vergelijking: de berekening rekent " +
+          "zonder salderen. Verbruik op zonuren of een ander contract verkleint wat overblijft.")));
     }
-    if (isEstimated(run)) list.append(h("li", {},
-      "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
+    if (isEstimated(run)) {
+      const off = billGap(run);
+      list.append(h("li", {},
+        "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger.",
+        off ? h("small", {}, `Volgens je jaarafrekening leverde je ${kwh(off.bill)} terug; het geschatte profiel gaat zonder accu uit van ` +
+          `${kwh(off.model)}. ` + (off.more ? "Je levert dus meer terug dan het standaardprofiel: de besparing met een accu kan hoger uitvallen dan berekend."
+            : "Je gebruikt overdag dus meer zelf dan het standaardprofiel: er blijft minder over om op te slaan, dus de besparing valt waarschijnlijk lager uit dan berekend.")) : null));
+    }
     const variant = p.export_variant, variantKey = result.export_variant_recommended_key;
     // Zonder aanbeveling staat de terugleveringsvariant in ‘Dat verandert als’.
     if (rec && variant && variantKey != null) {
@@ -452,7 +497,7 @@ window.Results = (() => {
     // terugleverwaarde op, zonder aanschaf of laadverlies. Alleen met zonnestroom over en zonder staffel (dan is de
     // waarde per kWh niet één getal).
     const shift = tariff => tariff.import_eur_per_kwh - (tariff.export_eur_per_kwh - tariff.export_fee_eur_per_kwh);
-    if (best?.years?.[0] && base.grid_export_kwh > 0 && p.start_year >= 2027 && !p.tariff.export_fee_bands?.length) {
+    if (best?.years?.[0] && base.grid_export_kwh > 0 && p.start_year > Data.LAST_NETTING_YEAR && !p.tariff.export_fee_bands?.length) {
       const delivered = best.years[0].energy.battery_to_load_kwh;
       change.append(h("li", {}, `Ook zonder accu kun je besparen. Elke kWh die je naar zonuren verschuift (wasmachine, vaatwasser, ` +
         `de auto overdag laden) levert ${money(shift(p.tariff), { decimals: 2 })} op: de stroomprijs min wat teruglevering netto ` +
@@ -492,7 +537,7 @@ window.Results = (() => {
     const lines = (r, second) => h("ul", { class: "receipt" }, h("li", {}, r.line), h("li", {}, second.text),
       h("li", {}, `= ${eur0(r.gain + second.value)} per jaar`));
     const sums = h("ul");
-    const receipts = first && p.start_year >= 2027 && !tariff.export_fee_bands?.length;
+    const receipts = first && p.start_year > Data.LAST_NETTING_YEAR && !tariff.export_fee_bands?.length;
     if (receipts) {
       const r = receipt(base.grid_import_kwh - first.energy.grid_import_kwh, base.grid_export_kwh - first.energy.grid_export_kwh, 1);
       const now = r.exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh), v = p.export_variant;
@@ -581,9 +626,19 @@ window.Results = (() => {
   // vergelijking, voor runs die in 2027 of later beginnen.
   function salderenGap(run) {
     const p = run.input.request.parameters, t = p.tariff, base = run.result.baseline_first_year;
-    if (p.start_year < 2027 || !finite(base?.grid_import_kwh) || !(base.grid_export_kwh > 0)) return null;
+    if (p.start_year <= Data.LAST_NETTING_YEAR || !finite(base?.grid_import_kwh) || !(base.grid_export_kwh > 0)) return null;
     const kwhNetted = Math.min(base.grid_import_kwh, base.grid_export_kwh), eur = kwhNetted * (t.import_eur_per_kwh - t.export_eur_per_kwh);
     return eur >= 1 ? { kwh: kwhNetted, eur, import: t.import_eur_per_kwh, export: t.export_eur_per_kwh } : null;
+  }
+
+  // Wijkt de teruglevering van het geschatte profiel (jaar 1 zonder accu) minstens 10% van de opwek af van die op de
+  // jaarafrekening (`bill_totals`, alleen bij een profiel uit jaartotalen)? Dan { bill, model, more } met `more` als je
+  // volgens de afrekening meer terugleverde. Dezelfde grens als de keuzehulp vóór het berekenen (`profileCheck`).
+  function billGap(run) {
+    const bill = run.input.request.bill_totals, base = run.result.baseline_first_year;
+    if (!bill || !(base?.production_kwh > 0) || !finite(base.grid_export_kwh)) return null;
+    const diff = bill.grid_export_kwh - base.grid_export_kwh;
+    return Math.abs(diff) / base.production_kwh >= 0.1 ? { bill: bill.grid_export_kwh, model: base.grid_export_kwh, more: diff > 0 } : null;
   }
 
   // Wat 1 cent per kWh meer netto terugleverwaarde (vergoeding min kosten) doet: de rekening zonder accu in jaar 1 en
@@ -591,7 +646,7 @@ window.Results = (() => {
   // uit de bewaarde teruglevering per jaar zonder opnieuw te rekenen. Runs van vóór 26 oktober 2026 missen die.
   function perCent(run, c) {
     const p = run.input.request.parameters, t = p.tariff;
-    if (!c?.years?.length || p.start_year < 2027 || t.export_fee_bands?.length || !c.years.every(y => finite(y.baseline_grid_export_kwh))
+    if (!c?.years?.length || p.start_year <= Data.LAST_NETTING_YEAR || t.export_fee_bands?.length || !c.years.every(y => finite(y.baseline_grid_export_kwh))
       || c.years.every(y => y.baseline_grid_export_kwh === 0)) return null;
     const weight = y => (1 + t.annual_price_change_pct / 100) ** (y.year - 1) / (1 + p.discount_pct / 100) ** y.year;
     return { bill: c.years[0].baseline_grid_export_kwh * 0.01,
@@ -680,10 +735,14 @@ window.Results = (() => {
         warranty(run, c) ? [`Stopt na de garantie (${warranty(run, c).operating_life_years} jaar): lonend tot`,
           breakEven(warranty(run, c).result.break_even_investment_eur) ?? "—"] : null
       ].filter(Boolean)))];
+    // Zijn alle getoonde accu’s stekkerbatterijen, dan staat de knop naar het advies één keer boven de kaarten.
+    const batteries = shown(all).filter(c => c.key !== "no_battery"),
+      allPlug = batteries.length > 1 && batteries.every(c => kinds.get(c.key) === "plug");
+    if (allPlug) out.append(h("p", { class: "help" }, "Alle accu’s hieronder zijn stekkerbatterijen voor een gewoon stopcontact. ", toAdvice()));
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
       card(c),
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
-      kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(undefined, c.name)) : null))));
+      !allPlug && kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(undefined, c.name)) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s` +
       (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; hieronder staan ze allemaal."));
@@ -1052,6 +1111,9 @@ window.Results = (() => {
       const lines = input.costs.filter(l => l.timing === "upfront" && l.status === "priced" &&
         !CREDITS.includes(l.category) && !["battery", "contingency"].includes(l.category));
       const contingency = input.costs.find(l => l.category === "contingency" && l.status === "priced");
+      // Gaf je in Zelf doorrekenen al een vaste prijs op (reserve vervallen volgens de offerte), dan staat dat hier ook.
+      const fixed = input.costs.some(l => l.category === "contingency" && l.status === "not_applicable" && l.source === "Offerte");
+      if (fixed && terms.price == null) terms.price = "fixed";
       const kind = UI.select([["", "Weet ik niet"], ["fixed", "Vaste prijs"], ["survey", "Onder voorbehoud van schouw"]], terms.price ?? "",
         { onchange: event => { terms.price = event.target.value; remember(); } });
       return h("div", { class: "price-terms" },
@@ -1067,7 +1129,7 @@ window.Results = (() => {
           })) : null,
         UI.field("Vaste prijs of onder voorbehoud van schouw?", kind, contingency
           ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}); ` +
-            "weet je het niet, dan blijft die reserve staan." : null));
+            "weet je het niet, dan blijft die reserve staan." : fixed ? "Ingevuld als vaste prijs: er staat geen reserve voor meerwerk in de berekening." : null));
     };
     // Op het scherm onthoudt elke ‘Klopt’ zich en telt mee; op papier is het een leeg vakje om af te vinken.
     const sheet = (c, paper = false) => {
@@ -1243,12 +1305,17 @@ window.Results = (() => {
   const installedKeys = run => Object.values(bestInstalled(run)).map(c => c?.key);
   // Om de link kort te houden gaan alleen de opties mee die de uitkomst bepalen: de aanbevolen accu, de beste
   // vijf op het gekozen doel, de beste op netto contante waarde en in de terugleveringsvariant, en de beste vaste accu.
+  // De opties die het oordeel en de uitleg noemen: de aanbevolen, die met het hoogste netto voordeel, die in de
+  // terugleveringsvariant, de beste met een installateur, je offerte en de beste vijf op het doel. Een link en een
+  // ingekorte kopie houden er dezelfde van over, zodat ze hetzelfde oordeel geven.
+  function decisiveKeys(run) {
+    const result = run.result, best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    return new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, ...installedKeys(run),
+      quoteKey(run.input.request), ...rank(run).slice(0, TOP).map(c => c.key)].filter(Boolean));
+  }
   function shareable(run) {
     const input = run.input, request = input.request, result = run.result, source = input.profile?.options || {};
-    const byScore = rank(run);
-    const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
-    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, ...installedKeys(run),
-      ...byScore.slice(0, TOP).map(c => c.key)]);
+    const keep = decisiveKeys(run);
     const candidates = result.candidates.filter(c => keep.has(c.key));
     // Alleen wat de weergave nodig heeft; importinstellingen kunnen ook de naam van een meterbestand bevatten.
     // De auto uit het geschatte profiel (jaartotaal en laadmoment, ook in de profielnaam) houdt de offertevraag over laden.
@@ -1422,7 +1489,7 @@ window.Results = (() => {
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
     const parts = tabs([
       { label: "Overzicht", content: overview(run, all, kinds) },
-      { label: `Waarschuwingen (${warnings.length})`, class: warnings.length ? "has-warnings" : undefined,
+      { label: ["Waarschuwingen", h("span", { class: "tab-count" }, ` (${warnings.length})`)], class: warnings.length ? "has-warnings" : undefined,
         content: h("ul", { class: "warnings print-keep" }, warnings) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
@@ -1436,17 +1503,14 @@ window.Results = (() => {
     view.append(verdict(run, kinds), jump, ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), parts);
   }
 
-  // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de beste vijf op het doel, de beste
-  // in de terugleveringsvariant, de beste vaste accu, de optie uit een offerte en `extra`; de rest blijft in de
-  // oorspronkelijke berekening.
+  // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de opties die de uitkomst noemt
+  // (`decisiveKeys`) en `extra`; de rest blijft in de oorspronkelijke berekening.
   function trimmed(run, request, extra = []) {
     if (request.candidates.length <= Scenario.MAX_OPTIONS) return request;
-    const top = rank(run).slice(0, 5).map(c => c.key);
-    const keep = new Set([...top, run.result.export_variant_recommended_key, ...installedKeys(run),
-      request.quote_basis?.candidate_key, ...extra].filter(Boolean));
+    const keep = new Set([...decisiveKeys(run), ...extra]);
     return { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) };
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap };
 })();

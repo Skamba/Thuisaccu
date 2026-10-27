@@ -208,6 +208,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.waitForSelector("text=Je woning");
   // Na Volgende staat de focus op de kop van de nieuwe stap.
   assert.equal(await page.evaluate(() => document.activeElement.textContent), "Je woning");
+  // Zonder stekker vervalt het stekkeradvies zonder dat er ‘null’ in de stap belandt.
+  await page.click("text=Laten installeren");
+  assert.deepEqual(await strayText(page), []);
   await page.click("text=Zelf, met de stekker");
   await next(page);
   // Alleen het leveringstarief invullen geeft een waarschuwing; de indicatie (met energiebelasting) niet.
@@ -293,7 +296,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(await page.textContent(".rates"), /^Gerekend met stroom €\s[\d,]+ per kWh · terugleververgoeding €\s[\d,]+ per kWh/);
   assert.match(summary, /Wat betekenen deze woorden\?.*Zelfvoorziening/s);
   // Wat het einde van salderen kost, en hoeveel de besproken accu daarvan terugwint.
-  assert.match(summary, /Zonder salderen betaal je in jaar 1 zonder accu ongeveer €\s[\d.]+ meer dan met salderen: [\d.]+ kWh teruglevering/);
+  assert.match(summary, /Het einde van salderen kost je in jaar 1 zonder accu ongeveer €\s[\d.]+.*Wegvallend voordeel[\d.]+ kWh teruglevering × \(€\s[\d,]+ − €\s[\d,]+\) per kWh = €\s[\d.]+ per jaar/s);
   // De garantiestresstest is één waarschuwing met een tabel per accu, niet een zin per accu.
   const warningTexts = await page.locator(".warnings > li").allTextContents();
   assert.equal(warningTexts.filter(w => w.startsWith("Garantiestresstest bij")).length, stressed.length === 1 ? 1 : 0);
@@ -330,6 +333,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Elke kaart noemt aansluiting, bruikbare capaciteit en vermogen; de grafiek gebruikt korte namen met dezelfde gegevens.
   assert.match(await page.locator("article.option").nth(1).textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);
   assert.match(await page.locator("figure.chart").first().textContent(), /Stekker 0,8 kW · .+? · [\d,]+ kWh/);
+  // Alleen stekkerbatterijen: de knop naar het advies staat één keer boven de kaarten, niet op elke kaart.
+  assert.equal(await page.locator(".option-grid button:has-text('lees waarom')").count(), 0);
+  assert.match(await page.locator("p.help:has-text('Alle accu’s hieronder zijn stekkerbatterijen')").textContent(), /lees waarom/);
   await page.locator("button:has-text('Milieu Centraal raadt stekkerbatterijen af: lees waarom')").first().click();
   assert.equal(await page.evaluate(() => document.activeElement.id), "stekkeradvies");
   assert.equal(await page.evaluate(() => location.hash), runHash);

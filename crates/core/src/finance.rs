@@ -20,6 +20,10 @@ pub struct Tariff {
     pub annual_price_change_pct: f64,
 }
 
+/// Het laatste kalenderjaar met salderen; daarna betaal je elke kWh netafname en krijg je de vergoeding per teruggeleverde kWh.
+/// `web/data.js` gebruikt dezelfde grens (`LAST_NETTING_YEAR`).
+pub const LAST_NETTING_YEAR: u32 = 2026;
+
 pub fn energy_bill(
     import_kwh: f64,
     export_kwh: f64,
@@ -27,7 +31,7 @@ pub fn energy_bill(
     calendar_year: u32,
     price_factor: f64,
 ) -> f64 {
-    let energy = if calendar_year <= 2026 {
+    let energy = if calendar_year <= LAST_NETTING_YEAR {
         (import_kwh - export_kwh).max(0.0) * tariff.import_eur_per_kwh
             - (export_kwh - import_kwh).max(0.0) * tariff.export_eur_per_kwh
     } else {

@@ -187,7 +187,7 @@
           "Een installateur sluit de accu vast aan in de meterkast: een vaste thuisaccu, of een stekkerbatterij op een eigen groep. " +
           "Meer vermogen en capaciteit, hogere kosten."],
         ["any", "Weet ik nog niet", "We laten alle soorten zien: stekker, vast en stekker op een eigen groep."]]),
-      answers.install === "fixed" ? null : h("div", { class: "callout" }, h("p", {}, RULES.plug)),
+      ...(answers.install === "fixed" ? [] : [h("div", { class: "callout" }, h("p", {}, RULES.plug))]),
       pick("phases", "Hoeveel fasen heeft je meterkast?", [
         ["1", "1-fase", "Eén hoofdschakelaar in de meterkast, vaak 1×35 A of 1×40 A."],
         ["3", "3-fase", "Drie hoofdschakelaars of een brede driepolige schakelaar, vaak 3×25 A."],
@@ -315,6 +315,13 @@
     return (await UI.api("/api/v1/solar/typical", { method: "POST", json })).id;
   }
 
+  // Afname en teruglevering van de jaarafrekening waaruit het profiel geschat is; de uitkomst vergelijkt ze ermee.
+  function bill() {
+    if (answers.data !== "totals" || answers.panels !== "yes" || total()) return null;
+    const imported = yearKwh(answers.gridImport), exported = yearKwh(answers.gridExport);
+    return imported == null || exported == null ? null : { grid_import_kwh: imported, grid_export_kwh: exported };
+  }
+
   // Past het geschatte profiel bij de opgegeven afname en teruglevering? Jaartotalen bepalen geen
   // uurprofiel; een afwijking wordt daarom getoond en bij de berekening vastgelegd, niet weggewerkt.
   function profileCheck(points) {
@@ -398,7 +405,8 @@
         production_is_ac: true,
       ...(range ? { sizing_range: { label: SIZING[answers.sizing]
         ? `het zinvolle bereik voor ‘${SIZING[answers.sizing].label.replace(/^./, c => c.toLowerCase())}’` : "je eigen bereik",
-      low_kwh: range.low, high_kwh: range.high } } : {})
+      low_kwh: range.low, high_kwh: range.high } } : {}),
+      ...(bill() ? { bill_totals: bill() } : {})
     };
   }
 

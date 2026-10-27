@@ -233,6 +233,10 @@ window.Data = (() => {
   // alleen bij een vaste prijs. Het abonnement wordt een jaarbedrag. Bedragen in hele eurocenten.
   // Bron op de accupost als die de totaalprijs uit een offerte draagt; Zelf doorrekenen telt dan geen losse indicaties op.
   const QUOTE_TOTAL = "Offerte (totaalprijs inclusief btw)";
+  // De accupost met een totaalprijs uit een offerte, van een optie in de vorm van het verzoek (kosten als lijst), of undefined.
+  const quoteTotalLine = candidate => candidate?.costs?.find(l => l.category === "battery" && l.status === "priced" && l.source === QUOTE_TOTAL);
+  // Het laatste jaar met salderen (`finance::LAST_NETTING_YEAR`); de berekening begint standaard het jaar erna.
+  const LAST_NETTING_YEAR = 2026;
   function applyQuotePrice(candidate, field, value, { separate = [], fixedPrice = false } = {}) {
     const set = (line, status, amount, source, notes) => Object.assign(line, { status, amount_minor: amount, source, notes });
     if (field === "subscription_eur") {
@@ -750,7 +754,7 @@ window.Data = (() => {
   // resultaat, `base` het eerste jaar zonder accu, `p` de parameters. Pas vanaf 2027 telt de belasting over alle netafname.
   function energyTaxBandExcess(candidate, base, p) {
     const band = INDICATION.energyTaxBand;
-    if (p.start_year < 2027) return null;
+    if (p.start_year <= LAST_NETTING_YEAR) return null;
     const above = (candidate.years || []).map(y => {
       const without = y.baseline_grid_import_kwh ?? (y.year === 1 ? base.grid_import_kwh : null);
       return { y, without, kwh: without == null ? 0 : Math.max(0, without - Math.max(y.energy.grid_import_kwh, band.above_kwh)) };
@@ -786,7 +790,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice, QUOTE_TOTAL,
+    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice, QUOTE_TOTAL, quoteTotalLine, LAST_NETTING_YEAR,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, upfrontCosts, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults

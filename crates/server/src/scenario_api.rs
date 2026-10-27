@@ -54,6 +54,18 @@ pub struct RunRequest {
     /// ter uitleg bij het advies; rekent niet mee en ontbreekt in oudere runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sizing_range: Option<SizingRange>,
+    /// Netafname en teruglevering volgens de jaarafrekening, als de keuzehulp het profiel daaruit
+    /// schatte. Alleen ter vergelijking met het geschatte profiel; rekent niet mee en ontbreekt in
+    /// oudere runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bill_totals: Option<BillTotals>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BillTotals {
+    pub grid_import_kwh: f64,
+    pub grid_export_kwh: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +296,15 @@ fn validate_request(request: &RunRequest) -> Result<(), ApiError> {
     }) {
         return Err(invalid(
             "Ongeldig capaciteitsbereik: een omschrijving en 0 ≤ ondergrens ≤ bovengrens ≤ 1000 kWh.",
+        ));
+    }
+    if request.bill_totals.as_ref().is_some_and(|b| {
+        [b.grid_import_kwh, b.grid_export_kwh]
+            .iter()
+            .any(|v| !v.is_finite() || !(0.0..=1_000_000.0).contains(v))
+    }) {
+        return Err(invalid(
+            "Ongeldige jaartotalen: netafname en teruglevering tussen 0 en 1.000.000 kWh.",
         ));
     }
     validate_quote_basis(request)

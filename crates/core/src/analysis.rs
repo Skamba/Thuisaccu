@@ -951,7 +951,7 @@ pub fn analyze_with(
             "Vanaf {first} meet de slimme meter niet meer het huis waarmee gerekend wordt. In perioden met extra verbruik schat het model daarom weer met de verdeling hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dat jaar minder zeker en kan wat hoger of lager uitvallen."
         ));
     }
-    if parameters.start_year <= 2026 {
+    if parameters.start_year <= crate::finance::LAST_NETTING_YEAR {
         warnings.push("Voor 2026 gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf 2027 wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.".into());
     }
     if let Some(v) = &parameters.export_variant {

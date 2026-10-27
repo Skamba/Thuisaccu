@@ -582,6 +582,55 @@ test("shareable(): de link houdt de installateursopties en de auto uit het gesch
   assert.equal(shared.input.request.site.address, "Adres niet gedeeld");
 });
 
+test("shareable() en trimmed(): je offerte blijft, ook als hij laag eindigt", () => {
+  context.Scenario = { MAX_OPTIONS: 12 };
+  const candidates = Array.from({ length: 14 }, (_, i) => ({ key: `p${i}`, name: `FICTIEF ${i}`, npv_eur: 900 - i, within_budget: true }));
+  const line = { category: "battery", status: "priced", amount_minor: 500000, source: Data.QUOTE_TOTAL };
+  const request = { parameters: { objective: "net_present_value" }, site: { address: "Synthetisch 1" },
+    candidates: candidates.map((c, i) => ({ key: c.key, connection: "plug", costs: i === 13 ? [line] : [] })) };
+  const run = { title: "FICTIEF", created_at_unix_s: 0, input: { profile: null, request }, result: { recommended_key: "p0", candidates } };
+  assert.equal(Results.quoted(run).key, "p13");
+  const shared = Results.shareable(run);
+  assert.equal(Results.quoted(shared).key, "p13");
+  assert.ok(Results.trimmed(run, request).candidates.some(c => c.key === "p13"));
+  // Ook de herkomst uit de offertecheck.
+  const recalculated = { ...run, input: { ...run.input, request: { ...request, quote_basis: { candidate_key: "p12" } } } };
+  assert.equal(Results.quoted(Results.shareable(recalculated)).key, "p12");
+});
+
+test("quotesCompared(): twee offertes naast elkaar, met hoeveel de ongunstige moet zakken", () => {
+  const line = amount => ({ category: "battery", status: "priced", amount_minor: amount, source: Data.QUOTE_TOTAL });
+  const input = (key, costs, kw = 2.5) => ({ key, battery: { discharge_power_kw: kw }, costs });
+  const option = (key, npv_eur, initial_investment_eur, break_even_investment_eur) =>
+    ({ key, name: `FICTIEF ${key}`, npv_eur, initial_investment_eur, break_even_investment_eur });
+  const run = (candidates, extra = {}) => ({ input: { request: { candidates, ...extra } }, result: { candidates: [
+    option("a", -400, 6000, 5600), option("b", 300, 5000, 5300), option("c", 900, 3000, 3900), option("d", -100, 2000, -50)] } });
+  const quotes = Results.quotesCompared(run([input("a", [line(600000)], 5), input("b", [line(500000)]),
+    input("c", [{ ...line(300000), source: "Richtprijs" }]), input("d", [line(200000)])]));
+  // Van gunstig naar ongunstig; de richtprijs telt niet als offerte.
+  assert.deepEqual(quotes.map(q => q.option.key), ["b", "d", "a"]);
+  assert.deepEqual(quotes.map(q => q.total), [5000, 2000, 6000]);
+  assert.equal(quotes[2].kw, 5);
+  // Lonend: niets te zakken; zelfs gratis niet lonend: geen bedrag; anders startkosten min grens.
+  assert.deepEqual(quotes.map(q => q.cut), [null, null, 400]);
+  // Eén offerte, of een herberekening uit de offertecheck: niets naast elkaar.
+  assert.equal(Results.quotesCompared(run([input("a", [line(600000)]), input("b", [])])), null);
+  assert.equal(Results.quotesCompared(run([input("a", [line(600000)]), input("b", [line(500000)])],
+    { quote_basis: { candidate_key: "a" } })), null);
+});
+
+test("billGap(): de teruglevering van het geschatte profiel naast die op de jaarafrekening", () => {
+  const run = (bill, base) => ({ input: { request: { bill_totals: bill } }, result: { baseline_first_year: base } });
+  const base = { production_kwh: 4000, grid_export_kwh: 2000 };
+  // 10% van de opwek is 400 kWh: daaronder niets, vanaf daar wel, in beide richtingen.
+  assert.equal(Results.billGap(run({ grid_import_kwh: 3000, grid_export_kwh: 2399 }, base)), null);
+  assert.deepEqual({ ...Results.billGap(run({ grid_import_kwh: 3000, grid_export_kwh: 2400 }, base)) }, { bill: 2400, model: 2000, more: true });
+  assert.equal(Results.billGap(run({ grid_import_kwh: 3000, grid_export_kwh: 1500 }, base)).more, false);
+  // Oudere runs en profielen zonder opwek.
+  assert.equal(Results.billGap(run(undefined, base)), null);
+  assert.equal(Results.billGap(run({ grid_import_kwh: 3000, grid_export_kwh: 0 }, { production_kwh: 0, grid_export_kwh: 0 })), null);
+});
+
 test("modelwijziging v7 raakt alleen een run met een gelijke terugverdientijd die nu anders uitvalt", () => {
   const option = (key, npv_eur, payback_years, extra = {}) => ({ key, npv_eur, payback_years, within_budget: true, ...extra });
   const affects = (candidates, recommended_key, extra = {}) => Data.modelChanges("nl-self-consumption-v6", {

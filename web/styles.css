@@ -184,11 +184,15 @@ td strong, th strong { display: block; }
   #page-actions :is(button, .button, .menu > summary) { padding: .4rem .7rem; font-size: .9rem; }
   /* Tabbladen in drie kolommen, dus drie regels ongeacht het lettertype: alle tabbladen, ook de waarschuwingen,
      blijven in beeld. Een lange naam loopt binnen zijn vak door op een tweede regel. */
-  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .1rem; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 0 .1rem; }
   /* Iets kleiner, zodat ‘Waarschuwingen’ en ‘Kostenopbouw’ heel blijven; alleen een te lang woord breekt nog. Het
      gekozen tabblad krijgt een vlak, zodat ook over drie regels duidelijk is welk tabblad open staat. */
   /* `[role=tablist]` gaat voor de algemene regel verderop, die anders de opvulling weer breed maakt. */
-  .tabs[role="tablist"] [role="tab"] { padding: .35rem .2rem; font-size: .8rem; text-align: center; overflow-wrap: anywhere; line-height: 1.25; }
+  /* Afbreken met een koppelteken waar de taal dat kent, anders alleen als een woord echt niet past; het aantal
+     waarschuwingen op een eigen regel. Elke rij even hoog en minstens 44 pixels, als aanraakvlak. */
+  .tabs[role="tablist"] [role="tab"] { flex-direction: column; gap: 0; min-height: 2.75rem; padding: .35rem .1rem; font-size: .8rem; font-weight: 600;
+    text-align: center; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: break-word; line-height: 1.25; }
+  .tabs[role="tablist"] .tab-count { display: block; }
   .tabs[role="tablist"] [aria-selected="true"] { background: var(--accent-soft); }
   /* Brede tabellen schuiven zijwaarts met de eerste kolom op zijn plaats. */
   .table-wrap table:not(.stack) :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
@@ -197,7 +201,7 @@ td strong, th strong { display: block; }
   table.compare, table.compare :is(thead, tbody) { display: block; }
   table.compare caption { display: block; text-align: left; }
   table.compare tr { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(9.5rem, 1fr)); border-bottom: 1px solid var(--line); }
-  table.compare :is(th, td) { border: 0; min-width: 0; width: auto; }
+  table.compare :is(th, td) { border: 0; min-width: 0; width: auto; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: break-word; }
   table.compare thead :is(th, td):first-child { display: none; }
   table.compare th:is([scope="row"], [scope="rowgroup"]) { grid-column: 1 / -1; justify-self: start; position: sticky; left: 0; padding-bottom: 0; }
   .compare-hint { display: block; font-size: .875rem; color: var(--muted); margin: .25rem 0; }
@@ -230,7 +234,7 @@ button[aria-busy="true"] { cursor: progress; }
 button[aria-busy="true"]::after { content: " …"; }
 input[type="file"]::file-selector-button { font: inherit; font-weight: 600; margin-right: .75rem; padding: .45rem .9rem; border: 1px solid var(--accent);
   border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--accent); cursor: pointer; }
-.tabs [role="tab"] { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: .55rem .5rem; }
+.tabs [role="tab"] { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: .55rem .5rem; gap: 0; }
 .tabs [role="tab"].has-warnings { color: var(--warn-ink); }
 .tabs [aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1.25rem; border-bottom: 1px solid var(--line); }
@@ -392,6 +396,10 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .compare tbody th { width: 11rem; }
 .compare .callout { margin: .4rem 0 0; font-weight: 400; }
 .compact { margin: 0; padding-left: 1rem; }
+.sum-lines { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .1rem .75rem; margin: .35rem 0; }
+.sum-lines dt { color: var(--muted); }
+.sum-lines dd { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 30rem) { .sum-lines { grid-template-columns: minmax(0, 1fr); } .sum-lines dd { margin-bottom: .2rem; } }
 .glossary dt { font-weight: 700; margin-top: .5rem; }
 .glossary dd { margin: 0; }
 .cost-rows { display: grid; gap: 0; }

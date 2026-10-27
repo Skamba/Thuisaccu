@@ -788,3 +788,37 @@ async fn a_profile_saved_with_a_name_in_its_settings_is_found_again_without_that
     assert!(!other.existing);
     assert_eq!(catalog.list_solar().await.unwrap().len(), 2);
 }
+
+#[test]
+fn the_run_list_keeps_only_options_with_a_quote_total_and_only_that_line() {
+    use thuisaccu_storage::analysis::{QUOTE_TOTAL_SOURCE, SummaryRequest};
+    let line = |category: &str, status: &str, source: &str| serde_json::json!({"category": category, "status": status, "amount_minor": 450_000, "source": source, "timing": "upfront"});
+    let request: SummaryRequest = serde_json::from_value(serde_json::json!({
+        "candidates": [
+            {"key": "indicatie", "costs": [line("battery", "priced", "Richtprijs")]},
+            {"key": "offerte", "battery": {"usable_capacity_kwh": 5}, "costs": [
+                line("installation", "priced", QUOTE_TOTAL_SOURCE),
+                line("battery", "priced", QUOTE_TOTAL_SOURCE),
+            ]},
+            {"key": "onbekend", "costs": [line("battery", "unknown", QUOTE_TOTAL_SOURCE)]},
+        ]
+    }))
+    .unwrap();
+    assert_eq!(request.candidates.len(), 1);
+    let quoted = &request.candidates[0];
+    assert_eq!(quoted.key, "offerte");
+    assert_eq!(quoted.costs.len(), 1);
+    assert_eq!(quoted.costs[0].category, "battery");
+    assert_eq!(quoted.costs[0].amount_minor, 450_000);
+    // Zonder zo'n optie verdwijnt het veld uit de lijst.
+    let plain: SummaryRequest = serde_json::from_value(serde_json::json!({
+        "candidates": [{"key": "indicatie", "costs": [line("battery", "priced", "Richtprijs")]}]
+    }))
+    .unwrap();
+    assert!(
+        serde_json::to_value(&plain)
+            .unwrap()
+            .get("candidates")
+            .is_none()
+    );
+}
