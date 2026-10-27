@@ -176,6 +176,8 @@ window.Data = (() => {
     price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
     cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid."
   };
+  // Het laatste jaar met salderen (`finance::LAST_NETTING_YEAR`); de berekening begint standaard het jaar erna.
+  const LAST_NETTING_YEAR = 2026;
   // Begrippen in gewone taal, voor wie de uitkomst samen met iemand anders leest.
   const GLOSSARY = [
     ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, omgerekend naar geld van nu. Boven nul " +
@@ -195,7 +197,7 @@ window.Data = (() => {
       "is over een jaar tientallen kWh."],
     ["Volledige laadcycli", "De energie die de accu in een jaar levert, gedeeld door zijn bruikbare capaciteit: twee keer half " +
       "leeg telt als één cyclus. Garanties noemen vaak een maximum aantal cycli."],
-    ["Salderen en terugleverkosten", "Tot en met 2026 mag je teruggeleverde stroom wegstrepen tegen stroom van het net " +
+    ["Salderen en terugleverkosten", `Tot en met ${LAST_NETTING_YEAR} mag je teruggeleverde stroom wegstrepen tegen stroom van het net ` +
       "(salderen). Daarna krijg je per teruggeleverde kWh een vergoeding, en veel leveranciers rekenen terugleverkosten."]
   ];
   // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern.
@@ -234,9 +236,12 @@ window.Data = (() => {
   // Bron op de accupost als die de totaalprijs uit een offerte draagt; Zelf doorrekenen telt dan geen losse indicaties op.
   const QUOTE_TOTAL = "Offerte (totaalprijs inclusief btw)";
   // De accupost met een totaalprijs uit een offerte, van een optie in de vorm van het verzoek (kosten als lijst), of undefined.
-  const quoteTotalLine = candidate => candidate?.costs?.find(l => l.category === "battery" && l.status === "priced" && l.source === QUOTE_TOTAL);
-  // Het laatste jaar met salderen (`finance::LAST_NETTING_YEAR`); de berekening begint standaard het jaar erna.
-  const LAST_NETTING_YEAR = 2026;
+  const isQuoteTotal = line => line?.status === "priced" && line.source === QUOTE_TOTAL;
+  const quoteTotalLine = candidate => candidate?.costs?.find(l => l.category === "battery" && isQuoteTotal(l));
+  // De reserve voor meerwerk die vervallen is omdat de offerte een vaste prijs noemt.
+  const fixedReserve = line => line?.category === "contingency" && line.status === "not_applicable" && line.source === "Offerte";
+  // Of een optie in de vorm van het verzoek een vaste offerteprijs heeft (reserve vervallen).
+  const isFixedQuotePrice = candidate => Boolean(candidate?.costs?.some(fixedReserve));
   function applyQuotePrice(candidate, field, value, { separate = [], fixedPrice = false } = {}) {
     const set = (line, status, amount, source, notes) => Object.assign(line, { status, amount_minor: amount, source, notes });
     if (field === "subscription_eur") {
@@ -251,6 +256,9 @@ window.Data = (() => {
       else if (line.category === "contingency") {
         if (fixedPrice && line.status === "priced") set(line, "not_applicable", 0, "Offerte",
           "Vaste prijs volgens de offerte; geen reserve voor meerwerk.");
+        // Was hij eerder als vaste prijs opgegeven en nu niet meer, dan is de reserve onbekend, niet nul.
+        else if (!fixedPrice && fixedReserve(line)) set(line, "unknown", 0, "Offerte",
+          "Niet als vaste prijs opgegeven: vul een reserve voor meerwerk in, of zet de post op Niet van toepassing als de offerte meerwerk uitsluit.");
       } else if (line.status === "priced" && !separate.includes(line.category)) set(line, "included", 0, "In de totaalprijs van de offerte",
         "Was eerder apart geschat; nu inbegrepen in de totaalprijs van de offerte.");
     }
@@ -771,7 +779,7 @@ window.Data = (() => {
   // de discontovoet is een gewone rente (met inflatie), dus energieprijzen en jaarkosten stijgen standaard even hard
   // mee, 2% per jaar (het inflatiedoel van de ECB). Met 0% prijsverandering zou stroom elk jaar goedkoper worden
   // ten opzichte van al het andere (docs/roi-model.md).
-  const DEFAULTS = { start_year: 2027, horizon_years: 15, discount_pct: 4, annual_cost_escalation_pct: 2,
+  const DEFAULTS = { start_year: LAST_NETTING_YEAR + 1, horizon_years: 15, discount_pct: 4, annual_cost_escalation_pct: 2,
     annual_pv_loss_pct: 0, annual_load_growth_pct: 0, annual_price_change_pct: 2, price_uncertainty_pct: 20,
     cost_uncertainty_pct: 15 };
   // Oudere versies bewaarden de aannames per formulierveld-id.
@@ -790,7 +798,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice, QUOTE_TOTAL, quoteTotalLine, LAST_NETTING_YEAR,
+    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice, isFixedQuotePrice, QUOTE_TOTAL, isQuoteTotal, quoteTotalLine, LAST_NETTING_YEAR,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, upfrontCosts, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults

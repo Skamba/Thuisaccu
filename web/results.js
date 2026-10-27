@@ -246,7 +246,8 @@ window.Results = (() => {
       .sort((a, b) => b.npv_eur - a.npv_eur).map(c => {
         const limit = c.break_even_investment_eur;
         return { option: c, total: quoteTotalOf(inputs.get(c.key)), kw: inputs.get(c.key).battery?.discharge_power_kw,
-          cut: finite(limit) && limit > 0 && c.initial_investment_eur > limit ? c.initial_investment_eur - limit : null };
+          // Tot de afgeronde grens uit de tabel, zodat startkosten min verlaging die grens geeft (en dan lonend is).
+          cut: finite(limit) && limit > 0 && c.initial_investment_eur > limit ? c.initial_investment_eur - floorLimit(limit) : null };
       });
     return quotes.length < 2 ? null : quotes;
   }
@@ -261,9 +262,11 @@ window.Results = (() => {
         : `${first.name} en ${second.name} komen ongeveer gelijk uit.`,
       cuts.length ? ` ${cuts.join("; ")}.` : "",
       " Vergelijk ook garantie, vermogen en wat er bij de installatie inbegrepen is."),
-      table(["Offerte", "Offerteprijs", "Ontladen", "Lonend tot", "Netto voordeel"], quotes.map(q => [q.option.name,
-        eur0(q.total), finite(q.kw) ? `${n1(q.kw)} kW` : null, breakEven(q.option.break_even_investment_eur), eur0(q.option.npv_eur)]),
-      { caption: "Je offertes, binnen deze aannames", stack: true, numeric: [1, 2, 3, 4] }));
+      table(["Offerte", "Offerteprijs", "Startkosten", "Ontladen", "Lonend tot", "Netto voordeel"], quotes.map(q => [q.option.name,
+        eur0(q.total), eur0(q.option.initial_investment_eur), finite(q.kw) ? `${n1(q.kw)} kW` : null,
+        breakEven(q.option.break_even_investment_eur), eur0(q.option.npv_eur)]),
+      { caption: "Je offertes, binnen deze aannames", stack: true, numeric: [1, 2, 3, 4, 5] }),
+      h("p", { class: "help" }, "Startkosten: de offerteprijs met wat apart bleef, de reserve voor meerwerk en teruggaven. ‘Lonend tot’ gaat over de startkosten."));
   }
 
   // Bij een herberekende offerte: of de prijs uit de offerte binnen de grens valt.
@@ -1112,7 +1115,7 @@ window.Results = (() => {
         !CREDITS.includes(l.category) && !["battery", "contingency"].includes(l.category));
       const contingency = input.costs.find(l => l.category === "contingency" && l.status === "priced");
       // Gaf je in Zelf doorrekenen al een vaste prijs op (reserve vervallen volgens de offerte), dan staat dat hier ook.
-      const fixed = input.costs.some(l => l.category === "contingency" && l.status === "not_applicable" && l.source === "Offerte");
+      const fixed = Data.isFixedQuotePrice(input);
       if (fixed && terms.price == null) terms.price = "fixed";
       const kind = UI.select([["", "Weet ik niet"], ["fixed", "Vaste prijs"], ["survey", "Onder voorbehoud van schouw"]], terms.price ?? "",
         { onchange: event => { terms.price = event.target.value; remember(); } });
@@ -1129,7 +1132,8 @@ window.Results = (() => {
           })) : null,
         UI.field("Vaste prijs of onder voorbehoud van schouw?", kind, contingency
           ? `Alleen bij een vaste prijs vervalt de reserve voor meerwerk (${money(contingency.amount_minor / 100, { decimals: 0 })}); ` +
-            "weet je het niet, dan blijft die reserve staan." : fixed ? "Ingevuld als vaste prijs: er staat geen reserve voor meerwerk in de berekening." : null));
+            "weet je het niet, dan blijft die reserve staan." : fixed ? "Ingevuld als vaste prijs: er staat geen reserve voor meerwerk in de berekening. " +
+            "Kies je iets anders, dan wordt de reserve onbekend en vul je hem in Zelf doorrekenen in." : null));
     };
     // Op het scherm onthoudt elke ‘Klopt’ zich en telt mee; op papier is het een leeg vakje om af te vinken.
     const sheet = (c, paper = false) => {
@@ -1303,15 +1307,14 @@ window.Results = (() => {
   }
   // Een link of kopie houdt ze, zodat de afweging stekker tegen installateur niet stilletjes verandert.
   const installedKeys = run => Object.values(bestInstalled(run)).map(c => c?.key);
-  // Om de link kort te houden gaan alleen de opties mee die de uitkomst bepalen: de aanbevolen accu, de beste
-  // vijf op het gekozen doel, de beste op netto contante waarde en in de terugleveringsvariant, en de beste vaste accu.
   // De opties die het oordeel en de uitleg noemen: de aanbevolen, die met het hoogste netto voordeel, die in de
-  // terugleveringsvariant, de beste met een installateur, je offerte en de beste vijf op het doel. Een link en een
-  // ingekorte kopie houden er dezelfde van over, zodat ze hetzelfde oordeel geven.
+  // terugleveringsvariant, de beste met een installateur, je offerte (of al je offertes naast elkaar) en de beste vijf
+  // op het doel. Een link en een ingekorte kopie houden er dezelfde van over, zodat ze hetzelfde oordeel geven.
   function decisiveKeys(run) {
-    const result = run.result, best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const result = run.result, request = run.input.request, best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const quotes = request.quote_basis ? [] : (request.candidates || []).filter(c => quoteTotalOf(c) != null).map(c => c.key);
     return new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, ...installedKeys(run),
-      quoteKey(run.input.request), ...rank(run).slice(0, TOP).map(c => c.key)].filter(Boolean));
+      quoteKey(request), ...quotes, ...rank(run).slice(0, TOP).map(c => c.key)].filter(Boolean));
   }
   function shareable(run) {
     const input = run.input, request = input.request, result = run.result, source = input.profile?.options || {};

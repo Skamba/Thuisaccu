@@ -404,10 +404,15 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // ‘Pas aan en reken opnieuw’ neemt bij meer dan twaalf opties de beste over, zodat er nog een eigen optie bij past.
-  const candidates = await page.evaluate(async hash => (await UI.api(`/api/v1/analysis/runs/${hash.split("/").pop()}`)).input.request.candidates.length, runHash);
+  const stored = await page.evaluate(async hash => (await UI.api(`/api/v1/analysis/runs/${hash.split("/").pop()}`)).input.request, runHash);
+  const candidates = stored.candidates.length;
+  // De jaarafrekening gaat mee ter vergelijking, ook in een kopie voor Zelf doorrekenen.
+  assert.equal(stored.bill_totals.grid_import_kwh, 4600);
   await page.click("text=Pas aan en reken opnieuw");
   await page.waitForSelector("text=Profiel en doel");
-  const copied = (await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")))).options.length;
+  const scenario = await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")));
+  assert.deepEqual(scenario.bill, { profile: String(stored.solar_import_id), totals: stored.bill_totals });
+  const copied = scenario.options.length;
   if (candidates > 12) {
     assert.ok(copied >= 5 && copied <= 7, `${copied} van ${candidates}`);
     assert.match(await page.textContent(".toast"), new RegExp(`Kopie geladen met de ${copied} beste van ${candidates} opties`));

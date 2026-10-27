@@ -596,6 +596,15 @@ test("shareable() en trimmed(): je offerte blijft, ook als hij laag eindigt", ()
   // Ook de herkomst uit de offertecheck.
   const recalculated = { ...run, input: { ...run.input, request: { ...request, quote_basis: { candidate_key: "p12" } } } };
   assert.equal(Results.quoted(Results.shareable(recalculated)).key, "p12");
+  // Twee of drie offertes laag in de rangorde: allemaal mee, zodat ‘naast elkaar’ blijft en er niet ineens één ‘je offerte’ is.
+  for (const low of [[12, 13], [3, 12, 13]]) {
+    const many = { ...run, input: { ...run.input, request: { ...request,
+      candidates: request.candidates.map((c, i) => ({ ...c, costs: low.includes(i) ? [line] : [] })) } } };
+    const keys = r => Results.quotesCompared(r).map(q => q.option.key).sort();
+    assert.deepEqual(keys(Results.shareable(many)), keys(many));
+    assert.equal(Results.quoted(Results.shareable(many)), null);
+    assert.ok(low.every(i => Results.trimmed(many, many.input.request).candidates.some(c => c.key === `p${i}`)));
+  }
 });
 
 test("quotesCompared(): twee offertes naast elkaar, met hoeveel de ongunstige moet zakken", () => {
@@ -613,10 +622,33 @@ test("quotesCompared(): twee offertes naast elkaar, met hoeveel de ongunstige mo
   assert.equal(quotes[2].kw, 5);
   // Lonend: niets te zakken; zelfs gratis niet lonend: geen bedrag; anders startkosten min grens.
   assert.deepEqual(quotes.map(q => q.cut), [null, null, 400]);
+  // Tot de afgeronde grens uit de tabel: grens 5.604 wordt ‘tot € 5.600’, dus 400 lager, niet 396.
+  const rounded = run([input("a", [line(600000)]), input("b", [line(500000)])]);
+  rounded.result.candidates[0].break_even_investment_eur = 5604;
+  assert.equal(Results.quotesCompared(rounded).find(q => q.option.key === "a").cut, 400);
   // Eén offerte, of een herberekening uit de offertecheck: niets naast elkaar.
   assert.equal(Results.quotesCompared(run([input("a", [line(600000)]), input("b", [])])), null);
   assert.equal(Results.quotesCompared(run([input("a", [line(600000)]), input("b", [line(500000)])],
     { quote_basis: { candidate_key: "a" } })), null);
+});
+
+test("applyQuotePrice(): na een vaste prijs is de reserve bij ‘onder voorbehoud’ onbekend, niet nul", () => {
+  const candidate = { costs: [
+    { category: "battery", timing: "upfront", status: "priced", amount_minor: 400000, source: "Richtprijs" },
+    { category: "installation", timing: "upfront", status: "priced", amount_minor: 80000, source: "Indicatie" },
+    { category: "contingency", timing: "upfront", status: "priced", amount_minor: 12000, source: "Aanname" }] };
+  const reserve = () => candidate.costs.find(l => l.category === "contingency");
+  Data.applyQuotePrice(candidate, "upfront_eur", 5000, { fixedPrice: true });
+  assert.equal(reserve().status, "not_applicable");
+  assert.equal(Data.isFixedQuotePrice(candidate), true);
+  Data.applyQuotePrice(candidate, "upfront_eur", 5000, { fixedPrice: false });
+  assert.equal(reserve().status, "unknown");
+  assert.equal(reserve().amount_minor, 0);
+  assert.equal(Data.isFixedQuotePrice(candidate), false);
+  // Een reserve die als aanname bij een totaalprijs vervalt (Zelf doorrekenen), blijft zoals hij is.
+  reserve().status = "not_applicable"; reserve().source = "Aanname bij een totaalprijs";
+  Data.applyQuotePrice(candidate, "upfront_eur", 5000, { fixedPrice: false });
+  assert.equal(reserve().status, "not_applicable");
 });
 
 test("billGap(): de teruglevering van het geschatte profiel naast die op de jaarafrekening", () => {

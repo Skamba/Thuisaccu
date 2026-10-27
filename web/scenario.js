@@ -108,6 +108,8 @@ window.Scenario = (() => {
     };
     // De herkomst uit een offerte blijft bij een kopie bewaard; basis() rekent de verschillen opnieuw uit.
     state.basis = request.quote_basis ?? null;
+    // De jaarafrekening hoort bij het profiel dat daaruit geschat is; bij een ander profiel vervalt hij.
+    state.bill = request.bill_totals ? { profile: state.profile, totals: request.bill_totals } : null;
     Object.assign(state, extra);
     store.set(STORE, state);
   }
@@ -250,7 +252,8 @@ window.Scenario = (() => {
       : { address: state.address.trim() || "Nederland (geen adres opgegeven)", latitude: null, longitude: null, bag_id: null };
     return { problems, optionProblems, count: problems.length + optionProblems.flat().length,
       request: { title: state.title.trim(), solar_import_id: Number(state.profile), site, parameters, candidates,
-        ...(load_changes.length ? { load_changes } : {}), ...(basis(candidates) ? { quote_basis: basis(candidates) } : {}) } };
+        ...(load_changes.length ? { load_changes } : {}), ...(basis(candidates) ? { quote_basis: basis(candidates) } : {}),
+        ...(state.bill?.profile === state.profile ? { bill_totals: state.bill.totals } : {}) } };
   }
 
   function stepProfile(body) {
@@ -509,7 +512,7 @@ window.Scenario = (() => {
   // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
   // extra groep, zoals in de keuzehulp.
   // Bij een onbekende soort de posten van de catalogus, of anders die van een vaste installatie; de soort zelf blijft onbekend.
-  const hasQuoteTotal = option => option.costs.battery?.status === "priced" && option.costs.battery.source === Data.QUOTE_TOTAL;
+  const hasQuoteTotal = option => Data.isQuoteTotal(option.costs.battery);
   const filledText = (option, filled) => !filled ? "Er waren geen open posten om te vullen." : hasQuoteTotal(option)
     ? `${filled} posten ingevuld. Naast de totaalprijs tellen ze als inbegrepen; controleer dat in de offerte.`
     : `${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.`;
@@ -715,7 +718,8 @@ window.Scenario = (() => {
       quoteNotes.set(option, [`Totaalprijs ${money(value)} staat op de accupost.`,
         included.length ? `Als inbegrepen gemarkeerd: ${included.join(", ")}.` : null,
         separate.length ? `Apart gehouden: ${separate.map(key => label(key).toLowerCase()).join(", ")}.` : null,
-        changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs."
+        changed.some(l => l.category === "contingency" && l.status === "not_applicable") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs."
+          : changed.some(l => l.category === "contingency" && l.status === "unknown") ? "De reserve voor meerwerk is nu onbekend: de prijs is niet meer als vaste prijs opgegeven. Vul hem in."
           : reserve != null && reserve > 0 ? `De reserve voor meerwerk (${money(reserve)}, een aanname) komt bovenop de offerteprijs; ` +
             "kies ‘Vaste prijs’ als de offerte een vaste prijs noemt." : null,
         open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend. Zet ze op Inbegrepen of Niet van toepassing, of kies ‘Vul open posten met indicaties’: naast de totaalprijs tellen die als inbegrepen, met een notitie om dat na te gaan.` : null]

@@ -325,9 +325,9 @@
   // Past het geschatte profiel bij de opgegeven afname en teruglevering? Jaartotalen bepalen geen
   // uurprofiel; een afwijking wordt daarom getoond en bij de berekening vastgelegd, niet weggewerkt.
   function profileCheck(points) {
-    if (answers.data !== "totals" || answers.panels !== "yes" || total()) return null;
-    const produced = production(), imported = yearKwh(answers.gridImport), exported = yearKwh(answers.gridExport);
-    if (!(produced > 0) || imported == null || exported == null) return null;
+    const totals = bill(), produced = production();
+    if (!totals || !(produced > 0)) return null;
+    const imported = totals.grid_import_kwh, exported = totals.grid_export_kwh;
     const reported = (produced - exported) / produced * 100, modelled = points[0].self_consumption_pct;
     // Zonder bestaande accu kan een accu hooguit vervangen wat je terugleverde én wat je afnam.
     const ceiling = Math.min(imported, exported), curveMax = points[points.length - 1].battery_to_load_kwh;
