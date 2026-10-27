@@ -163,9 +163,9 @@ window.Results = (() => {
   // Lange lijsten tonen eerst geen accu en de beste vijf; de rest staat ingeklapt en gaat niet mee op papier.
   const rest = (title, ...content) => h("details", { class: "fold all-options" }, h("summary", {}, title), ...content);
 
-  // Veiligheidsadvies boven de som als een doorgerekende accu een stekkerbatterij is. `kinds`: optie → soort aansluiting
-  // (`plug`, `fixed`, `circuit` of onbekend; zie `render`), `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
-  const PLUG_ADVICE = "stekkeradvies";
+  // Het veiligheidsadvies als een doorgerekende accu een stekkerbatterij is, voor het venster dat `render` één keer per
+  // run maakt (`ADVICE`). `kinds`: optie → soort aansluiting (`plug`, `fixed`, `circuit` of onbekend; zie `render`),
+  // `circuit`: de richtprijs van een extra groep uit het kostenonderzoek.
   function plugAdvice(run, judged, kinds, circuit) {
     const candidates = run.input.request.candidates;
     const plugged = candidates.filter(c => kinds.get(c.key) === "plug");
@@ -177,37 +177,42 @@ window.Results = (() => {
     const head = c => c.name.split(" · ")[0], circuits = candidates.filter(c => kinds.get(c.key) === "circuit");
     const grouped = circuits.find(c => about.configuration_id != null && c.configuration_id === about.configuration_id)
       || circuits.find(c => about.configuration_id != null && c.configuration_id != null && about.name.includes(" · ") && head(c) === head(about));
-    const [, , mc, mcPlug] = Data.RULES.sources, [nbnl] = Data.RULES.sources;
+    // Op het begin van de titel, niet op plaats: een bron erbij in `Data.RULES.sources` verschuift de rest.
+    const source = start => Data.RULES.sources.find(([title]) => title.startsWith(start));
+    const mc = source("Milieu Centraal: thuisbatterij"), mcPlug = source("Milieu Centraal: zonnepanelen met een stekker"),
+      nbnl = source("Netbeheer Nederland"), insurance = source("Solar Magazine: Verbond van Verzekeraars");
     // Bij veel stekkerbatterijen een telling in plaats van een lange rij productnamen.
     const names = plugged.length <= 3 ? plugged.map(c => c.name).join(", ")
       : `${plugged.length} van de ${candidates.length} doorgerekende accu’s, waaronder ${about.name}`;
-    return h("li", { id: PLUG_ADVICE, tabindex: "-1", class: "plug-advice" },
-      h("strong", {}, "Milieu Centraal raadt stekkerbatterijen op dit moment af. "),
-      `Dit gaat over: ${names}. ` +
-      "De reden is onder meer brandrisico: in één groep kan stroom van twee kanten komen, van het net en van de accu. Kies je er " +
-        "toch voor, gebruik dan een vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos, " +
-        "en laat de accu ten hoogste 800 W in het stopcontact leveren (dat advies geeft Milieu Centraal voor stekkerzonnepanelen). " +
-        `Voor ${about.name} is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
-        "dus stel de accu lager in of kies een vaste aansluiting"}` +
-        (charge <= 0.8 ? `, en met ${n(charge, 2)} kW laden; ook meer laadvermogen hoort bij een eigen groep. `
-          : `, en met ${n(charge, 2)} kW laden: ook dat is meer dan 800 W, dus stel ook het laden lager in of kies een vaste aansluiting. `) +
-        `Veiliger is een eigen groep in de meterkast door een installateur` +
-        (circuit ? `, volgens een richtprijs ongeveer ${eur0(circuit.amount_eur)}` : "") +
-        (grouped ? `; die variant zit ook in deze berekening als ‘${grouped.name}’`
-          : circuits.length ? "; er zitten ook stekkerbatterijen op een eigen groep in deze berekening, van een ander product" : "") +
-        ". Meld de accu aan op energieleveren.nl, zoals Netbeheer Nederland voorschrijft. Twijfel je of je woonverzekering een " +
-        "stekkerbatterij dekt, vraag het dan na bij je verzekeraar. Bronnen: ",
-      UI.external(mc[0], mc[1]), ", ", UI.external(mcPlug[0], mcPlug[1]), ", ", UI.external(nbnl[0], nbnl[1]),
-      ...(circuit ? [", ", UI.external("Homedeal: richtprijs extra groep", circuit.url)] : []), ".");
+    return h("div", { class: "plug-advice" },
+      h("p", {}, h("strong", {}, "Milieu Centraal raadt stekkerbatterijen op dit moment af. "), `Dit gaat over: ${names}.`),
+      h("p", {}, "De reden is onder meer brandrisico: in één groep kan stroom van twee kanten komen, van het net en van de accu."),
+      h("h3", {}, "Kies je er toch voor"),
+      h("ul", {},
+        h("li", {}, "Gebruik een vaste wandcontactdoos op een groep met weinig andere apparaten, geen verlengsnoer of stekkerdoos."),
+        h("li", {}, "Laat de accu ten hoogste 800 W in het stopcontact leveren (dat advies geeft Milieu Centraal voor stekkerzonnepanelen). " +
+          `Voor ${about.name} is gerekend met ${n(kw, 2)} kW ontladen${kw <= 0.8 ? ", dus binnen die 800 W" : ": meer dan 800 W, " +
+          "dus stel de accu lager in of kies een vaste aansluiting"}` +
+          (charge <= 0.8 ? `, en met ${n(charge, 2)} kW laden; ook meer laadvermogen hoort bij een eigen groep.`
+            : `, en met ${n(charge, 2)} kW laden: ook dat is meer dan 800 W, dus stel ook het laden lager in of kies een vaste aansluiting.`)),
+        h("li", {}, "Meld de accu aan op energieleveren.nl, zoals Netbeheer Nederland voorschrijft."),
+        h("li", {}, "Twijfel je of je woonverzekering een stekkerbatterij dekt, vraag het dan na bij je verzekeraar.")),
+      h("h3", {}, "Veiliger: een eigen groep"),
+      h("p", {}, "Een installateur legt een eigen groep in de meterkast aan" +
+        (circuit ? `, volgens een richtprijs voor ongeveer ${eur0(circuit.amount_eur)}` : "") +
+        (grouped ? `. Die variant zit ook in deze berekening als ‘${grouped.name}’.`
+          : circuits.length ? ". Er zitten ook stekkerbatterijen op een eigen groep in deze berekening, van een ander product." : ".")),
+      h("p", { class: "help" }, "Bronnen: ", [mc, mcPlug, nbnl, insurance].filter(Boolean).map(([title, url], i) => [i ? ", " : "", UI.external(title, url)]),
+        ...(circuit ? [", ", UI.external("Homedeal: richtprijs extra groep", circuit.url)] : []), "."));
   }
-  // Knop naar het advies (op de kaart van een stekkerbatterij en bovenaan): klapt het open en springt ernaartoe;
-  // een hash-link zou de router laten navigeren.
-  // Met een optienaam zegt de toegankelijke naam bij welke kaart de knop hoort.
-  const toAdvice = (label = "Milieu Centraal raadt stekkerbatterijen af: lees waarom", name, variant = "ghost") => button(label, () => {
-    const advice = document.getElementById(PLUG_ADVICE);
-    advice.closest("details").open = true;
-    advice.scrollIntoView({ block: "center" }); advice.focus({ preventScroll: true });
-  }, variant, name ? { "aria-label": `${label} (bij ${name})` } : {});
+  // Het venster met het stekkeradvies per run (`render`); meer knoppen openen hetzelfde venster.
+  const ADVICE = new WeakMap();
+  // Een knop naar het advies, of null zonder stekkerbatterij. Met een optienaam zegt de toegankelijke naam bij welke
+  // accu de knop hoort.
+  const toAdvice = (run, label = "Milieu Centraal raadt stekkerbatterijen af: lees waarom", name, variant = "ghost inline") => {
+    const panel = ADVICE.get(run);
+    return panel ? UI.opens(panel, label, variant, name ? { "aria-label": `${label} (bij ${name})` } : {}) : null;
+  };
 
   // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
   // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
@@ -531,16 +536,16 @@ window.Results = (() => {
       ["Besparing in jaar 1", null, c => !base ? NOT_SEPARATE : c.years?.[0] ? eur0(c.years[0].energy_saving_eur) : "Onbekend", eur0(0)],
       ["Terugverdiend na", null, (c, o) => !o ? missing() : base || variant === "export" || variant === "stress" ? payback(o.payback_years) : NOT_SEPARATE, NA],
       ["Aansluiting", null, c => kinds.get(c.key) === "plug"
-        ? [`${connectionText(c, kinds)}: Milieu Centraal raadt dit af. `, toAdvice("Lees waarom", c.name)] : connectionText(c, kinds), NA],
+        ? [`${connectionText(c, kinds)}: Milieu Centraal raadt dit af. `, toAdvice(run, "Lees waarom", c.name)] : connectionText(c, kinds), NA],
       p.budget_eur != null ? ["Budget", null, c => c.within_budget === false ? `Boven je budget van ${eur0(p.budget_eur)}` : "Binnen je budget", NA] : null
     ].filter(Boolean);
     const lead = lane => (lane.option?.key ?? null) === leadKey ? "lane-lead" : null;
     return h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": "Beslisblad" },
-      h("table", { class: "compare lanes", style: `--cols:${shownLanes.length}` },
+      h("table", { class: `compare lanes lanes-${shownLanes.length}`, style: `--cols:${shownLanes.length}` },
         h("caption", {}, `Beslisblad, ${variants(run, shownLanes).find(([key]) => key === variant)[1].toLowerCase()}`),
         h("thead", {}, h("tr", {}, h("td", {}), shownLanes.map((lane, i) => h("th", { scope: "col", class: lead(lane) },
           h("span", { class: "lane-title" }, lane.titles.join(" · ")),
-          lane.option ? [h("span", { class: "lane-name" }, plainName(run, lane.option, kinds)),
+          lane.option ? [h("span", { class: "lane-name" }, toDetail(run, lane.option, plainName(run, lane.option, kinds))),
             h("span", { class: "lane-product" }, lane.option.name)] : null,
           status(lane, i) ? h("span", { class: "lane-status" }, status(lane, i)) : null)))),
         h("tbody", {}, rows.map(([label, help, cell, none]) => h("tr", {},
@@ -551,7 +556,7 @@ window.Results = (() => {
   // Het blad met een keuze uit de varianten erboven; wisselen bouwt alleen de tabel opnieuw en meldt de uitkomst. Wat
   // een variant aanneemt, staat bij ‘Hoe zeker is dit?’ (`certainty`).
   function sheet(run, kinds, leadKey) {
-    const shownLanes = lanes(run, kinds), list = variants(run, shownLanes), state = { variant: "base" }, name = UI.uid("variant");
+    const shownLanes = lanes(run, kinds), list = variants(run, shownLanes), state = { variant: "base" };
     const holder = h("div", {}, sheetTable(run, kinds, shownLanes, "base", leadKey));
     const live = h("p", { class: "help", "aria-live": "polite" });
     const pick = key => {
@@ -563,9 +568,9 @@ window.Results = (() => {
       live.textContent = key === "base" || !scored.length ? "" : `${label}: het hoogste netto voordeel in dit blad heeft ` +
         `${scored[0][0].option?.name ?? "geen accu"} (${eur0(scored[0][1].npv_eur)}), binnen deze berekening.`;
     };
-    const switcher = list.length < 2 ? null : h("fieldset", { class: "variant-switch" }, h("legend", {}, "Bekijk het blad met"),
-      list.map(([key, label]) => h("label", {}, h("input", { type: "radio", name, value: key,
-        checked: key === state.variant, onchange: () => pick(key) }), ` ${label}`)));
+    // Een keuzelijst in plaats van een rij knoppen: vijf varianten naast elkaar lezen als vijf antwoorden.
+    const switcher = list.length < 2 ? null : h("div", { class: "variant-switch" }, field("Bekijk het blad met",
+      UI.select(list.map(([key, label, help]) => [key, `${label} (${help})`]), state.variant, { onchange: event => pick(event.target.value) })));
     return h("div", { class: "sheet" }, switcher, holder, live);
   }
 
@@ -611,11 +616,14 @@ window.Results = (() => {
 
   // Het korte antwoord als kaart: de besproken accu in gewone woorden, het netto voordeel groot, de bandbreedte in één
   // zin en de kerngetallen. Wat niet iedereen nodig heeft (varianten en kantelpunten, waarom deze accu, het geschatte
-  // profiel, het stekkeradvies) staat achter een knop; het beslisblad volgt eronder.
+  // profiel, de waarschuwingen) staat achter een knop; de kaart eindigt bij die knoppen. Het beslisblad staat eronder in
+  // een eigen blok (`comparison`).
   function verdict(run, kinds, ctx) {
     const result = run.result, p = run.input.request.parameters, quote = quoted(run), option = quote ?? judged(run);
     const rec = option?.key === result.recommended_key, wins = Boolean(quote || rec);
-    const plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
+    // Wint een stekkerbatterij, dan één regel veiligheid met de beste optie met een installateur uit dezelfde berekening.
+    const isPlug = wins && kinds.get(option.key) === "plug";
+    const installer = isPlug ? rank(run).find(c => ["fixed", "circuit"].includes(kinds.get(c.key))) : null;
     const isCircuit = option && kinds.get(option.key) === "circuit";
     // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
     // installateur die hem vast wil aansluiten. Het blad zet stekker op eigen groep en vast samen onder ‘met installateur’.
@@ -635,17 +643,23 @@ window.Results = (() => {
     const why = [h("p", {}, result.recommendation),
       quote && rec ? h("p", {}, "Ook zonder offerte komt deze accu in deze berekening het beste uit.") : null,
       rec && !quote && sizeNote(run, option) ? h("p", { class: "verdict-for" }, sizeNote(run, option)) : null];
-    const profile = ofKind(result, "warning").filter(m => PROFILE_CODES.includes(m.code));
-    const sheetOpts = { variant: "pill" };
+    const profile = ofKind(result, "warning").filter(m => PROFILE_CODES.includes(m.code)), off = billGap(run);
+    const sheetOpts = { variant: "pill" }, count = ctx?.warnings?.length ?? 0;
+    const leave = work => event => { UI.closePopup(event.target); work(); };
     const actions = [
       option && (items.length || range) ? UI.popup("Hoe zeker is dit?", "Hoe zeker is dit?", certainty(run, option, items), sheetOpts) : null,
       UI.popup(wins ? "Waarom deze accu?" : "Waarom geen accu?", wins ? `Waarom ${name}?` : "Waarom geen accu?", why, sheetOpts),
       isEstimated(run) && profile.length ? UI.popup("Geschat profiel", "Geschat profiel", [profile.map(m => h("p", {}, m.text)),
         h("p", {}, "Met gemeten uur- of kwartierwaarden van je slimme meter wordt de uitkomst nauwkeuriger."),
+        off ? h("p", {}, `Volgens je jaarafrekening leverde je ${kwh(off.bill)} terug; het geschatte profiel gaat zonder accu uit van ` +
+          `${kwh(off.model)}. ` + (off.more ? "Je levert dus meer terug dan het standaardprofiel: de besparing met een accu kan hoger uitvallen dan berekend."
+            : "Je gebruikt overdag dus meer zelf dan het standaardprofiel: er blijft minder over om op te slaan, dus de besparing valt waarschijnlijk lager uit dan berekend.")) : null,
         link("Importeer meetwaarden", "#/energie/import", "button secondary")], { variant: "pill notice" }) : null,
-      plugged ? toAdvice("Milieu Centraal raadt stekkerbatterijen af: lees waarom", undefined, "pill notice") : null,
-      ctx?.warnings?.length ? button(`${ctx.warnings.length} ${ctx.warnings.length === 1 ? "waarschuwing" : "waarschuwingen"}`,
-        () => ctx.openTab("Waarschuwingen"), "pill notice") : null
+      // De lijst pas bij openen, en niet op papier: het tabblad Waarschuwingen gaat daar al mee.
+      count ? UI.popup(`${count} ${count === 1 ? "waarschuwing" : "waarschuwingen"}`, "Waarschuwingen", () => [
+        h("ul", { class: "compact warning-brief" }, warningItems(run, ofKind(result, "warning"))),
+        ctx.openTab ? button("Naar het tabblad Waarschuwingen", leave(() => ctx.openTab("Waarschuwingen")), "secondary") : null],
+      { variant: "pill notice", print: false }) : null
     ];
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
       h("h2", {}, wins ? name : "Geen accu"),
@@ -659,14 +673,24 @@ window.Results = (() => {
       wins ? stats(figures(run, option).filter(([label]) => label !== "Netto voordeel (NPV)")) : null,
       items.length ? h("p", { class: "answer-tip" }, h("strong", {}, "Eerste kantelpunt: "), items[0].text) : null,
       stress ? h("p", { class: "verdict-warn" }, h("strong", {}, "Let op de garantie. "), stress) : null,
+      isPlug ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op de veiligheid: "),
+        "Milieu Centraal raadt stekkerbatterijen op dit moment af, onder meer om brandrisico. " +
+        (installer ? `Wil je er geen, dan komt met een installateur ${plainName(run, installer, kinds)} het beste uit: ${netText(installer.npv_eur)}. `
+          : "Er zit geen accu met een installateur in deze berekening. "), toAdvice(run, "Lees het advies")) : null,
       isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
         "eigen groep aansluit, geen vaste thuisaccu. "),
         "Vraag vooraf of een installateur hem zo wil aansluiten en of de fabrikant dat toestaat. " +
         (installed ? `De beste vaste thuisaccu in deze berekening is ${installed.name}: ${netText(installed.npv_eur)} in geld van nu.`
           : "Er zit geen vaste installatie in deze berekening.")) : null,
-      h("div", { class: "answer-actions" }, actions),
-      option ? [h("h3", { class: "verdict-sub" }, "Naast elkaar"), sheet(run, kinds, option.key), quote ? null : closeCall(run, option, kinds)] : null,
-      quote ? null : quotesSide(run));
+      h("div", { class: "answer-actions" }, actions));
+  }
+  // Het beslisblad met wat binnen de onzekerheid even goed is en, in Zelf doorrekenen, je offertes naast elkaar.
+  function comparison(run, kinds) {
+    const quote = quoted(run), option = quote ?? judged(run);
+    if (!option) return null;
+    return h("section", { class: "panel comparison" }, h("h2", {}, "Vergelijk de keuzes"),
+      h("p", { class: "help" }, "Geen accu naast de beste per soort aansluiting. De naam van een accu opent zijn details."),
+      sheet(run, kinds, option.key), quote ? null : closeCall(run, option, kinds), quote ? null : quotesSide(run));
   }
 
   // Kantelt de uitkomst als de accu direct na de garantie stopt? Dan een zin met wat het dan kost en tot welke
@@ -724,16 +748,13 @@ window.Results = (() => {
         : `${best.name} levert over ${p.horizon_years} jaar netto ${eur0(best.npv_eur)} op in geld van nu, maar valt buiten je budget of doel.`));
       else list.append(h("li", {}, `Met deze aannames is géén accu de beste keuze over ${p.horizon_years} jaar.`));
     } else {
-      list.append(h("li", {},
-        rec.payback_years == null ? `Binnen ${p.horizon_years} jaar verdien je de startinvestering niet terug.` : `Over ${p.horizon_years} jaar is het netto voordeel ${eur0(rec.npv_eur)} in geld van nu: wat de accu oplevert min wat hij kost.`));
+      // Het netto voordeel, de bandbreedte en de terugverdientijd staan op de kaart erboven; hier wat die niet zegt.
       list.append(h("li", {},
         `Je gebruikt dan ${pct(rec.first_year.self_consumption_pct)} van je zonnestroom zelf; zonder accu is dat ${pct(base.self_consumption_pct)}.`));
       // Vanaf modelversie 4 kan dit alleen bij het doel eigen gebruik; oudere runs met het doel ROI konden het ook.
       if (rec.npv_eur < 0) list.append(h("li", {}, p.objective === "self_consumption"
         ? "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."
         : "Let op: in geld van nu kost deze keuze je over de looptijd geld. Hij wint op ROI, die toekomstige bedragen niet omrekent naar nu."));
-      change.append(h("li", {},
-        `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
     }
     const gap = salderenGap(run);
     if (gap) {
@@ -752,14 +773,7 @@ window.Results = (() => {
           "terugleververgoeding op. Terugleverkosten betaal je in beide gevallen. Alleen ter vergelijking: de berekening rekent " +
           "zonder salderen. Verbruik op zonuren of een ander contract verkleint wat overblijft.")));
     }
-    if (isEstimated(run)) {
-      const off = billGap(run);
-      list.append(h("li", {},
-        "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger.",
-        off ? h("small", {}, `Volgens je jaarafrekening leverde je ${kwh(off.bill)} terug; het geschatte profiel gaat zonder accu uit van ` +
-          `${kwh(off.model)}. ` + (off.more ? "Je levert dus meer terug dan het standaardprofiel: de besparing met een accu kan hoger uitvallen dan berekend."
-            : "Je gebruikt overdag dus meer zelf dan het standaardprofiel: er blijft minder over om op te slaan, dus de besparing valt waarschijnlijk lager uit dan berekend.")) : null));
-    }
+    // Een geschat profiel staat op de kaart (‘Geschat profiel’), met wat de jaarafrekening erover zegt.
     const variant = p.export_variant, variantKey = result.export_variant_recommended_key;
     // Zonder aanbeveling staat de terugleveringsvariant in ‘Dat verandert als’.
     if (rec && variant && variantKey != null) {
@@ -821,7 +835,8 @@ window.Results = (() => {
         `daardoor ongeveer ${eur0(eur)} per jaar te hoog. Valt vrijwel alles boven de grens, ` +
         `reken dan in Zelf doorrekenen met een stroomprijs die ${money(band.lower_eur_per_kwh, { decimals: 4 })} per kWh lager is.`));
     }
-    const advice = plugAdvice(run, best, kinds, circuit);
+    // Het stekkeradvies: een venster, op papier hier in de uitleg.
+    const advice = ADVICE.get(run)?.element;
     const first = best?.years?.[0], tariff = p.tariff, price = v => money(v, { decimals: 4 });
     // Na te rekenen besparing in een jaar: vanaf 2027 zonder saldering en zonder staffel is dat precies
     // minder netafname × stroomprijs min minder teruglevering × netto vergoeding (de vaste kosten vallen weg).
@@ -910,7 +925,7 @@ window.Results = (() => {
       tab?.click(); tab?.focus();
     }, "secondary");
     return h("section", { class: "panel plain summary" }, h("h2", {}, "Wat betekent dit voor jou?"), list,
-      advice ? fold("Veiligheid van een stekkerbatterij", h("ul", {}, advice)) : null,
+      advice ?? null,
       change.children.length ? fold(changes.length ? "Wat zou de uitkomst veranderen?" : "Tot welke prijs is het lonend, en wat als het tegenzit?", limits, change) : null,
       sums.children.length ? fold("Zo is de besparing berekend", sums) : null,
       // Bij een offerte open: daar staat hoe de offerteprijs op de startkosten komt.
@@ -978,78 +993,89 @@ window.Results = (() => {
         (warrantyFlip(run, c) ? "; stopt hij na de garantie, dan komt geen accu beter uit." : "; ook in deze stresstest blijft het zo.")) : null);
   }
 
+  // Waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen. De naam noemt vaak de nominale capaciteit.
+  // Een capaciteit die de keuzehulp heeft aangenomen (bijvoorbeeld 90% van nominaal) staat er als aanname bij.
+  function spec(run, kinds, c) {
+    const input = run.input.request.candidates.find(o => o.key === c.key), b = input?.battery;
+    const assumed = b && Data.isAssumed("usable_capacity_kwh", input.assumptions || "");
+    return b ? h("p", { class: "help option-spec" }, [kinds.get(c.key) ? connectionText(c, kinds) : null,
+      `${assumed ? "≈ " : ""}${n1(b.usable_capacity_kwh)} kWh bruikbaar${assumed ? " (aanname)" : ""}`,
+      `${n1(b.discharge_power_kw)} kW ontladen, ${n1(b.charge_power_kw)} kW laden`].filter(Boolean).join(" · ")) : null;
+  }
+  // Dezelfde uitvoering of hetzelfde product (merk en product, het deel van de naam vóór ‘ · ’) met een andere
+  // aansluiting: het verschil in één zin. Bij hetzelfde product de uitvoering met de dichtstbijzijnde capaciteit.
+  function sibling(run, all, kinds, c) {
+    const inputs = new Map(run.input.request.candidates.map(o => [o.key, o])), input = inputs.get(c.key), kind = kinds.get(c.key);
+    if (!input || !kind) return null;
+    const head = o => o.name.split(" · ")[0];
+    const others = all.filter(o => o.key !== c.key && inputs.has(o.key) && kinds.get(o.key) && kinds.get(o.key) !== kind);
+    const same = input.configuration_id == null ? null : others.find(o => inputs.get(o.key).configuration_id === input.configuration_id);
+    const capacity = o => inputs.get(o.key).battery.usable_capacity_kwh;
+    const other = same || (input.configuration_id == null || !c.name.includes(" · ") ? null : others
+      .filter(o => inputs.get(o.key).configuration_id != null && head(o) === head(c))
+      .sort((a, b) => Math.abs(capacity(a) - input.battery.usable_capacity_kwh) - Math.abs(capacity(b) - input.battery.usable_capacity_kwh))[0]);
+    if (!other) return null;
+    const kw = n1(inputs.get(other.key).battery.discharge_power_kw), diff = other.initial_investment_eur - c.initial_investment_eur;
+    const how = { plug: "in een gewoon stopcontact", circuit: "op een eigen groep", fixed: "als vaste installatie" }[kinds.get(other.key)];
+    return h("p", { class: "help" }, (same ? `Dezelfde accu ${how} (${kw} kW)` : `Hetzelfde product ${how} ` +
+      `(${n1(capacity(other))} kWh bruikbaar, ${kw} kW)`) + `: netto voordeel ${eur0(other.npv_eur)}, ` +
+      (Math.round(diff) === 0 ? "even duur in aanschaf." : `${eur0(Math.abs(diff))} ${diff < 0 ? "goedkoper" : "duurder"} in aanschaf.`));
+  }
+  // Wat het overzicht per accu zegt, in een venster: waarmee gerekend is, de kerngetallen, dezelfde accu met een andere
+  // aansluiting en de cijfers die niet iedereen nodig heeft. Eén venster per accu (`DETAILS`, gemaakt in `render`); de
+  // inhoud ontstaat pas bij openen en gaat niet mee op papier, daar staat de tabel in het overzicht.
+  function optionDetail(run, all, kinds, c) {
+    const result = run.result, p = run.input.request.parameters, w = warranty(run, c);
+    return [h("p", { class: "answer-product" }, c.name),
+      h("p", {}, c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null, c.quoted ? badge("Je offerte", "success") : null,
+        c.within_budget === false ? badge("Boven budget", "warning") : null,
+        c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null),
+      spec(run, kinds, c), stats(figures(run, c)), sibling(run, all, kinds, c),
+      kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(run, undefined, c.name)) : null,
+      h("h3", {}, "Meer cijfers"), stats([
+        ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
+        ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
+        c.export_variant && p.export_variant ? [`Netto voordeel zonder terugleververgoeding vanaf ${p.export_variant.from_calendar_year}`,
+          eur0(c.export_variant.npv_eur)] : null,
+        w ? [`Stopt na de garantie (${w.operating_life_years} jaar): lonend tot`, breakEven(w.result.break_even_investment_eur) ?? "—"] : null
+      ].filter(Boolean))];
+  }
+  const DETAILS = new WeakMap();
+  // Een knop met `label` die het venster van accu `c` opent; zonder venster (geen accu) alleen de tekst.
+  const toDetail = (run, c, label) => {
+    const panel = DETAILS.get(run)?.get(c.key);
+    return panel ? UI.opens(panel, label, "ghost inline", { "aria-label": `Details: ${label} (${c.name})` }) : label;
+  };
+
   function overview(run, all, kinds) {
     const result = run.result, out = h("div", { class: "print-keep" });
-    const inputs = new Map(run.input.request.candidates.map(o => [o.key, o]));
-    // Waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen. De naam noemt vaak de nominale capaciteit.
-    // Een capaciteit die de keuzehulp heeft aangenomen (bijvoorbeeld 90% van nominaal) staat er als aanname bij.
-    const spec = c => {
-      const input = inputs.get(c.key), b = input?.battery;
-      const assumed = b && Data.isAssumed("usable_capacity_kwh", input.assumptions || "");
-      return b ? h("p", { class: "help option-spec" }, [kinds.get(c.key) ? connectionText(c, kinds) : null,
-        `${assumed ? "≈ " : ""}${n1(b.usable_capacity_kwh)} kWh bruikbaar${assumed ? " (aanname)" : ""}`,
-        `${n1(b.discharge_power_kw)} kW ontladen, ${n1(b.charge_power_kw)} kW laden`].filter(Boolean).join(" · ")) : null;
-    };
-    // Dezelfde uitvoering of hetzelfde product (merk en product, het deel van de naam vóór ‘ · ’) met een andere
-    // aansluiting: het verschil in één zin. Bij hetzelfde product de uitvoering met de dichtstbijzijnde capaciteit.
-    const head = c => c.name.split(" · ")[0];
-    const sibling = c => {
-      const input = inputs.get(c.key), kind = kinds.get(c.key);
-      if (!input || !kind) return null;
-      const others = all.filter(o => o.key !== c.key && inputs.has(o.key) && kinds.get(o.key) && kinds.get(o.key) !== kind);
-      const same = input.configuration_id == null ? null : others.find(o => inputs.get(o.key).configuration_id === input.configuration_id);
-      const capacity = o => inputs.get(o.key).battery.usable_capacity_kwh;
-      const other = same || (input.configuration_id == null || !c.name.includes(" · ") ? null : others
-        .filter(o => inputs.get(o.key).configuration_id != null && head(o) === head(c))
-        .sort((a, b) => Math.abs(capacity(a) - input.battery.usable_capacity_kwh) - Math.abs(capacity(b) - input.battery.usable_capacity_kwh))[0]);
-      if (!other) return null;
-      const kw = n1(inputs.get(other.key).battery.discharge_power_kw), diff = other.initial_investment_eur - c.initial_investment_eur;
-      const how = { plug: "in een gewoon stopcontact", circuit: "op een eigen groep", fixed: "als vaste installatie" }[kinds.get(other.key)];
-      return h("p", { class: "help" }, (same ? `Dezelfde accu ${how} (${kw} kW)` : `Hetzelfde product ${how} ` +
-        `(${n1(capacity(other))} kWh bruikbaar, ${kw} kW)`) + `: netto voordeel ${eur0(other.npv_eur)}, ` +
-        (Math.round(diff) === 0 ? "even duur in aanschaf." : `${eur0(Math.abs(diff))} ${diff < 0 ? "goedkoper" : "duurder"} in aanschaf.`));
-    };
     for (const warning of ofKind(result, "warning").filter(m => PROFILE_CODES.includes(m.code))) out.append(h("p",
       { class: "callout" }, warning.text));
-    // Een rangnummer (de volgorde van je doel) koppelt kaart, grafiek en tabel zonder op kleur te leunen.
+    // Een rangnummer (de volgorde van je doel) koppelt tabel en grafiek zonder op kleur te leunen.
     const numbered = (c, label) => c.key === "no_battery" ? label : `${all.indexOf(c)}. ${label}`;
-    // De grafiek vergelijkt alle getoonde opties in één beeld; daarom vóór de kaarten, die per optie de details geven.
     out.append(chart("range", {
       title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP}${shown(all).length > TOP + 1 ? ", je offerte" : ""} en geen accu)` : ""}`, unit: "€",
       rows: shown(all).map(c => ({ label: numbered(c, c.short), color: c.color,
         values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
       series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
     }));
-    // Per accu dezelfde vier getallen en woorden als het korte antwoord; de rest ingeklapt. Geen accu is
-    // de vergelijkingsbasis en krijgt geen kaart vol nullen.
-    const card = c => c.key === "no_battery" ? [h("h3", {}, c.name),
-      c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
-      h("p", { class: "help" }, "De vergelijkingsbasis: geen investering en geen besparing. Elke accu is met deze situatie vergeleken; " +
-        "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, numbered(c, c.name)),
-      c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
-      c.quoted ? badge("Je offerte", "success") : null,
-      c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
-      stats(figures(run, c)), sibling(c),
-      h("details", { class: "fold more-figures" }, h("summary", { "aria-label": `Meer cijfers: ${c.name}` }, "Meer cijfers"), stats([
-        ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
-        ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
-        c.export_variant && run.input.request.parameters.export_variant
-          ? [`Netto voordeel zonder terugleververgoeding vanaf ${run.input.request.parameters.export_variant.from_calendar_year}`,
-            eur0(c.export_variant.npv_eur)] : null,
-        warranty(run, c) ? [`Stopt na de garantie (${warranty(run, c).operating_life_years} jaar): lonend tot`,
-          breakEven(warranty(run, c).result.break_even_investment_eur) ?? "—"] : null
-      ].filter(Boolean)))];
-    // Zijn alle getoonde accu’s stekkerbatterijen, dan staat de knop naar het advies één keer boven de kaarten.
-    const batteries = shown(all).filter(c => c.key !== "no_battery"),
-      allPlug = batteries.length > 1 && batteries.every(c => kinds.get(c.key) === "plug");
-    if (allPlug) out.append(h("p", { class: "help" }, "Alle accu’s hieronder zijn stekkerbatterijen voor een gewoon stopcontact. ", toAdvice()));
-    out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
-      card(c),
-      c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
-      !allPlug && kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(undefined, c.name)) : null))));
-    if (more(all)) out.append(h("p", { class: "help" },
-      `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s` +
-      (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; hieronder staan ze allemaal."));
+    // Eén tabel in plaats van een kaart per accu: dezelfde getallen in dezelfde kolom lezen zich naast elkaar. De naam
+    // opent het venster met de details; geen accu is de vergelijkingsbasis van € 0.
+    const near = new Set(band(run, judged(run)).map(c => c.key));
+    const tags = c => [c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null, c.quoted ? badge("Je offerte", "success") : null,
+      near.has(c.key) ? badge("Bijna even goed", "") : null, c.within_budget === false ? badge("Boven budget", "warning") : null].filter(Boolean);
+    const none = "—";
+    out.append(table(["Optie", "Aansluiting", "Netto voordeel (NPV)", "Lonend tot", "Startinvestering nu", "Terugverdiend na"],
+      shown(all).map(c => [
+        h("span", { class: "option-cell" }, h("i", { class: "swatch", style: `background:${c.color}`, "aria-hidden": "true" }),
+          c.key === "no_battery" ? h("span", { class: "plain-name" }, c.name)
+            : h("span", { class: "plain-name" }, `${all.indexOf(c)}. `, toDetail(run, c, plainName(run, c, kinds))),
+          c.key === "no_battery" ? null : h("small", {}, c.name), tags(c).length ? h("span", { class: "option-tags" }, tags(c)) : null),
+        c.key === "no_battery" ? none : connectionText(c, kinds), eur0(c.npv_eur),
+        c.key === "no_battery" ? none : breakEven(c.break_even_investment_eur) ?? "Niet berekend", eur0(c.initial_investment_eur),
+        c.key === "no_battery" ? none : c.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(c.payback_years)]),
+      { caption: more(all) ? `Geen accu en de beste ${TOP}${shown(all).length > TOP + 1 ? ", met je offerte" : ""}, op volgorde van je doel`
+        : "Alle opties, op volgorde van je doel", className: "options", stack: true, numeric: [2, 3, 4, 5] }));
     if (more(all)) {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
       out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Aansluiting", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
@@ -1063,6 +1089,7 @@ window.Results = (() => {
       { caption: `Alle ${all.length} opties, op volgorde van je doel`, numeric: [2, 3, 4, 5, 6, 7, 8] })));
     }
     out.append(h("p", { class: "help" },
+      "Geen accu is de vergelijkingsbasis: geen investering en geen besparing. " +
       "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend tot’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
     return out;
   }
@@ -1880,6 +1907,11 @@ window.Results = (() => {
       : c.connection == null ? Data.connectionOf(described.get(c.key)) : null]));
     KINDS.set(run, kinds);
     shortNames(run, all, kinds);
+    // Vensters die meer knoppen openen: het stekkeradvies (afgedrukt in de uitleg) en per accu de details (niet afgedrukt).
+    const circuit = costCatalog.estimates?.amounts?.dedicated_circuit, advice = plugAdvice(run, quoted(run) ?? judged(run), kinds, circuit);
+    if (advice) ADVICE.set(run, UI.dialogPanel("Stekkerbatterijen: het advies van Milieu Centraal", advice));
+    DETAILS.set(run, new Map(all.filter(c => c.key !== "no_battery").map(c => [c.key,
+      UI.dialogPanel(plainName(run, c, kinds), () => optionDetail(run, all, kinds, c), { className: "option-detail" })])));
     // De kop van de pagina is het antwoord; de titel van de berekening (waarmee is gerekend) staat eronder. Bij een
     // offerte gaat het korte antwoord over die offerte en blijft de titel de kop.
     if (page && !quoted(run)) page.setTitle(answer(run, judged(run)), run.title, run.title);
@@ -1945,8 +1977,9 @@ window.Results = (() => {
       `stroom ${short(t.import_eur_per_kwh)} · teruglevering ${short(t.export_eur_per_kwh)} per kWh `,
       UI.popup("Waarmee is gerekend?", "Waarmee is gerekend?", [...meta,
         button("Alle invoer en aannames", event => { UI.closePopup(event.target); openTab("Invoer"); }, "secondary")], { variant: "ghost inline" }));
-    view.append(verdict(run, kinds, { onDuplicate, shared, openTab, warnings }), metaLine, jump,
-      summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), parts);
+    view.append(verdict(run, kinds, { onDuplicate, shared, openTab, warnings }), metaLine, comparison(run, kinds), jump,
+      summary(run, kinds, circuit, categories), parts,
+      h("div", { class: "option-details" }, [...DETAILS.get(run).values()].map(panel => panel.element)));
   }
 
   // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de opties die de uitkomst noemt

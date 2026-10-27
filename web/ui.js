@@ -410,26 +410,41 @@ window.UI = (() => {
     return { element, close };
   }
 
-  // Een venster achter een knop dat in de pagina blijft staan: de inhoud bestaat meteen (zoeken in de tekst, tests,
-  // afdrukken), maar komt pas in beeld na de knop. Escape, de sluitknop en een klik naast het venster sluiten het; de
-  // focus gaat terug naar de knop. Afgedrukt staat de inhoud gewoon in de pagina, behalve met `print: false`
-  // (styles.css). Een knop in het venster die ergens anders heen gaat, sluit eerst het venster (`closePopup`).
-  function popup(label, title, content, { variant = "secondary", print = true, props = {} } = {}) {
-    const id = uid("popup");
-    const element = h("dialog", { class: print ? "popup" : "popup print-closed", id, "aria-labelledby": `${id}-title` },
+  // Een venster dat in de pagina blijft staan: de inhoud bestaat meteen (tests, afdrukken), maar komt pas in beeld als
+  // een knop het opent. Escape, de sluitknop en een klik naast het venster sluiten het; de focus gaat terug naar de knop
+  // die het opende. Afgedrukt staat de inhoud gewoon in de pagina, behalve met `print: false` (styles.css). Is `content`
+  // een functie, dan bouwt het venster zijn inhoud pas bij de eerste keer openen; dat gaat dus nooit mee op papier.
+  // Een knop in het venster die ergens anders heen gaat, sluit eerst het venster (`closePopup`).
+  function dialogPanel(title, content, { print = true, className = "" } = {}) {
+    const id = uid("popup"), lazy = typeof content === "function";
+    let back = null, filled = !lazy;
+    const body = h("div", { class: "popup-body" }, lazy ? null : content);
+    const element = h("dialog", { class: ["popup", print && !lazy ? null : "print-closed", className].filter(Boolean).join(" "), id,
+      "aria-labelledby": `${id}-title` },
       h("div", { class: "dialog-head" }, h("h2", { id: `${id}-title` }, title),
         button("✕", () => element.close(), "ghost", { "aria-label": "Sluiten" })),
-      h("div", { class: "popup-body" }, content));
-    const open = () => { if (!element.open) element.showModal(); };
-    const opener = button(label, open, variant, { "aria-haspopup": "dialog", "aria-controls": id, ...props });
-    element.addEventListener("close", () => { if (opener.isConnected) opener.focus(); });
+      body);
+    const open = from => {
+      if (!filled) { append(body, [content()]); filled = true; }
+      back = from ?? back;
+      if (!element.open) element.showModal();
+    };
+    element.addEventListener("close", () => { if (back?.isConnected) back.focus(); });
     // Alleen een klik op de achtergrond, niet in het venster zelf (ook de rand van het venster is `element`).
     element.addEventListener("click", event => {
       if (event.target !== element) return;
       const r = element.getBoundingClientRect();
       if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) element.close();
     });
-    return Object.assign(h("span", { class: "popup-host" }, opener, element), { open, close: () => element.close() });
+    return { id, element, open, close: () => element.close() };
+  }
+  // Een knop die een venster uit `dialogPanel` opent; meer knoppen kunnen hetzelfde venster openen.
+  const opens = (panel, label, variant = "secondary", props = {}) => button(label, event => panel.open(event.currentTarget), variant,
+    { "aria-haspopup": "dialog", "aria-controls": panel.id, ...props });
+  // Knop en venster samen, op de plek van de knop.
+  function popup(label, title, content, { variant = "secondary", print = true, props = {}, className } = {}) {
+    const panel = dialogPanel(title, content, { print, className }), opener = opens(panel, label, variant, props);
+    return Object.assign(h("span", { class: "popup-host" }, opener, panel.element), { open: () => panel.open(opener), close: panel.close });
   }
   const closePopup = node => node?.closest?.("dialog.popup")?.close();
 
@@ -654,7 +669,7 @@ window.UI = (() => {
 
   return {
     h, svg, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
-    csvCell, clip, button, link, popup, closePopup, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
+    csvCell, clip, button, link, popup, dialogPanel, opens, closePopup, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

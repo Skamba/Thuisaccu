@@ -16,6 +16,8 @@ const path = require("node:path");
 const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..", "..");
+// Hoeveel zichtbare woorden het antwoord boven de tabbladen hooguit telt (kaart, blad en uitleg samen).
+const WORD_BUDGET = 650;
 const BINARY = process.env.THUISACCU_BIN
   || path.join(ROOT, "target", "debug", process.platform === "win32" ? "thuisaccu-server.exe" : "thuisaccu-server");
 
@@ -288,21 +290,24 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.equal(sizing.label, "je eigen bereik");
   assert.ok(sizing.low_kwh === 0 && sizing.high_kwh > 0);
   // Het beslisblad: geen accu naast de besproken accu, met de bandbreedte onder het netto voordeel.
-  const lanes = page.locator(".verdict table.lanes");
+  const lanes = page.locator(".comparison table.lanes");
   assert.equal(await lanes.locator("thead th").first().textContent(), "Geen accu");
   const leadCell = label => lanes.locator(`tr:has(th:has-text('${label}')) td.lane-lead`);
   if (await leadCell("Startinvestering nu").count()) {
-    assert.match(await page.textContent(".verdict"), /bruikbaar\) valt binnen je eigen bereik van 0 tot [\d,]+ kWh\./);
+    await page.click(".answer-actions button:has-text('Waarom deze accu?')");
+    assert.match(await page.textContent("dialog.popup[open]"), /bruikbaar\) valt binnen je eigen bereik van 0 tot [\d,]+ kWh\./);
+    await page.keyboard.press("Escape");
     assert.match(await leadCell("Netto voordeel (NPV)").textContent(), /^\D{0,2}€\s?[\d.]+ongunstig \D{0,2}€\s?[\d.]+ · gunstig \D{0,2}€\s?[\d.]+$/);
   }
   // Wisselen naar een variant bouwt alleen het blad opnieuw en meldt de uitkomst; daarna terug naar de basis.
-  const variantNames = await page.locator(".variant-switch label").allTextContents();
-  assert.ok(variantNames.some(t => t.startsWith(" Ongunstig")) && variantNames.some(t => t.startsWith(" Stopt na de garantie")), variantNames.join("|"));
-  await page.locator(".variant-switch label:has-text('Ongunstig') input").check();
-  assert.match(await page.textContent(".verdict caption"), /^Beslisblad, ongunstig$/);
+  const variantSwitch = page.getByLabel("Bekijk het blad met");
+  const variantNames = await variantSwitch.locator("option").allTextContents();
+  assert.ok(variantNames.some(t => t.startsWith("Ongunstig (")) && variantNames.some(t => t.startsWith("Stopt na de garantie")), variantNames.join("|"));
+  await variantSwitch.selectOption("pessimistic");
+  assert.match(await page.textContent(".comparison caption"), /^Beslisblad, ongunstig$/);
   assert.match(await page.textContent(".sheet [aria-live]"), /^Ongunstig: het hoogste netto voordeel in dit blad heeft .+ \(\D{0,2}€\s?[\d.]+\), binnen deze berekening\.$/);
   assert.ok((await lanes.locator("tr:has(th:text-is('Besparing in jaar 1')) td").allTextContents()).slice(1).every(t => t === "Niet apart berekend"));
-  await page.locator(".variant-switch label:has-text('Basisaannames') input").check();
+  await variantSwitch.selectOption("base");
   // Hoe zeker het antwoord is, staat in een venster: open met de knop, dicht met Escape, focus terug op de knop.
   const certain = page.locator(".answer-actions button:has-text('Hoe zeker is dit?')");
   const certainDialog = page.locator("dialog.popup:has(h2:text-is('Hoe zeker is dit?'))");
@@ -313,7 +318,14 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.keyboard.press("Escape");
   assert.equal(await certainDialog.isVisible(), false);
   assert.ok(await certain.evaluate(el => el === document.activeElement));
-  assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
+  // Per accu staan de details in een venster achter de naam in het overzicht; de inhoud ontstaat pas bij openen.
+  const detailButton = page.locator("table.options button[aria-haspopup=dialog]").first();
+  await detailButton.click();
+  const detail = page.locator("dialog.option-detail[open]");
+  assert.match(await detail.textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);
+  assert.match(await detail.textContent(), /Meer cijfers.*Stopt na de garantie \(\d+ jaar\): lonend tot/s);
+  await page.keyboard.press("Escape");
+  assert.ok(await detailButton.evaluate(el => el === document.activeElement));
   const summary = await page.textContent(".plain");
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
   assert.match(await page.textContent(".rates"), /^Gerekend met stroom €\s[\d,]+ per kWh · terugleververgoeding €\s[\d,]+ per kWh/);
@@ -336,7 +348,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     : /Als teruglevering vanaf 2030 niets meer oplevert/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
-  const saving = await page.textContent(".verdict table.lanes tr:has(th:text-is('Besparing in jaar 1')) td.lane-lead");
+  const saving = await page.textContent(".comparison table.lanes tr:has(th:text-is('Besparing in jaar 1')) td.lane-lead");
   const receipt = await page.locator(".plain .receipt li").allTextContents();
   const [, gain] = receipt[0].match(/^\+ [\d.]+ kWh minder van het net × €\s*[\d,]+ = (€\s*[\d.]+)$/);
   const [, sign, lost] = receipt[1].match(/^([+−]) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ \(.+\) = (€\s*[\d.]+)$/);
@@ -348,20 +360,46 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(summary, /‘Lonend’ betekent hier: de besparing verdient de investering binnen 15 jaar terug en levert daarbovenop 4,0% per jaar op/);
   // De grens voor een offerte, ook zonder terugleververgoeding.
   if (!whatIf) assert.match(summary, /(lonend zolang de startinvestering niet boven ongeveer €\s*[\d.]+ komt|ook als hij gratis zou zijn).* In de variant ‘Geen terugleververgoeding vanaf 2030’ (ligt die grens bij €\s*[\d.]+0(: hoger, omdat zelf opslaan meer waard wordt als terugleveren minder oplevert of geld kost)?|is hij zelfs gratis niet lonend)\./);
-  assert.match(summary, /geschat uit jaartotalen/);
-  // Met de stekker staat het veiligheidsadvies boven de som, met het vermogen waarmee is gerekend; de kaart
-  // van een stekkerbatterij springt ernaartoe zonder de pagina te verlaten.
-  assert.match(summary, /Milieu Centraal raadt stekkerbatterijen op dit moment af\. Dit gaat over: .+\. De reden.*ten hoogste 800 W in het stopcontact.*Voor .+ is gerekend met [\d,]+ kW ontladen.*energieleveren\.nl/);
+  // Een geschat profiel staat op de kaart, met de knop naar het importeren van meetwaarden.
+  await page.click(".answer-actions button:has-text('Geschat profiel')");
+  assert.match(await page.textContent("dialog.popup[open]"), /geschat|GESCHAT/);
+  await page.keyboard.press("Escape");
+  // Met de stekker staat het veiligheidsadvies in één venster, met het vermogen waarmee is gerekend; op papier staat het
+  // in de uitleg, vóór de som. De kaart noemt het in één regel en opent het venster zonder de pagina te verlaten.
+  assert.match(summary, /Milieu Centraal raadt stekkerbatterijen op dit moment af\. Dit gaat over: .+\.De reden.*ten hoogste 800 W in het stopcontact.*Voor .+ is gerekend met [\d,]+ kW ontladen.*energieleveren\.nl/);
   assert.ok(summary.indexOf("raadt stekkerbatterijen op dit moment af") < summary.indexOf("Zo reken je de besparing"));
-  // Elke kaart noemt aansluiting, bruikbare capaciteit en vermogen; de grafiek gebruikt korte namen met dezelfde gegevens.
-  assert.match(await page.locator("article.option").nth(1).textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);
+  // De grafiek gebruikt korte namen met aansluiting, vermogen en capaciteit.
   assert.match(await page.locator("figure.chart").first().textContent(), /Stekker 0,8 kW · .+? · [\d,]+ kWh/);
-  // Alleen stekkerbatterijen: de knop naar het advies staat één keer boven de kaarten, niet op elke kaart.
-  assert.equal(await page.locator(".option-grid button:has-text('lees waarom')").count(), 0);
-  assert.match(await page.locator("p.help:has-text('Alle accu’s hieronder zijn stekkerbatterijen')").textContent(), /lees waarom/);
-  await page.locator("button:has-text('Milieu Centraal raadt stekkerbatterijen af: lees waarom')").first().click();
-  assert.equal(await page.evaluate(() => document.activeElement.id), "stekkeradvies");
+  const adviceDialog = page.locator("dialog.popup:has(h2:text-is('Stekkerbatterijen: het advies van Milieu Centraal'))");
+  const readAdvice = page.locator(".verdict-plug button:has-text('Lees het advies')");
+  await readAdvice.click();
+  assert.ok(await adviceDialog.isVisible());
+  // De bronnen zijn de pagina's van Milieu Centraal en Netbeheer Nederland, niet wat er toevallig op die plaats in de lijst staat.
+  const adviceLinks = await adviceDialog.locator("a").evaluateAll(links => links.map(a => a.href));
+  assert.ok(["milieucentraal.nl/energie-besparen/zonnepanelen/zonnepanelen-met-een-stekker", "milieucentraal.nl/energie-besparen/zonnepanelen/thuisbatterij",
+    "netbeheernederland.nl"].every(part => adviceLinks.some(href => href.includes(part))), adviceLinks.join(" "));
+  await page.keyboard.press("Escape");
+  assert.ok(await readAdvice.evaluate(el => el === document.activeElement));
   assert.equal(await page.evaluate(() => location.hash), runHash);
+  // Elke knop op de kaart opent een venster met een naam; Escape sluit het en de focus gaat terug naar de knop.
+  for (const opener of await page.locator(".answer-actions button[aria-haspopup=dialog]").all()) {
+    await opener.click();
+    const open = page.locator("dialog.popup[open]");
+    assert.ok((await open.getAttribute("aria-labelledby")) && (await open.locator("h2").textContent()).length > 0);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("dialog.popup[open]").count(), 0);
+    assert.ok(await opener.evaluate(el => el === document.activeElement));
+  }
+  // Het antwoord is kort: tot de tabbladen weinig zichtbare tekst, en het netto voordeel van de besproken accu staat er
+  // hooguit twee keer (op de kaart en in het blad).
+  const answerText = await page.evaluate(() => {
+    const tabs = document.querySelector(".tabset, [role=tablist]"), out = [];
+    for (const el of document.querySelectorAll("#view > *")) { if (el.contains(tabs)) break; out.push(el.innerText); }
+    return out.join(" ");
+  });
+  const leadFigure = await page.textContent(".answer-figure strong");
+  assert.ok(answerText.split(/\s+/).length < WORD_BUDGET, `${answerText.split(/\s+/).length} woorden`);
+  if (leadFigure) assert.ok(answerText.split(leadFigure).length - 1 <= 2, `${leadFigure} staat ${answerText.split(leadFigure).length - 1} keer in het antwoord`);
   // De kostenopbouw telt de startposten op tot de startinvestering van de gekozen accu.
   await page.click(`[role=tab]:has-text("Kostenopbouw")`);
   const costPanel = page.locator("[role=tabpanel]:not([hidden])");
@@ -953,10 +991,12 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const firstRun = await page.evaluate(() => location.hash);
   const view = await page.textContent("#view");
   assert.match(view, /Nederland \(geen adres opgegeven\)/);
-  // Een dure offerte verdient zich niet terug; een negatieve ROI krijgt een echt minteken.
-  assert.match(view, /ROI over looptijd−\d/);
   // De grens waarboven de offerte niet meer lonend is: startinvestering plus NPV.
-  const option = await page.locator("article.option").nth(1).textContent();
+  await page.locator("table.options button[aria-haspopup=dialog]").first().click();
+  const option = await page.textContent("dialog.option-detail[open]");
+  await page.keyboard.press("Escape");
+  // Een dure offerte verdient zich niet terug; een negatieve ROI krijgt een echt minteken.
+  assert.match(option, /ROI over looptijd−\d/);
   // De kaart zegt waarmee gerekend is: aansluiting, bruikbare capaciteit en vermogen.
   assert.match(option, /Stekker · 10 kWh bruikbaar · 5 kW ontladen, 5 kW laden/);
   assert.match(view, /Voor Eigen optie 1 is gerekend met [\d,]+ kW ontladen: meer dan 800 W.*en met [\d,]+ kW laden: ook dat is meer dan 800 W/);
