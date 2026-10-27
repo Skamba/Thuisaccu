@@ -711,10 +711,13 @@ window.Scenario = (() => {
       const label = key => categories.find(c => c.key === key).label;
       const included = changed.filter(l => l.status === "included").map(l => label(l.category).toLowerCase());
       const open = categories.filter(c => (option.costs[c.key]?.status || "unknown") === "unknown").length;
+      const reserve = amountOf(option.costs.contingency);
       quoteNotes.set(option, [`Totaalprijs ${money(value)} staat op de accupost.`,
         included.length ? `Als inbegrepen gemarkeerd: ${included.join(", ")}.` : null,
         separate.length ? `Apart gehouden: ${separate.map(key => label(key).toLowerCase()).join(", ")}.` : null,
-        changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs." : null,
+        changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs."
+          : reserve != null && reserve > 0 ? `De reserve voor meerwerk (${money(reserve)}, een aanname) komt bovenop de offerteprijs; ` +
+            "kies ‘Vaste prijs’ als de offerte een vaste prijs noemt." : null,
         open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend. Zet ze op Inbegrepen of Niet van toepassing, of kies ‘Vul open posten met indicaties’: naast de totaalprijs tellen die als inbegrepen, met een notitie om dat na te gaan.` : null]
         .filter(Boolean).join(" "));
       persist(); redraw();
@@ -727,7 +730,7 @@ window.Scenario = (() => {
       block,
       boxes.length ? h("fieldset", {}, h("legend", {}, "Telt als inbegrepen in de totaalprijs (vink uit wat de offerte niet noemt)"),
         boxes.map(([, b]) => b.element))
-        : h("p", { class: "help" }, "Nog geen andere startposten met een bedrag. Vul eerst de open posten met indicaties om te zien wat de offerte moet dekken."),
+        : note ? null : h("p", { class: "help" }, "Nog geen andere startposten met een bedrag. Vul eerst de open posten met indicaties om te zien wat de offerte moet dekken."),
       h("p", { class: "actions" }, apply), status);
   }
 

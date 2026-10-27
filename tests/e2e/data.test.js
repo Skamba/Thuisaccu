@@ -530,6 +530,29 @@ test("perCent(): 1 cent meer netto terugleverwaarde, met de hand na te rekenen; 
   assert.equal(Results.perCent(banded, option([1000, 400])), null);
 });
 
+test("salderenGap(): het kleinste van netafname en teruglevering maal het prijsverschil; vóór 2027 en zonder teruglevering niets", () => {
+  const run = (start, imp, exp) => ({ input: { request: { parameters: { start_year: start,
+    tariff: { import_eur_per_kwh: 0.25, export_eur_per_kwh: 0.05 } } } },
+    result: { baseline_first_year: { grid_import_kwh: imp, grid_export_kwh: exp } } });
+  // 3.000 kWh afname, 2.000 kWh teruglevering: met salderen 1.000 × 0,25 = € 250, zonder 750 − 100 = € 650.
+  const gap = Results.salderenGap(run(2027, 3000, 2000));
+  assert.ok(Math.abs(gap.eur - 400) < 1e-9 && gap.kwh === 2000, JSON.stringify(gap));
+  // Meer teruglevering dan afname: met salderen −1.000 × 0,05 = −€ 50, zonder 500 − 150 = € 350.
+  assert.ok(Math.abs(Results.salderenGap(run(2027, 2000, 3000)).eur - 400) < 1e-9);
+  assert.equal(Results.salderenGap(run(2026, 3000, 2000)), null);
+  assert.equal(Results.salderenGap(run(2027, 3000, 0)), null);
+});
+
+test("quoted(): in Zelf doorrekenen is de enige optie met een totaalprijs uit een offerte je offerte", () => {
+  const line = source => ({ category: "battery", status: "priced", amount_minor: 695000, source });
+  const run = sources => ({ input: { request: { candidates: sources.map((source, i) => ({ key: `o${i}`, costs: [line(source)] })) } },
+    result: { candidates: sources.map((_, i) => ({ key: `o${i}` })) } });
+  assert.equal(Results.quoted(run([Data.QUOTE_TOTAL, "Aanname"])).key, "o0");
+  // Twee opties met een offerteprijs: niet één ‘je offerte’.
+  assert.equal(Results.quoted(run([Data.QUOTE_TOTAL, Data.QUOTE_TOTAL])), null);
+  assert.equal(Results.quoted(run(["Aanname"])), null);
+});
+
 test("trimmed(): een kopie van een grote berekening houdt de beste vijf en de beste vaste accu", () => {
   context.Scenario = { MAX_OPTIONS: 12 };
   const candidates = Array.from({ length: 14 }, (_, i) => ({ key: `p${i}`, name: `FICTIEF ${i}`, npv_eur: 1000 - i,

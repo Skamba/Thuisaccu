@@ -52,12 +52,24 @@ window.Results = (() => {
       export_variant: result.export_variant_recommended_key == null ? undefined : { npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null } };
     // Kleuren volgen de volgorde van `rank`.
     const ranked = rank(run);
-    const quote = run.input.request.quote_basis?.candidate_key;
+    const quote = quoteKey(run.input.request);
     return [baseline, ...ranked.map((c, i) => ({ ...c, color: palette[i % palette.length], quoted: c.key === quote }))];
   }
-  // De accu uit je offerte (herberekend vanuit de offertecheck), of null.
+  // Het bedrag op de accupost als dat een totaalprijs uit een offerte is (‘Eén totaalprijs uit een offerte invullen’), of null.
+  const quoteTotalOf = candidate => {
+    const line = candidate?.costs?.find(l => l.category === "battery" && l.status === "priced" && l.source === Data.QUOTE_TOTAL);
+    return line ? line.amount_minor / 100 : null;
+  };
+  // De optie uit je offerte: herberekend vanuit de offertecheck, of in Zelf doorrekenen de enige optie met een totaalprijs
+  // uit een offerte op de accupost. Hebben meer opties er een, dan is er niet één ‘je offerte’.
+  function quoteKey(request) {
+    if (request.quote_basis) return request.quote_basis.candidate_key;
+    const totals = (request.candidates || []).filter(c => quoteTotalOf(c) != null);
+    return totals.length === 1 ? totals[0].key : null;
+  }
+  // De accu uit je offerte, of null.
   function quoted(run) {
-    const key = run.input.request.quote_basis?.candidate_key;
+    const key = quoteKey(run.input.request);
     return key == null ? null : run.result.candidates.find(c => c.key === key) ?? null;
   }
   // Dezelfde regels als `choose` in analysis.rs: bij ROI en terugverdientijd telt een optie met verlies in geld van nu
@@ -225,9 +237,10 @@ window.Results = (() => {
 
   // Bij een herberekende offerte: of de prijs uit de offerte binnen de grens valt.
   function quoteLead(run, option) {
-    const limit = option.break_even_investment_eur, start = option.initial_investment_eur, price = run.input.request.quote_basis.price;
-    const startText = `de startkosten van ${eur0(start)}` + (price && Math.abs(price.total_eur - start) >= 1
-      ? ` (offerteprijs ${eur0(price.total_eur)}, met wat apart bleef, reserve en teruggaven; zie ‘Uit je offerte’)` : "");
+    const limit = option.break_even_investment_eur, start = option.initial_investment_eur, basis = run.input.request.quote_basis;
+    const total = basis ? basis.price?.total_eur : quoteTotalOf(run.input.request.candidates.find(c => c.key === option.key));
+    const startText = `de startkosten van ${eur0(start)}` + (total != null && Math.abs(total - start) >= 1
+      ? ` (offerteprijs ${eur0(total)}, met wat apart bleef, reserve en teruggaven; zie ${basis ? "‘Uit je offerte’" : "de kosten op het tabblad Invoer"})` : "");
     if (!finite(limit)) return `Lonend tot is niet berekend; vergelijk het netto voordeel met de andere opties.`;
     if (limit <= 0) return "Zelfs gratis niet lonend binnen deze aannames: de jaarkosten, verliezen en het sluimerverbruik wegen " +
       "zwaarder dan de besparing.";
@@ -385,6 +398,16 @@ window.Results = (() => {
         : "Let op: in geld van nu kost deze keuze je over de looptijd geld. Hij wint op ROI, die toekomstige bedragen niet omrekent naar nu."));
       change.append(h("li", {},
         `Bij ongunstiger prijzen en kosten wordt het netto voordeel ${eur0(rec.pessimistic.npv_eur)}, bij gunstiger ${eur0(rec.optimistic.npv_eur)}.`));
+    }
+    const gap = salderenGap(run);
+    if (gap) {
+      const saving = best?.years?.[0]?.energy_saving_eur;
+      list.append(h("li", {}, `Zonder salderen betaal je in jaar 1 zonder accu ongeveer ${eur0(gap.eur)} meer dan met salderen: ` +
+        `${kwh(gap.kwh)} teruglevering die salderen tegen ${money(gap.import)} per kWh wegstreepte, levert nu ${money(gap.export)} ` +
+        "per kWh op; terugleverkosten betaal je in beide gevallen (ter vergelijking; de berekening rekent zonder salderen). " +
+        (finite(saving) && saving > 0 ? (saving >= gap.eur ? `${best.name} bespaart in jaar 1 ${eur0(saving)}, meer dan dat verschil. `
+          : `${best.name} haalt daarvan ${eur0(saving)} terug (${n(saving / gap.eur * 100, 0)}%). `) : "") +
+        "Verbruik verschuiven naar zonuren of een ander contract dicht ook een deel van het verschil."));
     }
     if (isEstimated(run)) list.append(h("li", {},
       "Je verbruik en opwek zijn geschat uit jaartotalen. Met gemeten uur- of kwartierwaarden (bijvoorbeeld van je slimme meter) wordt de uitkomst nauwkeuriger."));
@@ -549,6 +572,18 @@ window.Results = (() => {
         Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))), { className: "fold print-closed" }),
       h("p", { class: "next-step" }, "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en " +
         "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
+  }
+
+  // Wat het einde van salderen kost bij je verbruik en opwek zonder accu in jaar 1, met het tarief van de run. Met
+  // salderen (`finance::energy_bill` tot en met 2026) streept teruglevering netafname weg tegen het leveringstarief;
+  // daarna levert hetzelfde deel de terugleververgoeding op. Het verschil is dus het kleinste van netafname en
+  // teruglevering maal het prijsverschil; terugleverkosten en vaste kosten zijn in beide gelijk. Alleen ter
+  // vergelijking, voor runs die in 2027 of later beginnen.
+  function salderenGap(run) {
+    const p = run.input.request.parameters, t = p.tariff, base = run.result.baseline_first_year;
+    if (p.start_year < 2027 || !finite(base?.grid_import_kwh) || !(base.grid_export_kwh > 0)) return null;
+    const kwhNetted = Math.min(base.grid_import_kwh, base.grid_export_kwh), eur = kwhNetted * (t.import_eur_per_kwh - t.export_eur_per_kwh);
+    return eur >= 1 ? { kwh: kwhNetted, eur, import: t.import_eur_per_kwh, export: t.export_eur_per_kwh } : null;
   }
 
   // Wat 1 cent per kWh meer netto terugleverwaarde (vergoeding min kosten) doet: de rekening zonder accu in jaar 1 en
@@ -926,7 +961,7 @@ window.Results = (() => {
     const own = input => !Data.fromKeuzehulp(input);
     // Standaard je eigen offerte als die er is, anders de besproken accu. Wint geen accu, dan is
     // `recommended_key` ‘no_battery’; die staat niet in de keuzelijst.
-    const first = request.quote_basis?.candidate_key ?? request.candidates.find(own)?.key ?? judged(run)?.key;
+    const first = quoteKey(request) ?? request.candidates.find(own)?.key ?? judged(run)?.key;
     const pick = UI.select(all.slice(1).map(c => [c.key, c.short]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
     const basis = request.quote_basis;
@@ -1413,5 +1448,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap };
 })();

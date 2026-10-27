@@ -146,7 +146,9 @@
         field("Ligging van de panelen", select([["south", "Zuid"], ["south_east", "Zuidoost"], ["south_west", "Zuidwest"], ["east_west", "Oost en west"], ["east", "Oost"], ["west", "West"]],
           answers.orientation, { onchange: event => { answers.orientation = event.target.value; save(); update(); } })));
     }
-    const electric = h("fieldset", {}, h("legend", {}, "Warmtepomp of elektrische auto? (optioneel)"),
+    // Ingeklapt tenzij al ingevuld: de meeste bezoekers hebben dit niet nodig.
+    const electric = h("details", { class: "fold", open: yearKwh(answers.heatPump) > 0 || yearKwh(answers.ev) > 0 },
+      h("summary", {}, "Warmtepomp of elektrische auto? (optioneel)"),
       h("p", { class: "help" }, "Deze verbruiken op andere momenten dan de rest van het huis: een warmtepomp vooral in de winter, " +
         "een auto als hij thuis laadt. Dit verbruik telt al mee in de getallen hierboven; we verdelen het alleen anders over het jaar. " +
         `Plan je er een? Tel het verwachte verbruik dan op bij je ${total() ? "totale verbruik" : "afname"}. ` +

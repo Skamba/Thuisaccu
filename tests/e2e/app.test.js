@@ -196,6 +196,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   const describedBy = await production.getAttribute("aria-describedby");
   assert.match(await page.textContent(`[id="${describedBy.split(" ").pop()}"]`), /Vul de opwek van je panelen in, of hieronder het vermogen in kWp/);
   await production.fill("3800");
+  await page.click("summary:has-text(\"Warmtepomp of elektrische auto?\")");
   await page.getByLabel("Waarvan warmtepomp (kWh per jaar)").fill("1500");
   // Een jaartotaal zoals op de jaarafrekening: ‘4.600’ is 4600 kWh, ook met komma en decimalen.
   const gridImport = page.getByLabel("Stroom van het net per jaar (kWh)");
@@ -291,6 +292,8 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
   assert.match(await page.textContent(".rates"), /^Gerekend met stroom €\s[\d,]+ per kWh · terugleververgoeding €\s[\d,]+ per kWh/);
   assert.match(summary, /Wat betekenen deze woorden\?.*Zelfvoorziening/s);
+  // Wat het einde van salderen kost, en hoeveel de besproken accu daarvan terugwint.
+  assert.match(summary, /Zonder salderen betaal je in jaar 1 zonder accu ongeveer €\s[\d.]+ meer dan met salderen: [\d.]+ kWh teruglevering/);
   // De garantiestresstest is één waarschuwing met een tabel per accu, niet een zin per accu.
   const warningTexts = await page.locator(".warnings > li").allTextContents();
   assert.equal(warningTexts.filter(w => w.startsWith("Garantiestresstest bij")).length, stressed.length === 1 ? 1 : 0);
@@ -523,6 +526,7 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
   assert.equal(await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").count(), 0);
   await page.getByLabel("Totaal verbruik per jaar (kWh)").fill("8000");
   await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("10000");
+  await page.click("summary:has-text(\"Warmtepomp of elektrische auto?\")");
   await page.getByLabel("Waarvan elektrische auto, thuis geladen (kWh per jaar)").fill("3000");
   assert.match(await page.textContent(".derived"), /8\.000 kWh per jaar\./);
   await next(page);

@@ -44,6 +44,41 @@ pub struct SummaryRequest {
     /// Bij een herberekening uit de offertecheck: welke optie de offerte is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_basis: Option<SummaryQuote>,
+    /// Per optie alleen de accupost, zodat de lijst een totaalprijs uit een offerte in Zelf doorrekenen herkent
+    /// zoals de uitkomst (`quoteKey` in `web/results.js`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<SummaryRequestCandidate>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryRequestCandidate {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default, deserialize_with = "battery_line")]
+    pub costs: Vec<SummaryCost>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryCost {
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub amount_minor: i64,
+    #[serde(default)]
+    pub source: String,
+}
+
+/// Houdt van de kostenposten alleen de accupost.
+fn battery_line<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<SummaryCost>, D::Error> {
+    let all = Vec::<SummaryCost>::deserialize(deserializer)?;
+    Ok(all
+        .into_iter()
+        .filter(|l| l.category == "battery")
+        .collect())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -952,7 +952,17 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
     assert!(parameters["tariff"]["import_eur_per_kwh"].is_number());
     assert!(parameters["tariff"].get("export_eur_per_kwh").is_none());
     assert_eq!(newest["input"]["profile"]["options"]["is_demo"], true);
-    assert!(newest["input"]["request"].get("candidates").is_none());
+    // Van de invoer per optie alleen de accupost, om een totaalprijs uit een offerte te herkennen.
+    let options = newest["input"]["request"]["candidates"].as_array().unwrap();
+    assert_eq!(options[0]["key"], "test");
+    assert!(
+        options[0]["costs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["category"] == "battery")
+    );
+    assert!(options[0].get("battery").is_none());
     let candidate = &newest["result"]["candidates"][0];
     assert_eq!(candidate["key"], "test");
     assert!(candidate["npv_eur"].is_number());
