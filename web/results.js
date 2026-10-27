@@ -236,7 +236,13 @@ window.Results = (() => {
   // korte antwoord noemt het netto voordeel alleen als dat het doel is; de kaart altijd, op dezelfde plek of na de besparing.
   function figures(run, c, lead = false) {
     const limit = c.break_even_investment_eur, npvFirst = run.input.request.parameters.objective === "net_present_value";
-    const npv = ["Netto voordeel (NPV)", eur0(c.npv_eur), lead ? "over de looptijd, in geld van nu" : null];
+    // In het oordeel staat onder het bedrag ook wat het wordt als het tegenzit: anders lijkt het één zeker getal.
+    const w = lead ? warranty(run, c) : null, life = run.input.request.candidates.find(o => o.key === c.key)?.battery.operating_life_years;
+    const range = lead ? [finite(c.pessimistic?.npv_eur) ? `ongunstig ${eur0(c.pessimistic.npv_eur)}` : null,
+      w && finite(w.result.npv_eur) && w.operating_life_years < life
+        ? `stopt na de garantie (${w.operating_life_years} jaar) ${eur0(w.result.npv_eur)}` : null].filter(Boolean) : [];
+    const npv = ["Netto voordeel (NPV)", range.length ? [eur0(c.npv_eur), h("small", { class: "stat-range" }, range.join(" · "))]
+      : eur0(c.npv_eur), lead ? "over de looptijd, in geld van nu" : null];
     return [
       npvFirst ? npv : null,
       finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet", lead ? "hoogste startinvestering die nog uitkomt" : null] : null,

@@ -280,8 +280,12 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Hierboven is het bereik met de schuifjes op het volle bereik gezet.
   assert.equal(sizing.label, "je eigen bereik");
   assert.ok(sizing.low_kwh === 0 && sizing.high_kwh > 0);
-  if (await page.locator(".verdict .stats").count())
+  if (await page.locator(".verdict .stats").count()) {
     assert.match(await page.textContent(".verdict"), /bruikbaar\) valt binnen je eigen bereik van 0 tot [\d,]+ kWh\./);
+    // Onder het netto voordeel staat wat het wordt als het tegenzit.
+    const npvTile = page.locator(".verdict .stats div:has(dt:has-text('Netto voordeel')) dd");
+    if (await npvTile.count()) assert.match(await npvTile.textContent(), /^-?€\s?-?[\d.]+ongunstig -?€\s?-?[\d.]+/);
+  }
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
@@ -895,7 +899,15 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.equal(await page.getByLabel("Offerte zegt: bruikbare capaciteit (kWh)").inputValue(), "9,3");
   assert.equal(await page.getByLabel("Vaste prijs of onder voorbehoud van schouw?").inputValue(), "fixed");
   assert.equal(await page.getByLabel("Klopt: Bruikbare capaciteit").isChecked(), true);
-  const kept = page.locator(".price-terms .check").first();
+  // Een offertewaarde buiten wat het invoerveld toelaat, meldt de controlestap in gewone taal.
+  await page.getByLabel("Offerte zegt: levensduur (jaar)").fill("12,5");
+  await page.click("button:has-text('Reken opnieuw met de offerte')");
+  await page.waitForSelector("text=Controle en berekenen");
+  assert.match(await page.textContent(".review-problems"), /Levensduur \(jaar\): vul een heel getal in\./);
+  await page.goto(`${base}/${firstRun}`);
+  await page.click(`[role=tab]:has-text("Offertecheck")`);
+  await page.getByLabel("Offerte zegt: levensduur (jaar)").fill("");
+  const kept =page.locator(".price-terms .check").first();
   const keptAmount = Number((await kept.textContent()).match(/geschat €\s*([\d.]+)/)[1].replace(/\./g, ""));
   await kept.locator("input").uncheck();
   const start = (8750 + keptAmount).toLocaleString("nl-NL");

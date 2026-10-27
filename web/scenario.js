@@ -140,7 +140,15 @@ window.Scenario = (() => {
   function build(categories) {
     const problems = [], optionProblems = state.options.map(() => []),
       number = (raw, what, list = problems) => { const v = parse(raw); if (v == null) list.push(`${what} ontbreekt.`);
-        return v ?? 0; };
+        return v ?? 0; },
+      // Met dezelfde grenzen als het invoerveld: een overgenomen offertewaarde (12,5 jaar) komt niet langs het veld.
+      within = (raw, what, min, max, step, list = problems) => {
+        const v = number(raw, what, list);
+        if (parse(raw) == null) return v;
+        if (v < Number(min) || v > Number(max)) list.push(`${what}: vul ${min.replace(".", ",")} tot ${max} in.`);
+        else if (step === "1" && !Number.isInteger(v)) list.push(`${what}: vul een heel getal in.`);
+        return v;
+      };
     if (!state.title.trim()) problems.push("Geef de berekening een naam.");
     if (!state.profile) problems.push("Kies een energieprofiel.");
     if (!state.options.length) problems.push("Voeg minstens één accu-optie toe.");
@@ -148,7 +156,7 @@ window.Scenario = (() => {
     try { exportBands = bands(); } catch (error) { problems.push(error.message); }
     const horizon = parse(state.params.horizon_years);
     const parameters = {
-      ...Object.fromEntries(PARAMS.map(([key, label]) => [key, number(state.params[key], label)])),
+      ...Object.fromEntries(PARAMS.map(([key, label, min, max, step]) => [key, within(state.params[key], label, min, max, step)])),
       objective: state.objective, budget_eur: parse(state.budget, { money: true }),
       tariff: { import_eur_per_kwh: number(state.tariff.import, "Stroomprijs"),
         export_eur_per_kwh: number(state.tariff.export, "Terugleververgoeding"),
@@ -189,7 +197,8 @@ window.Scenario = (() => {
         if (value == null) mine.push(`${what}: ${UI.parseProblem(raw, options)}`);
         return value ?? 0;
       };
-      const battery = Object.fromEntries(TECH.map(([key, label]) => [key, number(option.battery[key], label, mine)]));
+      const battery = Object.fromEntries(TECH.map(([key, label, min, max]) => [key,
+        within(option.battery[key], label, min, max, key === "operating_life_years" ? "1" : "any", mine)]));
       if (!option.assumptions.trim()) mine.push("Beschrijf bron en aannames van de techniek.");
       const costs = categories.map(c => {
         const line = option.costs[c.key] || { status: "unknown", amount: "", year: "", source: "", notes: "" };
