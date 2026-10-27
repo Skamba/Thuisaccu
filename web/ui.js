@@ -223,7 +223,8 @@ window.UI = (() => {
     if (v.badInput) return "Vul een getal in.";
     if (v.valueMissing) return control.tagName === "SELECT" || control.type === "radio" ? "Maak een keuze."
       : control.type === "file" ? "Kies een bestand." : control.type === "checkbox" ? "Vink elke bevestiging aan om verder te gaan."
-      : "Vul dit veld in.";
+      // Een veld kan zeggen wat je anders kunt doen (data-missing), bijvoorbeeld een indicatie gebruiken.
+      : control.dataset.missing || "Vul dit veld in.";
     if (v.rangeUnderflow) return `Vul ${num(control.min)} of meer in.`;
     if (v.rangeOverflow) return `Vul ${num(control.max)} of minder in.`;
     if (v.stepMismatch) {
@@ -308,10 +309,10 @@ window.UI = (() => {
       list.children[i].tabIndex = i === index ? 0 : -1;
       panels[i].hidden = i !== index;
     });
-    entries.forEach(({ label, content }, index) => {
+    entries.forEach(({ label, content, class: name }, index) => {
       const tab = h("button",
         { type: "button", role: "tab", id: `${id}-tab-${index}`, "aria-controls": `${id}-panel-${index}`,
-          onclick: () => show(index) },
+          class: name, onclick: () => show(index) },
         label);
       tab.addEventListener("keydown", event => {
         const next = { ArrowRight: (index + 1) % entries.length,

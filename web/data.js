@@ -197,7 +197,8 @@ window.Data = (() => {
   const isPriceField = field => field === "upfront_eur" || field === "subscription_eur";
   // De waarde van een offerteveld bij een optie zoals die naar de rekenkern gaat (bedragen in eurocenten).
   // Som van de betaalde startposten in euro. Met `credits` tellen teruggaven en subsidie negatief en wordt het nooit
-  // minder dan nul, zoals de startinvestering in `project()` (analysis.rs); zonder is het de prijs vóór teruggaven.
+  // minder dan nul; zonder is het de prijs vóór teruggaven. Teruggaven boven de kosten weigert de rekenkern
+  // (`validate` in analysis.rs); Zelf doorrekenen meldt dat in de controlestap.
   function upfrontCosts(lines, { credits = true } = {}) {
     const sum = lines.filter(l => l.timing === "upfront" && l.status === "priced" && (credits || !CREDITS.includes(l.category)))
       .reduce((total, l) => total + l.amount_minor / 100 * (CREDITS.includes(l.category) ? -1 : 1), 0);

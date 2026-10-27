@@ -1301,15 +1301,17 @@ window.Results = (() => {
       `Deze berekening is ${age} maanden oud. Stroomprijs, terugleververgoeding en prijzen van accu’s en installatie zijn van toen` +
       (shared ? "." : ". Kijk ze na met ‘Pas aan en reken opnieuw’, of reken opnieuw in de keuzehulp voor de indicaties van nu.")));
     const warnings = warningItems(result.warnings);
-    // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
+    // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de waarschuwingen (met hun aantal, zodat ze
+    // ook bij een afgebroken rij tabbladen in beeld blijven), de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
     view.append(verdict(run, kinds), ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
       { label: "Overzicht", content: overview(run, all, kinds) },
+      { label: `Waarschuwingen (${warnings.length})`, class: warnings.length ? "has-warnings" : undefined,
+        content: h("ul", { class: "warnings print-keep" }, warnings) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
-      { label: "Invoer en aannames", content: inputs(run, categories, all) },
-      { label: `Waarschuwingen (${warnings.length})`, content: h("ul", { class: "warnings print-keep" }, warnings) }
+      { label: "Invoer en aannames", content: inputs(run, categories, all) }
     ]));
   }
 

@@ -193,11 +193,16 @@
     }
     const useImport = () => { answers.tariffImport = UI.plain(INDICATION.import); save(); rerender(); };
     const { element: priceCheck, run: checkPrice } = UI.liveCheck(() => Data.importPriceCheck(parse(answers.tariffImport)));
+    // De indicatie staat direct onder het veld: wie de prijs niet weet, ziet de uitweg naast de melding. De uitleg
+    // over wat meetelt staat ingeklapt.
     body.append(
       h("div", { class: "grid" }, amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport",
-        { min: "-1", max: "2", step: "0.0001", required: true }, `${INDICATION.importHelp} ${INDICATION.importText}`, checkPrice)),
+        { min: "-1", max: "2", step: "0.0001", required: true, dataset: { missing: "Vul je prijs in, of kies ‘Gebruik de indicatie’." } },
+        "Leveringstarief plus energiebelasting, inclusief btw, zonder vaste kosten per maand.", checkPrice)),
+      h("p", { class: "actions" }, button(`Gebruik de indicatie (${money(INDICATION.import, { decimals: 4 })} per kWh)`, useImport, "secondary")),
       priceCheck,
-      h("p", { class: "actions" }, button("Gebruik de indicatie", useImport, "secondary")),
+      h("details", { class: "fold" }, h("summary", {}, "Wat telt mee in deze prijs?"),
+        h("p", {}, INDICATION.importHelp), h("p", {}, INDICATION.importText)),
       sourceList(INDICATION.importSources),
       pick("feedin", "Wat krijg je vanaf 2027 voor teruggeleverde stroom?", [
         ["known", "Ik weet mijn vergoeding en terugleverkosten", "Staan in je contract of tariefoverzicht, per kWh."],

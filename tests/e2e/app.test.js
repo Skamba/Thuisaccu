@@ -350,7 +350,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Gewoon afdrukken geeft het overzicht en de waarschuwingen; ‘Alles afdrukken’ alle tabbladen.
   const printed = () => page.$$eval("[role=tabpanel]", panels => panels.map(p => getComputedStyle(p).display !== "none"));
   await page.emulateMedia({ media: "print" });
-  assert.deepEqual(await printed(), [true, false, false, false, false, false, false, true]);
+  assert.deepEqual(await printed(), [true, true, false, false, false, false, false, false]);
   assert.equal(await page.locator(".all-options").first().isVisible(), false);
   await page.evaluate(() => document.body.classList.add("print-all"));
   assert.ok((await printed()).every(Boolean));
@@ -1288,6 +1288,18 @@ test("optie-editor: kosten in groepen, één totaalprijs uit een offerte en een 
   assert.equal(option.costs.battery.status, "priced");
   assert.equal(option.costs.battery.amount, "8000,00");
   assert.equal(Object.values(option.costs).filter(l => l.source === "In de totaalprijs van de offerte").length, kept - 1);
+
+  // Een subsidie boven de startkosten weigert de rekenkern; de controlestap zegt dat al vóór het berekenen.
+  await card.locator(".cost-group > summary", { hasText: "Teruggaven" }).evaluate(s => { s.parentElement.open = true; });
+  const grant = card.locator(".cost-row", { hasText: "Bevestigde subsidie" });
+  await grant.getByLabel("Status").selectOption("priced");
+  await grant.getByLabel("Bedrag (€)").fill("100.000");
+  await next(page);
+  const review = page.locator(".review-problems");
+  await review.waitFor();
+  assert.match(await review.textContent(), /Teruggaven en subsidie zijn samen €\s*[\d.]+ hoger dan de startkosten/);
+  await page.getByRole("button", { name: /Vorige/ }).click();
+  await grant.getByLabel("Status").selectOption("unknown");
 
   // Op een telefoon staan status en bron elk over de volle breedte.
   await page.setViewportSize({ width: 375, height: 800 });

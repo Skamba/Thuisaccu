@@ -510,8 +510,9 @@ pub async fn save_typical(
         serde_json::to_string(&profile.options).map_err(|e| bad_request(e.to_string()))?;
     let summary_json =
         serde_json::to_string(&profile.summary).map_err(|e| bad_request(e.to_string()))?;
-    let id = catalog
-        .save_solar(
+    // Dezelfde invoer geeft hetzelfde profiel; dan 200 met de bewaarde naam, zoals bij een bestand.
+    let stored = catalog
+        .import_solar(
             &profile.title,
             &sha256,
             &options_json,
@@ -522,8 +523,14 @@ pub async fn save_typical(
         .await
         .map_err(database_error)?;
     Ok((
-        StatusCode::CREATED,
-        Json(json!({"id":id, "filename":profile.title, "summary":profile.summary})),
+        if stored.existing {
+            StatusCode::OK
+        } else {
+            StatusCode::CREATED
+        },
+        Json(
+            json!({"id":stored.id, "existing":stored.existing, "filename":stored.filename, "summary":profile.summary}),
+        ),
     ))
 }
 

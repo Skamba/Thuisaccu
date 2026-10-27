@@ -39,8 +39,12 @@ async fn annual_totals_become_a_full_labelled_hourly_year_with_exact_totals() {
             .iter()
             .any(|w| w.as_str().unwrap().starts_with("GESCHAT PROFIEL"))
     );
-    let (_, again) = send(&app, post("/api/v1/solar/typical", input)).await;
+    assert_eq!(first["existing"], false);
+    let (status, again) = send(&app, post("/api/v1/solar/typical", input)).await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(again["id"], first["id"]);
+    assert_eq!(again["existing"], true);
+    assert_eq!(again["filename"], first["filename"]);
 
     let (_, imports) = send(
         &app,

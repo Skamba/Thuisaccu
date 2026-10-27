@@ -55,7 +55,10 @@ window.Scenario = (() => {
         changes: [], basis: null, options: []
     };
   }
-  let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null, focusOption = null;
+  let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null, focusOption = null, keptScroll = null;
+  // Opnieuw tekenen na een knop in de stap zelf: dezelfde plek op de pagina, en de focus naar `target`
+  // ({ index, what: "cost" | "summary" } of { add: true }) zodat toetsenbord en schermlezer hun plaats houden.
+  const redraw = (target = null) => { focusOption = target; keptScroll = window.scrollY; flow.rerender(); };
   // Alleen voor dit bezoek: welke kostengroepen open staan en wat de totaalprijs laatst deed, per optie.
   const openGroups = new WeakMap(), quoteNotes = new WeakMap();
   const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.set(STORE, state), 300); };
@@ -215,9 +218,19 @@ window.Scenario = (() => {
       }
       if (unknown.length) mine.unshift(`${unknown.length} van ${categories.length} kostenposten ${unknown.length === 1 ? "is" : "zijn"} nog onbekend: ${few(unknown)}.`);
       if (unsourced.length) mine.push(`Geef een bron of aanname bij ${few(unsourced)}.`);
-      return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs,
-        financing: { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
-          annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") },
+      const financing = { loan_amount_eur: loanValue(option.loan.amount, "Leningbedrag", { money: true }),
+        annual_interest_pct: loanValue(option.loan.interest, "Rente"), years: loanValue(option.loan.years, "Looptijd van de lening") };
+      // Dezelfde regels als `validate` in analysis.rs, zodat de controlestap ze noemt in plaats van de server.
+      const upfront = costs.filter(l => l.timing === "upfront" && l.status === "priced")
+        .reduce((sum, l) => sum + l.amount_minor / 100 * (Data.CREDITS.includes(l.category) ? -1 : 1), 0);
+      if (upfront < -1e-9) mine.push(`Teruggaven en subsidie zijn samen ${money(-upfront, { decimals: 0 })} hoger dan de ` +
+        "startkosten; meer dan de kosten krijg je niet terug. Verlaag ze tot hoogstens de startkosten.");
+      else if (financing.loan_amount_eur > upfront + 1e-9) mine.push(`Leningbedrag: hoogstens de startinvestering na ` +
+        `teruggaven (${money(upfront)}).`);
+      if (financing.annual_interest_pct < 0 || financing.annual_interest_pct > 30) mine.push("Rente: vul 0 tot 30% per jaar in.");
+      if (financing.loan_amount_eur > 0 && !(Number.isInteger(financing.years) && financing.years >= 1 && financing.years <= (horizon ?? 0)))
+        mine.push(`Looptijd van de lening: een heel aantal jaren van 1 tot ${horizon ?? "de looptijd"}, binnen de looptijd van de berekening.`);
+      return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs, financing,
         assumptions: option.assumptions, warranty_stress, connection: CONNECTIONS.includes(option.kind) ? option.kind : undefined };
     });
     // Het adres is alleen een label bij de berekening; zonder adres dezelfde omschrijving als in de keuzehulp.
@@ -385,7 +398,7 @@ window.Scenario = (() => {
       Object.assign(state.tariff, { import: plain(i.import), export: plain(i.export), fee: plain(i.exportFee) });
       // Zoals in de keuzehulp: in de variant zonder vergoeding vallen de terugleverkosten van de indicatie ook weg.
       if (state.variant.fee === "") state.variant.fee = "0";
-      persist(); flow.rerender();
+      persist(); redraw();
     }, "secondary");
     return h("div", {}, h("p", { class: "help" },
       `Geen contract bij de hand? Indicatie: stroom ${money(i.import, { decimals: 4 })} per kWh, terugleververgoeding ` +
@@ -501,7 +514,8 @@ window.Scenario = (() => {
   }
 
   function optionCard(option, index, categories, catalogData) {
-    const remove = button("Verwijder", () => { state.options.splice(index, 1); persist(); flow.rerender(); }, "ghost");
+    const remove = button("Verwijder", () => { state.options.splice(index, 1); persist();
+      redraw(state.options.length ? { index: Math.max(0, index - 1), what: "summary" } : { add: true }); }, "ghost");
     const tech = h("div", { class: "grid" },
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
@@ -535,10 +549,10 @@ window.Scenario = (() => {
           ? parse(option.costs[c.key].amount, { money: true }) ?? 0 : 0), 0);
         summary.textContent = ` · ${assessed} van ${members.length} beoordeeld${sum ? ` · ${eur(sum)}${key === "annual" ? " per jaar" : ""}` : ""}`;
       }
-      // Zoals Data.upfrontCosts: teruggaven maken de startinvestering nooit negatief.
+      // Teruggaven boven de kosten weigert de rekenkern; de controlestap noemt dat ook.
       total.textContent = `Startkosten volgens deze posten: ${eur(gross)}` +
-        (credit ? ` vóór teruggaven, ${eur(Math.max(0, gross - credit))} erna` +
-          (credit > gross ? ` (de teruggaven zijn hoger dan de kosten; er wordt met ${eur(0)} gerekend)` : "") : "") +
+        (credit ? (credit > gross ? ` vóór teruggaven; de teruggaven zijn ${eur(credit - gross)} hoger dan de kosten en ` +
+          "mogen daar niet boven komen" : ` vóór teruggaven, ${eur(gross - credit)} erna`) : "") +
         ` · jaarlijks ${eur(yearly)}` +
         (invalid ? ` · ${invalid === 1 ? "één bedrag is" : `${invalid} bedragen zijn`} nog geen geldig getal` : "") +
         (open ? " · onbekende posten tellen nog niet mee" : "");
@@ -589,7 +603,7 @@ window.Scenario = (() => {
         option.kind = event.target.value; persist();
         const followed = await followConnection(option, previous);
         if (!followed) return;
-        persist(); toast(followed); flow.rerender();
+        persist(); toast(followed); redraw({ index, what: "summary" });
       } });
     const estimate = button("Vul open posten met indicaties", async () => {
       const [cmp, costCatalog] = await Promise.all([Data.catalog(), Data.costs()]);
@@ -597,7 +611,7 @@ window.Scenario = (() => {
       const filled = fillEstimates(option, costCatalog, config ? Data.describe(cmp, config) : null);
       persist();
         toast(filled ? `${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.` : "Er waren geen open posten om te vullen.");
-        flow.rerender();
+        redraw({ index, what: "cost" });
     }, "secondary");
     const loan = (label, key, props) => field(label,
       bindValue(numberInput({ min: "0", ...props }), () => option.loan[key], v => { option.loan[key] = v; }));
@@ -657,7 +671,7 @@ window.Scenario = (() => {
         changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs." : null,
         open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend; zet ze op Inbegrepen of Niet van toepassing als de offerte ze dekt.` : null]
         .filter(Boolean).join(" "));
-      persist(); flow.rerender();
+      persist(); redraw();
     }, "secondary");
     block.append(field("Totaalprijs inclusief btw (€)", price, "Het bedrag dat je volgens de offerte in totaal betaalt."),
       field("Soort prijs", terms, "Alleen bij een vaste prijs vervalt de reserve voor meerwerk."));
@@ -697,12 +711,12 @@ window.Scenario = (() => {
       const fromCatalog = button("Neem over",
         () => UI.busy(fromCatalog,
           async () => { if (state.options.length >= MAX_OPTIONS) throw new Error(full());
-            await addFromCatalog(pickConfig.value); flow.rerender(); }),
+            await addFromCatalog(pickConfig.value); redraw({ index: state.options.length - 1, what: "summary" }); }),
         "secondary");
       const own = button("+ Eigen optie",
         () => { if (state.options.length >= MAX_OPTIONS) { toast(full(), true);
           return; } state.options.push(blankOption(state.options.length + 1));
-          persist(); flow.rerender(); },
+          persist(); redraw({ index: state.options.length - 1, what: "summary" }); },
         "secondary");
       host.replaceChildren();
       UI.append(host, [h("div", { class: "toolbar" }, field("Uit de catalogus", pickConfig), fromCatalog, own),
@@ -711,15 +725,18 @@ window.Scenario = (() => {
           { class: "empty" }, "Nog geen opties. Neem een accu over uit de catalogus of voeg een eigen optie toe."),
         h("details", { class: "sources" }, h("summary", {}, "Kostenonderzoek en bronnen"), h("p", {}, costCatalog.notes),
           h("ul", {}, costCatalog.sources.map(s => h("li", {}, UI.external(s.title, s.url), h("small", {}, s.note)))))]);
-      // Vanuit de controlestap: naar de eerste onbekende kostenpost van die optie, of de optie zelf.
-      const card = focusOption == null ? null : host.querySelectorAll(".option-editor")[focusOption];
-      focusOption = null;
-      if (card) {
-        const target = [...card.querySelectorAll(".cost-row select")].find(s => s.value === "unknown") || card.querySelector("summary");
+      // Vanuit de controlestap of na indicaties: naar de eerste onbekende kostenpost van die optie, of de optie zelf.
+      // Na toevoegen of verwijderen naar de kop van de optie, zonder opties naar ‘+ Eigen optie’.
+      const wanted = focusOption, y = keptScroll;
+      focusOption = null; keptScroll = null;
+      const card = wanted?.index == null ? null : host.querySelectorAll(".option-editor")[wanted.index];
+      const target = wanted?.add ? own : !card ? null : (wanted.what === "cost"
+        && [...card.querySelectorAll(".cost-row select")].find(s => s.value === "unknown")) || card.querySelector("summary");
+      if (target) {
         const group = target.closest(".cost-group");
         if (group) group.open = true;
         target.scrollIntoView({ block: "center" }); target.focus();
-      }
+      } else if (y != null) window.scrollTo(0, y);
     }).catch(error => host.replaceChildren(h("p", { class: "warning" }, error.message)));
   }
 
@@ -737,9 +754,9 @@ window.Scenario = (() => {
           const filled = fillEstimates(option, costCatalog, config ? Data.describe(cmp, config) : null);
           persist();
           toast(`${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.`);
-          flow.rerender();
+          redraw();
         }), "secondary") : null;
-        const go = button("Ga naar deze optie", () => { focusOption = index; flow.show(2); }, "ghost");
+        const go = button("Ga naar deze optie", () => { focusOption = { index, what: "cost" }; flow.show(2); }, "ghost");
         return h("div", { class: "problem-group" }, h("h3", {}, option.name || `Optie ${index + 1}`),
           h("ul", {}, list.map(p => h("li", {}, p))), h("div", { class: "actions" }, fill, go));
       }));
@@ -785,6 +802,7 @@ window.Scenario = (() => {
         h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),
         request.quote_basis ? h("p", { class: "help" }, "Je vinkt de bevestigingen bewust opnieuw aan: zo bevestig je dat de " +
           "waarden uit de offerte kloppen.") : null]);
+      if (keptScroll != null) { window.scrollTo(0, keptScroll); keptScroll = null; }
       // De knop staat in de vaste balk onderaan, vlak onder de bevestigingen.
       if (flow.current === step) flow.action(run);
     });
@@ -803,7 +821,11 @@ window.Scenario = (() => {
           "Het model simuleert zonnestroom opslaan voor eigen gebruik met vaste tarieven, per meetperiode over één volledig jaar, en vergelijkt elke optie met geen accu. Dynamische handel en onbalansinkomsten zijn niet opgenomen."),
         h("p", {}, "Zonder offertes? De ", link("keuzehulp", "#/keuzehulp"), " vult alles met bronvermelde indicaties.")));
       flow = UI.wizard([{ label: "Profiel en doel", render: stepProfile }, { label: "Tarieven", render: stepTariffs }, { label: "Accu-opties", render: stepOptions }, { label: "Controle", render: stepReview }],
-        { validate: (_, body) => UI.validate(body), onShow: () => window.scrollTo(0, 0) });
+        // Een nieuwe stap begint bovenaan; opnieuw tekenen (redraw) houdt de plek. De optie- en controlestap laden
+        // eerst catalogus en kosten en zetten daarna zelf de plek of focus terug.
+        { validate: (_, body) => UI.validate(body), onShow: index => {
+          if (keptScroll == null) window.scrollTo(0, 0);
+          else if (index < 2) { window.scrollTo(0, keptScroll); keptScroll = null; focusOption = null; } } });
       // Vanuit de offertecheck opent de controlestap direct; daarna begint de wizard weer vooraan.
       view.append(flow.element); flow.show(state.step ?? 0);
       if (state.step != null) { delete state.step; persist(); }
