@@ -694,6 +694,18 @@ test("billGap(): de teruglevering van het geschatte profiel naast die op de jaar
   assert.equal(Results.billGap(run({ grid_import_kwh: 3000, grid_export_kwh: 0 }, { production_kwh: 0, grid_export_kwh: 0 })), null);
 });
 
+test("modelwijziging v8 raakt alleen een run met een gelijk eigen gebruik die nu anders uitvalt", () => {
+  const option = (key, npv_eur, pct, extra = {}) => ({ key, npv_eur, within_budget: true, first_year: { self_consumption_pct: pct }, ...extra });
+  const affects = (candidates, recommended_key, objective = "self_consumption") => Data.modelChanges("nl-self-consumption-v7", {
+    input: { request: { parameters: { objective }, candidates: [] } },
+    result: { recommended_key, candidates } }).find(c => /gelijk eigen gebruik/.test(c.text)).affects;
+  assert.equal(affects([option("a", -900, 60), option("b", -100, 60)], "a"), true);
+  assert.equal(affects([option("a", -100, 60), option("b", -900, 60)], "a"), false);
+  assert.equal(affects([option("a", -900, 61), option("b", -100, 60)], "a"), false);
+  assert.equal(affects([option("a", -900, 60), option("b", -100, 60)], "a", "npv"), false);
+  assert.equal(affects([option("a", -900, 60), option("b", -100, 60)], "no_battery"), false);
+});
+
 test("modelwijziging v7 raakt alleen een run met een gelijke terugverdientijd die nu anders uitvalt", () => {
   const option = (key, npv_eur, payback_years, extra = {}) => ({ key, npv_eur, payback_years, within_budget: true, ...extra });
   const affects = (candidates, recommended_key, extra = {}) => Data.modelChanges("nl-self-consumption-v6", {

@@ -316,7 +316,7 @@
       ]
     }
   ],
-  "model_version": "nl-self-consumption-v7",
+  "model_version": "nl-self-consumption-v8",
   "notes": [
     "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.",
     "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst.",

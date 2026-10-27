@@ -74,7 +74,7 @@ window.Data = (() => {
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
   // andere versie zijn met andere rekenregels gemaakt.
-  const MODEL_VERSION = "nl-self-consumption-v7";
+  const MODEL_VERSION = "nl-self-consumption-v8";
   // Wat elke modelversie veranderde, in gewone taal (docs/roi-model.md), met een toets of het een
   // bewaarde run raakt: true, false, of null als dat uit de run niet te zien is.
   const MODEL_CHANGES = [
@@ -91,7 +91,11 @@ window.Data = (() => {
     ["nl-self-consumption-v7", "Bij het doel terugverdientijd wint bij een gelijk aantal jaren de accu met het hoogste netto voordeel, niet de kleinste.",
       run => run.input.request.parameters.objective === "payback" && (paybackTie(run.result.candidates, run.result.recommended_key, c => c) ||
         (run.result.export_variant_recommended_key != null &&
-          paybackTie(run.result.candidates, run.result.export_variant_recommended_key, c => c.export_variant)))]
+          paybackTie(run.result.candidates, run.result.export_variant_recommended_key, c => c.export_variant)))],
+    ["nl-self-consumption-v8", "Bij het doel eigen gebruik wint bij een gelijk eigen gebruik de accu met het hoogste netto voordeel, niet de eerste in de lijst.",
+      run => run.input.request.parameters.objective === "self_consumption" && (selfConsumptionTie(run.result.candidates, run.result.recommended_key, c => c) ||
+        (run.result.export_variant_recommended_key != null &&
+          selfConsumptionTie(run.result.candidates, run.result.export_variant_recommended_key, c => c.export_variant)))]
   ];
   // Of een run van vóór v7 bij het doel terugverdientijd een gelijkspel had dat nu anders uitvalt: een andere optie met
   // dezelfde (kortste) terugverdientijd en een hoger netto voordeel dan de gekozen. Dezelfde regels als `choose` in
@@ -102,6 +106,15 @@ window.Data = (() => {
     const pick = eligible.find(c => c.key === chosen);
     if (!pick) return false;
     return eligible.some(c => outcome(c).payback_years === outcome(pick).payback_years && outcome(c).npv_eur > outcome(pick).npv_eur + 1e-8);
+  }
+  // Hetzelfde voor v8 bij het doel eigen gebruik: een andere accu met hetzelfde eigen gebruik in jaar 1 en een hoger
+  // netto voordeel dan de gekozen. Een gelijkspel met geen accu blijft voor geen accu.
+  function selfConsumptionTie(candidates, chosen, outcome) {
+    const eligible = candidates.filter(c => c.within_budget !== false && outcome(c) && c.first_year);
+    const pick = eligible.find(c => c.key === chosen);
+    if (!pick) return false;
+    return eligible.some(c => Math.abs(c.first_year.self_consumption_pct - pick.first_year.self_consumption_pct) <= 1e-8 &&
+      outcome(c).npv_eur > outcome(pick).npv_eur + 1e-8);
   }
   // De veranderingen na `version`, als [{ text, affects }]; leeg bij een onbekende versie.
   function modelChanges(version, run) {

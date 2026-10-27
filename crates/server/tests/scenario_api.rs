@@ -71,7 +71,7 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let result = body(response).await;
-    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v7");
+    assert_eq!(result["result"]["model_version"], "nl-self-consumption-v8");
     assert!(
         result["result"]["warnings"][0]
             .as_str()

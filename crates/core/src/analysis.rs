@@ -112,7 +112,7 @@ impl<'a> Profiles<'a> {
 /// Versie van het rekenmodel in elke uitkomst. Verhoog hem als de betekenis van uitkomsten
 /// verandert en documenteer dat in `docs/roi-model.md`; de interface (`MODEL_VERSION` in
 /// `web/data.js`) noemt oudere runs bij het vergelijken.
-pub const MODEL_VERSION: &str = "nl-self-consumption-v7";
+pub const MODEL_VERSION: &str = "nl-self-consumption-v8";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -813,10 +813,14 @@ fn choose<'a>(
             }
             Objective::SelfConsumption => r.first_year.self_consumption_pct,
         };
-        // De terugverdientijd telt in hele jaren; bij een gelijke tijd wint de hoogste NPV, niet
-        // de eerste (kleinste) optie in de lijst. Bij -∞ (niet terugverdiend) is er geen gelijkspel.
-        let tie_won = matches!(objective, Objective::Payback)
-            && (score - best_score).abs() <= 1e-8
+        // De terugverdientijd telt in hele jaren en twee accu's die nooit vol of leeg raken hebben
+        // hetzelfde eigen gebruik; bij zo'n gelijkspel tussen accu's wint de hoogste NPV, niet de
+        // eerste (kleinste) optie in de lijst. Bij -∞ (niet terugverdiend) is er geen gelijkspel.
+        let tie_won = match objective {
+            Objective::Payback => true,
+            Objective::SelfConsumption => best_key != "no_battery",
+            _ => false,
+        } && (score - best_score).abs() <= 1e-8
             && npv > best_npv + 1e-8;
         if score > best_score + 1e-8 || tie_won {
             best_score = score;
