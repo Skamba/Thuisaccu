@@ -18,6 +18,16 @@ pub enum Objective {
     SelfConsumption,
 }
 
+impl Objective {
+    /// Alle doelen, in de volgorde van `docs/api.md`; de interface krijgt ze via `web/contract.js`.
+    pub const ALL: [Self; 4] = [
+        Self::NetPresentValue,
+        Self::Roi,
+        Self::Payback,
+        Self::SelfConsumption,
+    ];
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Parameters {
@@ -110,8 +120,8 @@ impl<'a> Profiles<'a> {
 }
 
 /// Versie van het rekenmodel in elke uitkomst. Verhoog hem als de betekenis van uitkomsten
-/// verandert en documenteer dat in `docs/roi-model.md`; de interface (`MODEL_VERSION` in
-/// `web/data.js`) noemt oudere runs bij het vergelijken.
+/// verandert en documenteer dat in `docs/roi-model.md`; de interface krijgt hem via `web/contract.js`
+/// (`Data.MODEL_VERSION`) en noemt oudere runs bij het vergelijken.
 pub const MODEL_VERSION: &str = "nl-self-consumption-v8";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +153,11 @@ pub enum Connection {
     Plug,
     Fixed,
     Circuit,
+}
+
+impl Connection {
+    /// Alle soorten aansluiting; de interface krijgt ze via `web/contract.js`.
+    pub const ALL: [Self; 3] = [Self::Plug, Self::Fixed, Self::Circuit];
 }
 
 /// Andere levensduur- en verouderingsaannames voor dezelfde accu; al het andere blijft gelijk.
@@ -290,9 +305,46 @@ pub struct Message {
     pub text: String,
 }
 
+/// Alle vaste codes van [`Message`] met hun soort, zoals in de tabel in `docs/api.md` (de contracttest van de server
+/// controleert dat). Een nieuwe soort melding krijgt hier een nieuwe code; een bestaande code houdt zijn betekenis. De
+/// `profile.*`-codes voegt de server toe. De interface krijgt de lijst via `web/contract.js`.
+pub const MESSAGE_CODES: [(&str, MessageKind); 21] = [
+    ("profile.demo", MessageKind::Warning),
+    ("profile.estimated", MessageKind::Warning),
+    ("profile.modelled", MessageKind::Warning),
+    ("model.strategy", MessageKind::Note),
+    ("model.repeat_year", MessageKind::Note),
+    ("model.roi", MessageKind::Note),
+    ("model.vat", MessageKind::Note),
+    ("model.address", MessageKind::Note),
+    ("model.load_variation", MessageKind::Note),
+    ("model.measured", MessageKind::Note),
+    ("load_change.added", MessageKind::Warning),
+    ("load_change.unmetered", MessageKind::Warning),
+    ("netting.simplified", MessageKind::Warning),
+    ("export_variant", MessageKind::Warning),
+    ("grid_tariff.2029", MessageKind::Warning),
+    ("credit.vat_refund", MessageKind::Warning),
+    ("credit.grant", MessageKind::Warning),
+    ("life.inactive", MessageKind::Warning),
+    ("life.beyond_horizon", MessageKind::Warning),
+    ("warranty_stress", MessageKind::Warning),
+    ("objective.self_consumption", MessageKind::Warning),
+];
+
+/// Of `code` in [`MESSAGE_CODES`] staat met deze soort; in tests en debugbuilds wordt elke nieuwe melding hierop
+/// gecontroleerd.
+fn known_code(code: &str, kind: MessageKind) -> bool {
+    MESSAGE_CODES.contains(&(code, kind))
+}
+
 impl Message {
     /// Een waarschuwing zonder bijbehorende optie, zoals de profielwaarschuwingen van de server.
     pub fn warning(code: &str, text: impl Into<String>) -> Self {
+        debug_assert!(
+            known_code(code, MessageKind::Warning),
+            "onbekende meldingscode {code}"
+        );
         Self {
             kind: MessageKind::Warning,
             code: code.into(),
@@ -313,6 +365,10 @@ struct Messages {
 
 impl Messages {
     fn warn(&mut self, code: &str, candidate_key: Option<&str>, text: String) {
+        debug_assert!(
+            known_code(code, MessageKind::Warning),
+            "onbekende meldingscode {code}"
+        );
         self.all.push(Message {
             kind: MessageKind::Warning,
             code: code.into(),
@@ -323,6 +379,10 @@ impl Messages {
     }
 
     fn note(&mut self, code: &str, text: String) {
+        debug_assert!(
+            known_code(code, MessageKind::Note),
+            "onbekende meldingscode {code}"
+        );
         self.all.push(Message {
             kind: MessageKind::Note,
             code: code.into(),
@@ -366,6 +426,125 @@ pub fn whole(value: f64) -> String {
 fn bounded(value: f64, low: f64, high: f64) -> bool {
     value.is_finite() && value >= low && value <= high
 }
+
+/// Een geldig bereik voor een invoerwaarde, beide grenzen inbegrepen. [`validate`] gebruikt deze grenzen; de
+/// interface krijgt dezelfde via `web/contract.js` (zie [`LIMITS`]), zodat de controlestap ze noemt.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Limit {
+    pub min: f64,
+    pub max: f64,
+}
+
+impl Limit {
+    const fn new(min: f64, max: f64) -> Self {
+        Self { min, max }
+    }
+
+    /// Of `value` een eindig getal binnen het bereik is.
+    pub fn admits(self, value: f64) -> bool {
+        bounded(value, self.min, self.max)
+    }
+
+    /// Of het hele getal `value` binnen het bereik is.
+    pub fn admits_whole(self, value: u32) -> bool {
+        self.admits(f64::from(value))
+    }
+}
+
+/// Grenzen van [`validate`], per veld van het verzoek.
+pub mod limits {
+    use super::Limit;
+
+    pub const START_YEAR: Limit = Limit::new(2026.0, 2100.0);
+    /// Een jaar binnen de looptijd (een eenmalige kostenpost, de looptijd van een lening) is daardoor hoogstens `max`.
+    pub const HORIZON_YEARS: Limit = Limit::new(1.0, 30.0);
+    pub const DISCOUNT_PCT: Limit = Limit::new(0.0, 30.0);
+    pub const COST_ESCALATION_PCT: Limit = Limit::new(-20.0, 30.0);
+    pub const PV_LOSS_PCT: Limit = Limit::new(0.0, 10.0);
+    pub const LOAD_GROWTH_PCT: Limit = Limit::new(-20.0, 30.0);
+    /// Voor de onzekerheid in tarieven en in kosten.
+    pub const UNCERTAINTY_PCT: Limit = Limit::new(0.0, 80.0);
+    pub const BUDGET_EUR: Limit = Limit::new(0.0, 1e9);
+    /// Voor stroomprijs en terugleververgoeding, ook in de terugleveringsvariant.
+    pub const TARIFF_EUR_PER_KWH: Limit = Limit::new(-10.0, 10.0);
+    /// Voor terugleverkosten per kWh, ook in de terugleveringsvariant.
+    pub const EXPORT_FEE_EUR_PER_KWH: Limit = Limit::new(0.0, 10.0);
+    pub const FIXED_ANNUAL_EUR: Limit = Limit::new(0.0, 1e6);
+    pub const PRICE_CHANGE_PCT: Limit = Limit::new(-20.0, 30.0);
+    pub const CAPACITY_KWH: Limit = Limit::new(0.01, 1000.0);
+    /// Voor laad- en ontlaadvermogen AC.
+    pub const POWER_KW: Limit = Limit::new(0.01, 1000.0);
+    pub const EFFICIENCY_PCT: Limit = Limit::new(1.0, 100.0);
+    pub const STANDBY_W: Limit = Limit::new(0.0, 10000.0);
+    /// Ook in de garantiestresstest.
+    pub const CAPACITY_LOSS_PCT: Limit = Limit::new(0.0, 20.0);
+    /// Ook in de garantiestresstest.
+    pub const OPERATING_LIFE_YEARS: Limit = Limit::new(1.0, 30.0);
+    pub const LOAN_EUR: Limit = Limit::new(0.0, 1e9);
+    pub const INTEREST_PCT: Limit = Limit::new(0.0, 30.0);
+}
+
+/// Alle grenzen van [`limits`] als tabel voor de interface: per onderdeel van het verzoek de velden met hun bereik,
+/// met de veldnamen uit de JSON. Jaren binnen de looptijd hangen af van `horizon_years` en staan er niet apart in.
+pub const LIMITS: [(&str, &[(&str, Limit)]); 6] = [
+    (
+        "parameters",
+        &[
+            ("start_year", limits::START_YEAR),
+            ("horizon_years", limits::HORIZON_YEARS),
+            ("discount_pct", limits::DISCOUNT_PCT),
+            ("annual_cost_escalation_pct", limits::COST_ESCALATION_PCT),
+            ("annual_pv_loss_pct", limits::PV_LOSS_PCT),
+            ("annual_load_growth_pct", limits::LOAD_GROWTH_PCT),
+            ("price_uncertainty_pct", limits::UNCERTAINTY_PCT),
+            ("cost_uncertainty_pct", limits::UNCERTAINTY_PCT),
+            ("budget_eur", limits::BUDGET_EUR),
+        ],
+    ),
+    (
+        "tariff",
+        &[
+            ("import_eur_per_kwh", limits::TARIFF_EUR_PER_KWH),
+            ("export_eur_per_kwh", limits::TARIFF_EUR_PER_KWH),
+            ("export_fee_eur_per_kwh", limits::EXPORT_FEE_EUR_PER_KWH),
+            ("fixed_annual_eur", limits::FIXED_ANNUAL_EUR),
+            ("annual_price_change_pct", limits::PRICE_CHANGE_PCT),
+        ],
+    ),
+    (
+        "export_variant",
+        &[
+            ("export_eur_per_kwh", limits::TARIFF_EUR_PER_KWH),
+            ("export_fee_eur_per_kwh", limits::EXPORT_FEE_EUR_PER_KWH),
+        ],
+    ),
+    (
+        "battery",
+        &[
+            ("usable_capacity_kwh", limits::CAPACITY_KWH),
+            ("charge_power_kw", limits::POWER_KW),
+            ("discharge_power_kw", limits::POWER_KW),
+            ("ac_round_trip_efficiency_pct", limits::EFFICIENCY_PCT),
+            ("standby_w", limits::STANDBY_W),
+            ("annual_capacity_loss_pct", limits::CAPACITY_LOSS_PCT),
+            ("operating_life_years", limits::OPERATING_LIFE_YEARS),
+        ],
+    ),
+    (
+        "warranty_stress",
+        &[
+            ("operating_life_years", limits::OPERATING_LIFE_YEARS),
+            ("annual_capacity_loss_pct", limits::CAPACITY_LOSS_PCT),
+        ],
+    ),
+    (
+        "financing",
+        &[
+            ("loan_amount_eur", limits::LOAN_EUR),
+            ("annual_interest_pct", limits::INTEREST_PCT),
+        ],
+    ),
+];
 
 fn validate_additions(
     profile: &[EnergyInterval],
@@ -441,31 +620,33 @@ pub fn validate(
 ) -> Result<(), AnalysisError> {
     validate_profile(profile)?;
     ensure(
-        (2026..=2100).contains(&p.start_year) && (1..=30).contains(&p.horizon_years),
+        limits::START_YEAR.admits_whole(p.start_year)
+            && limits::HORIZON_YEARS.admits_whole(p.horizon_years),
         "Kies een startjaar vanaf 2026 en een horizon van 1 tot 30 jaar.",
     )?;
     ensure(
-        bounded(p.discount_pct, 0.0, 30.0)
-            && bounded(p.annual_cost_escalation_pct, -20.0, 30.0)
-            && bounded(p.annual_pv_loss_pct, 0.0, 10.0)
-            && bounded(p.annual_load_growth_pct, -20.0, 30.0),
+        limits::DISCOUNT_PCT.admits(p.discount_pct)
+            && limits::COST_ESCALATION_PCT.admits(p.annual_cost_escalation_pct)
+            && limits::PV_LOSS_PCT.admits(p.annual_pv_loss_pct)
+            && limits::LOAD_GROWTH_PCT.admits(p.annual_load_growth_pct),
         "Ongeldige langetermijnaannames.",
     )?;
     ensure(
-        bounded(p.price_uncertainty_pct, 0.0, 80.0) && bounded(p.cost_uncertainty_pct, 0.0, 80.0),
+        limits::UNCERTAINTY_PCT.admits(p.price_uncertainty_pct)
+            && limits::UNCERTAINTY_PCT.admits(p.cost_uncertainty_pct),
         "Onzekerheidsvarianten moeten tussen 0 en 80% liggen.",
     )?;
     ensure(
-        p.budget_eur.is_none_or(|v| bounded(v, 0.0, 1e9)),
+        p.budget_eur.is_none_or(|v| limits::BUDGET_EUR.admits(v)),
         "Ongeldig budget.",
     )?;
     let t = &p.tariff;
     ensure(
-        bounded(t.import_eur_per_kwh, -10.0, 10.0)
-            && bounded(t.export_eur_per_kwh, -10.0, 10.0)
-            && bounded(t.export_fee_eur_per_kwh, 0.0, 10.0)
-            && bounded(t.fixed_annual_eur, 0.0, 1e6)
-            && bounded(t.annual_price_change_pct, -20.0, 30.0),
+        limits::TARIFF_EUR_PER_KWH.admits(t.import_eur_per_kwh)
+            && limits::TARIFF_EUR_PER_KWH.admits(t.export_eur_per_kwh)
+            && limits::EXPORT_FEE_EUR_PER_KWH.admits(t.export_fee_eur_per_kwh)
+            && limits::FIXED_ANNUAL_EUR.admits(t.fixed_annual_eur)
+            && limits::PRICE_CHANGE_PCT.admits(t.annual_price_change_pct),
         "Ongeldige all-in tarieven.",
     )?;
     if let Some(v) = &p.export_variant {
@@ -474,8 +655,8 @@ pub fn validate(
             "Geef de terugleveringsvariant een korte omschrijving.",
         )?;
         ensure(
-            bounded(v.export_eur_per_kwh, -10.0, 10.0)
-                && bounded(v.export_fee_eur_per_kwh, 0.0, 10.0),
+            limits::TARIFF_EUR_PER_KWH.admits(v.export_eur_per_kwh)
+                && limits::EXPORT_FEE_EUR_PER_KWH.admits(v.export_fee_eur_per_kwh),
             "Ongeldige terugleveringsvariant.",
         )?;
         // Na de looptijd zou de variant gelijk zijn aan de basis en toch als stresstest worden getoond.
@@ -526,19 +707,19 @@ pub fn validate(
         )?;
         let b = &c.battery;
         ensure(
-            bounded(b.usable_capacity_kwh, 0.01, 1000.0)
-                && bounded(b.charge_power_kw, 0.01, 1000.0)
-                && bounded(b.discharge_power_kw, 0.01, 1000.0)
-                && bounded(b.ac_round_trip_efficiency_pct, 1.0, 100.0)
-                && bounded(b.standby_w, 0.0, 10000.0)
-                && bounded(b.annual_capacity_loss_pct, 0.0, 20.0)
-                && (1..=30).contains(&b.operating_life_years),
+            limits::CAPACITY_KWH.admits(b.usable_capacity_kwh)
+                && limits::POWER_KW.admits(b.charge_power_kw)
+                && limits::POWER_KW.admits(b.discharge_power_kw)
+                && limits::EFFICIENCY_PCT.admits(b.ac_round_trip_efficiency_pct)
+                && limits::STANDBY_W.admits(b.standby_w)
+                && limits::CAPACITY_LOSS_PCT.admits(b.annual_capacity_loss_pct)
+                && limits::OPERATING_LIFE_YEARS.admits_whole(b.operating_life_years),
             "Vul capaciteit, werkelijk AC-vermogen, systeemrendement en levensduuraannames geldig in.",
         )?;
         if let Some(s) = &c.warranty_stress {
             ensure(
-                bounded(s.annual_capacity_loss_pct, 0.0, 20.0)
-                    && (1..=30).contains(&s.operating_life_years)
+                limits::CAPACITY_LOSS_PCT.admits(s.annual_capacity_loss_pct)
+                    && limits::OPERATING_LIFE_YEARS.admits_whole(s.operating_life_years)
                     && !s.basis.trim().is_empty(),
                 "Vul levensduur, capaciteitsverlies en herkomst van de garantiestresstest geldig in.",
             )?;
@@ -592,8 +773,8 @@ pub fn validate(
         )?;
         let f = &c.financing;
         ensure(
-            bounded(f.loan_amount_eur, 0.0, 1e9)
-                && bounded(f.annual_interest_pct, 0.0, 30.0)
+            limits::LOAN_EUR.admits(f.loan_amount_eur)
+                && limits::INTEREST_PCT.admits(f.annual_interest_pct)
                 && (f.loan_amount_eur == 0.0 || (f.years >= 1 && f.years <= p.horizon_years)),
             "Ongeldige financiering; de looptijd moet binnen de analysehorizon vallen.",
         )?;

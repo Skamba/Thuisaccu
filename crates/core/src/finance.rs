@@ -21,7 +21,7 @@ pub struct Tariff {
 }
 
 /// Het laatste kalenderjaar met salderen; daarna betaal je elke kWh netafname en krijg je de vergoeding per teruggeleverde kWh.
-/// `web/data.js` gebruikt dezelfde grens (`LAST_NETTING_YEAR`).
+/// De interface krijgt dezelfde grens via `web/contract.js` (`Data.LAST_NETTING_YEAR`).
 pub const LAST_NETTING_YEAR: u32 = 2026;
 
 pub fn energy_bill(
@@ -106,7 +106,7 @@ pub const COST_CATEGORIES: &[&str] = &[
     "residual_value",
 ];
 
-/// Posten die de kosten verlagen (teruggaven en restwaarde). `CREDITS` in `web/data.js` is gelijk.
+/// Posten die de kosten verlagen (teruggaven en restwaarde). De interface krijgt ze via `web/contract.js` (`Data.CREDITS`).
 pub const CREDIT_CATEGORIES: [&str; 3] = ["grant", "vat_refund", "residual_value"];
 
 pub fn is_credit(category: &str) -> bool {

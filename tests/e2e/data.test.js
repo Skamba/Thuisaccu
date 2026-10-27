@@ -1,7 +1,7 @@
 "use strict";
 
-// Eenheidstests voor web/data.js en de zinnen uit web/results.js zonder browser: ui.js, data.js en results.js draaien
-// in een eigen context.
+// Eenheidstests voor web/data.js en de zinnen uit web/results.js zonder browser: contract.js, ui.js, data.js en results.js
+// draaien in een eigen context.
 // Alleen synthetische, hier opgebouwde gegevens.
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -12,10 +12,10 @@ const vm = require("node:vm");
 const context = { console, Intl, Map, Set };
 context.window = context;
 vm.createContext(context);
-for (const file of ["ui.js", "data.js", "results.js"]) {
+for (const file of ["contract.js", "ui.js", "data.js", "results.js"]) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", file), "utf8"), context, { filename: file });
 }
-const { Data, Results } = context;
+const { Contract, Data, Results } = context;
 
 const config = { id: 1, name: "FICTIEF 5 kWh", manufacturer_name: "Fictief", product_name: "Testaccu" };
 const UNITS = { _wh: "Wh", _w: "W", _pct: "%", _va: "VA" };
@@ -282,7 +282,9 @@ test("described(): de uitvoering achter een optie, op naam en soort aansluiting"
   const own = { console, Intl, Map, Set };
   own.window = own;
   vm.createContext(own);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", "ui.js"), "utf8"), own, { filename: "ui.js" });
+  for (const file of ["contract.js", "ui.js"]) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", file), "utf8"), own, { filename: file });
+  }
   own.UI.api = async url => url === "/api/v1/comparison" ? cmp : {};
   vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", "data.js"), "utf8"), own, { filename: "data.js" });
   const base = own.Data.describe(cmp, stekker), plug = own.Data.plugLimit(base), variant = own.Data.circuitVariant(cmp, base);
@@ -826,4 +828,28 @@ test("plainName(): aansluiting, bruikbare capaciteit en vermogen; zonder accu-in
   assert.equal(Results.plainName(run, { key: "a", name: "Merk X · 5,12 kWh" }, kinds), "Stekker · 4,6 kWh · 0,8 kW");
   assert.equal(Results.plainName(run, { key: "a", name: "X" }, new Map()), "Accu · 4,6 kWh · 0,8 kW");
   assert.equal(Results.plainName(run, { key: "b", name: "Onbekend product" }, kinds), "Onbekend product");
+});
+
+test("contract.js: bevroren, en de interface heeft een naam voor elk veld en elk doel uit Rust", () => {
+  const frozen = value => !value || typeof value !== "object" || (Object.isFrozen(value) && Object.values(value).every(frozen));
+  assert.ok(frozen(Contract));
+  assert.equal(Data.MODEL_VERSION, Contract.modelVersion);
+  // Elk offerteveld uit scenario_api.rs heeft een naam en eenheid, in dezelfde volgorde.
+  assert.deepEqual(Array.from(Data.QUOTE_FIELDS, ([field]) => field), Array.from(Contract.quoteFields));
+  for (const [field, name, unit] of Data.QUOTE_FIELDS) assert.ok(name && unit, field);
+  assert.deepEqual(Object.keys(Data.objectives), Array.from(Contract.objectives));
+  // De kostencatalogus van de server kent precies de kostencategorieën van de rekenkern.
+  const costs = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "crates", "server", "resources", "cost-catalog.json"), "utf8"));
+  assert.deepEqual(costs.categories.map(c => c.key).sort(), Array.from(Contract.costCategories).sort());
+});
+
+test("results.js herkent alleen meldingscodes die de rekenkern kent", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "web", "results.js"), "utf8");
+  const known = Contract.messageCodes.map(m => m.code);
+  const prefixes = new Set(known.map(code => code.split(".")[0]));
+  const used = [...source.matchAll(/"([a-z_]+)\.([a-z0-9_]*)"/g)].filter(([, prefix]) => prefixes.has(prefix))
+    .map(([, prefix, rest]) => `${prefix}.${rest}`)
+    .concat([...source.matchAll(/(?<!typeof \w+\.)code === "([^"]+)"/g)].map(([, code]) => code));
+  assert.ok(used.length > 10, "results.js gebruikt meldingscodes");
+  for (const code of used) assert.ok(code.endsWith(".") ? known.some(k => k.startsWith(code)) : known.includes(code), code);
 });

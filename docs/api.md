@@ -119,7 +119,7 @@ De rekenkern bepaalt energiestromen per meetperiode en projecteert jaarlijkse re
 | `warranty_stress` | waarschuwing | Per optie (`candidate_key`) met `warranty_stress`. |
 | `objective.self_consumption` | waarschuwing | Doel `self_consumption`. |
 
-Een nieuwe soort melding krijgt een nieuwe code; een bestaande code houdt zijn betekenis, ook als de zin verandert.
+Een nieuwe soort melding krijgt een nieuwe code; een bestaande code houdt zijn betekenis, ook als de zin verandert. De lijst staat als `analysis::MESSAGE_CODES` in de rekenkern en via `web/contract.js` in de interface; `crates/server/tests/contract.rs` controleert dat deze tabel daaraan gelijk is.
 
 De opgeslagen `input` bevat `request`, `profile` (importmetadata), `profile_sha256` en de kostenonderzoeksdatum. Resultaten worden niet automatisch aangepast als de catalogus of editor verandert. De API bewaart een nieuwe rij per geslaagde analyse; een ongeldige analyse wordt niet opgeslagen. Een fictief profiel uit een oudere database (`is_demo`) wordt in iedere afgeleide analyse als FICTIEF gemarkeerd.
 

@@ -46,7 +46,7 @@ window.Data = (() => {
     return out;
   }
   // Soort aansluiting van een beschreven uitvoering, zoals `connection` in een berekening: `plug`, `fixed`, `circuit` of null.
-  const CONNECTIONS = ["plug", "fixed", "circuit"];
+  const CONNECTIONS = Contract.connections;
   const connectionOf = p => !p ? null : p.circuit ? "circuit" : p.kind ?? null;
   // Korte namen voor grafieken en keuzelijsten van een berekening: aansluiting met ontlaadvermogen, merk en product en
   // bruikbare capaciteit. De aansluiting staat vooraan, zodat hij niet wegvalt als een lange naam wordt afgekort. Alleen
@@ -72,9 +72,9 @@ window.Data = (() => {
     return out;
   }
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
-  // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
-  // andere versie zijn met andere rekenregels gemaakt.
-  const MODEL_VERSION = "nl-self-consumption-v8";
+  // `analysis::MODEL_VERSION` uit de rekenkern, via contract.js. Runs met een andere versie zijn met andere
+  // rekenregels gemaakt.
+  const MODEL_VERSION = Contract.modelVersion;
   // Wat elke modelversie veranderde, in gewone taal (docs/roi-model.md), met een toets of het een
   // bewaarde run raakt: true, false, of null als dat uit de run niet te zien is.
   const MODEL_CHANGES = [
@@ -189,8 +189,8 @@ window.Data = (() => {
     price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
     cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid."
   };
-  // Het laatste jaar met salderen (`finance::LAST_NETTING_YEAR`); de berekening begint standaard het jaar erna.
-  const LAST_NETTING_YEAR = 2026;
+  // Het laatste jaar met salderen (`finance::LAST_NETTING_YEAR`, via contract.js); de berekening begint standaard het jaar erna.
+  const LAST_NETTING_YEAR = Contract.lastNettingYear;
   // Begrippen in gewone taal, voor wie de uitkomst samen met iemand anders leest.
   const GLOSSARY = [
     ["Netto voordeel (NPV)", "Wat de accu over de looptijd oplevert min wat hij kost, omgerekend naar geld van nu. Boven nul " +
@@ -213,16 +213,20 @@ window.Data = (() => {
     ["Salderen en terugleverkosten", `Tot en met ${LAST_NETTING_YEAR} mag je teruggeleverde stroom wegstrepen tegen stroom van het net ` +
       "(salderen). Daarna krijg je per teruggeleverde kWh een vergoeding, en veel leveranciers rekenen terugleverkosten."]
   ];
-  // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern.
-  const CREDITS = ["grant", "vat_refund", "residual_value"];
-  // Wat de offertecheck uit een offerte kan overnemen: [veld, naam, eenheid], gelijk aan QUOTE_FIELDS in
-  // scenario_api.rs. De technische velden staan in `battery`; de totaalprijs is de som van alle betaalde
+  // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern (via contract.js).
+  const CREDITS = Contract.creditCategories;
+  // Naam en eenheid van elk offerteveld, voor de velden uit `Contract.quoteFields`.
+  const QUOTE_LABELS = {
+    usable_capacity_kwh: ["bruikbare capaciteit", "kWh"], charge_power_kw: ["laadvermogen AC", "kW"],
+    discharge_power_kw: ["ontlaadvermogen AC", "kW"], ac_round_trip_efficiency_pct: ["rendement AC → AC", "%"],
+    standby_w: ["sluimerverbruik", "W"], operating_life_years: ["levensduur", "jaar"],
+    annual_capacity_loss_pct: ["capaciteitsverlies per jaar", "%"],
+    upfront_eur: ["startkosten vóór teruggaven", "€"], subscription_eur: ["abonnement per jaar", "€"]
+  };
+  // Wat de offertecheck uit een offerte kan overnemen: [veld, naam, eenheid], in de volgorde van QUOTE_FIELDS in
+  // scenario_api.rs (via contract.js). De technische velden staan in `battery`; de totaalprijs is de som van alle betaalde
   // startposten vóór teruggaven (de totaalprijs plus wat je apart hield), het abonnement het bedrag per jaar (0 zonder).
-  const QUOTE_FIELDS = [["usable_capacity_kwh", "bruikbare capaciteit", "kWh"], ["charge_power_kw", "laadvermogen AC", "kW"],
-    ["discharge_power_kw", "ontlaadvermogen AC", "kW"], ["ac_round_trip_efficiency_pct", "rendement AC → AC", "%"],
-    ["standby_w", "sluimerverbruik", "W"], ["operating_life_years", "levensduur", "jaar"],
-    ["annual_capacity_loss_pct", "capaciteitsverlies per jaar", "%"],
-    ["upfront_eur", "startkosten vóór teruggaven", "€"], ["subscription_eur", "abonnement per jaar", "€"]];
+  const QUOTE_FIELDS = Contract.quoteFields.map(field => [field, ...QUOTE_LABELS[field]]);
   const isPriceField = field => field === "upfront_eur" || field === "subscription_eur";
   // De waarde van een offerteveld bij een optie zoals die naar de rekenkern gaat (bedragen in eurocenten).
   // Som van de betaalde startposten in euro. Met `credits` tellen teruggaven en subsidie negatief en wordt het nooit
@@ -247,7 +251,8 @@ window.Data = (() => {
   // als inbegrepen, behalve wat je apart houdt (`separate`, categorieën). De reserve voor meerwerk vervalt
   // alleen bij een vaste prijs. Het abonnement wordt een jaarbedrag. Bedragen in hele eurocenten.
   // Bron op de accupost als die de totaalprijs uit een offerte draagt; Zelf doorrekenen telt dan geen losse indicaties op.
-  const QUOTE_TOTAL = "Offerte (totaalprijs inclusief btw)";
+  // `analysis::QUOTE_TOTAL_SOURCE` uit de opslag, via contract.js.
+  const QUOTE_TOTAL = Contract.quoteTotalSource;
   // De accupost met een totaalprijs uit een offerte, van een optie in de vorm van het verzoek (kosten als lijst), of undefined.
   const isQuoteTotal = line => line?.status === "priced" && line.source === QUOTE_TOTAL;
   const quoteTotalLine = candidate => candidate?.costs?.find(l => l.category === "battery" && isQuoteTotal(l));

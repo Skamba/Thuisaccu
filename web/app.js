@@ -141,7 +141,8 @@
         cost_uncertainty_pct: "Onzekerheid kosten (± %)" };
       const help = Data.ASSUMPTION_HELP;
       // Dezelfde grenzen als bij Zelf doorrekenen, zodat een standaardwaarde daar altijd geldig is.
-      const ranges = { annual_price_change_pct: ["-20", "30", "0.1"],
+      const price = Contract.limits.tariff.annual_price_change_pct;
+      const ranges = { annual_price_change_pct: [String(price.min), String(price.max), "0.1"],
         ...Object.fromEntries(Scenario.PARAMS.map(([key, , min, max, step]) => [key, [min, max, step]])) };
       const current = Data.defaults(),
         controls = Object.fromEntries(Object.keys(labels).map(key => {

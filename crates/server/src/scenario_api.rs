@@ -123,16 +123,16 @@ pub struct QuoteChange {
 }
 
 /// Wat de offertecheck kan overnemen: de velden van `Battery`, de totaalprijs inclusief btw
-/// (`upfront_eur`) en het abonnement per jaar (`subscription_eur`). Gelijk aan `QUOTE_FIELDS` in
-/// `web/data.js`.
+/// (`upfront_eur`) en het abonnement per jaar (`subscription_eur`). De interface krijgt ze in deze
+/// volgorde via `web/contract.js` en toont ze zo (`QUOTE_FIELDS` in `web/data.js`).
 pub const QUOTE_FIELDS: [&str; 9] = [
     "usable_capacity_kwh",
     "charge_power_kw",
     "discharge_power_kw",
     "ac_round_trip_efficiency_pct",
     "standby_w",
-    "annual_capacity_loss_pct",
     "operating_life_years",
+    "annual_capacity_loss_pct",
     "upfront_eur",
     "subscription_eur",
 ];

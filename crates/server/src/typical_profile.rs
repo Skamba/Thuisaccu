@@ -10,7 +10,7 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Europe::Amsterdam;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use thuisaccu_core::analysis::whole;
+use thuisaccu_core::analysis::{Limit, whole};
 use thuisaccu_storage::solar::{SolarInterval, SolarPeriod, SolarSummary};
 
 pub const GENERATOR: &str = "typical-nl-v1";
@@ -54,6 +54,42 @@ pub struct LoadChange {
 
 /// Laadvermogen van een 1-fase laadpunt van 16 A: 230 V × 16 A.
 const EV_CHARGE_KW: f64 = 3.68;
+
+/// Jaarverbruik van een warmtepomp in een geschat profiel (`heat_pump_kwh`). De interface krijgt deze grenzen via
+/// `web/contract.js`.
+pub const HEAT_PUMP_KWH: Limit = Limit {
+    min: 0.0,
+    max: 30_000.0,
+};
+/// Jaarverbruik van een thuis geladen elektrische auto in een geschat profiel (`ev.annual_kwh`).
+pub const EV_KWH: Limit = Limit {
+    min: 0.0,
+    max: 20_000.0,
+};
+/// Piekvermogen van de panelen als de jaaropwek onbekend is (`solar.peak_power_kwp`).
+pub const PEAK_POWER_KWP: Limit = Limit {
+    min: 0.1,
+    max: 100.0,
+};
+/// Extra jaarverbruik van een warmtepomp vanaf een later jaar ([`LoadChange`]).
+pub const LOAD_CHANGE_HEAT_PUMP_KWH: Limit = Limit {
+    min: 1.0,
+    max: HEAT_PUMP_KWH.max,
+};
+/// Extra jaarverbruik van een elektrische auto vanaf een later jaar ([`LoadChange`]).
+pub const LOAD_CHANGE_EV_KWH: Limit = Limit {
+    min: 1.0,
+    max: EV_KWH.max,
+};
+
+/// ‘Vul voor de warmtepomp 0 tot 30.000 kWh per jaar in.’ met de grenzen van `limit`.
+fn range_problem(what: &str, limit: Limit) -> String {
+    format!(
+        "Vul voor {what} {} tot {} kWh per jaar in.",
+        whole(limit.min),
+        whole(limit.max)
+    )
+}
 
 /// Aandeel warm tapwater in het warmtepompverbruik: CE Delft, factsheet bodemwarmtepomp
 /// (2021), 2 personen (680 kWh tapwater + 320 kWh stilstandsverlies) naast 1.960 kWh
@@ -179,11 +215,11 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     let hours = r.load.values.len();
     let heat_pump = request.heat_pump_kwh.unwrap_or(0.0);
     let ev = request.ev.as_ref().map_or(0.0, |ev| ev.annual_kwh);
-    if !heat_pump.is_finite() || !(0.0..=30_000.0).contains(&heat_pump) {
-        return Err("Vul voor de warmtepomp 0 tot 30.000 kWh per jaar in.".into());
+    if !HEAT_PUMP_KWH.admits(heat_pump) {
+        return Err(range_problem("de warmtepomp", HEAT_PUMP_KWH));
     }
-    if !ev.is_finite() || !(0.0..=20_000.0).contains(&ev) {
-        return Err("Vul voor de elektrische auto 0 tot 20.000 kWh per jaar in.".into());
+    if !EV_KWH.admits(ev) {
+        return Err(range_problem("de elektrische auto", EV_KWH));
     }
     let ev_charging = request
         .ev
@@ -229,7 +265,7 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             let yields = annual_yields();
             let total = match (solar.annual_production_kwh, solar.peak_power_kwp) {
                 (Some(kwh), None) if kwh.is_finite() && (1.0..=100_000.0).contains(&kwh) => kwh,
-                (None, Some(kwp)) if kwp.is_finite() && (0.1..=100.0).contains(&kwp) => {
+                (None, Some(kwp)) if PEAK_POWER_KWP.admits(kwp) => {
                     let per_kwp = yields[&solar.orientation];
                     warnings.push(format!(
                         "Jaaropwek geschat als {kwp} kWp × {per_kwp:.0} kWh/kWp ({}, PVGIS De Bilt, weerjaar 2023, 35° helling). Schaduw, regio, helling en paneeltype kunnen dit flink veranderen; de jaaropbrengst uit je omvormer-app is beter.",
@@ -383,8 +419,8 @@ pub fn load_change(change: &LoadChange, periods: &[(i64, i64)]) -> Result<Vec<f6
     let annual = change.annual_kwh;
     let hourly = match change.kind.as_str() {
         "heat_pump" => {
-            if !annual.is_finite() || !(1.0..=30_000.0).contains(&annual) {
-                return Err("Vul voor de warmtepomp 1 tot 30.000 kWh per jaar in.".into());
+            if !LOAD_CHANGE_HEAT_PUMP_KWH.admits(annual) {
+                return Err(range_problem("de warmtepomp", LOAD_CHANGE_HEAT_PUMP_KWH));
             }
             let degree_sum: f64 = r.heating.degree_hours.iter().map(|&v| v as f64).sum();
             r.heating
@@ -398,8 +434,8 @@ pub fn load_change(change: &LoadChange, periods: &[(i64, i64)]) -> Result<Vec<f6
                 .collect()
         }
         "ev" => {
-            if !annual.is_finite() || !(1.0..=20_000.0).contains(&annual) {
-                return Err("Vul voor de elektrische auto 1 tot 20.000 kWh per jaar in.".into());
+            if !LOAD_CHANGE_EV_KWH.admits(annual) {
+                return Err(range_problem("de elektrische auto", LOAD_CHANGE_EV_KWH));
             }
             let (start, _) = charging(change.charging.as_deref().unwrap_or(""))?;
             ev_load(r, annual, start)

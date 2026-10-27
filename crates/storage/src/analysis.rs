@@ -74,7 +74,8 @@ pub struct SummaryCost {
     pub source: String,
 }
 
-/// De bron op de accupost als die de totaalprijs uit een offerte draagt (`QUOTE_TOTAL` in `web/data.js`).
+/// De bron op de accupost als die de totaalprijs uit een offerte draagt. De interface krijgt hem via `web/contract.js`
+/// (`Data.QUOTE_TOTAL`).
 pub const QUOTE_TOTAL_SOURCE: &str = "Offerte (totaalprijs inclusief btw)";
 
 /// Houdt van de kostenposten alleen een geprijsde accupost met een totaalprijs uit een offerte.

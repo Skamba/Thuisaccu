@@ -8,6 +8,8 @@
   // Jaartotalen in hele kWh: ‘3.200’ is 3200, zoals op de jaarafrekening (zie `whole` in UI.parse).
   const yearKwh = raw => parse(raw, { whole: true });
   const STORE = "thuisaccu-keuzehulp";
+  // Grenzen van het geschatte profiel (typical_profile.rs, via contract.js) als min- en max-attributen.
+  const bounds = key => ({ min: String(Contract.typicalProfile[key].min), max: String(Contract.typicalProfile[key].max) });
 
   const INDICATION = Data.INDICATION;
   const RULES = Data.RULES;
@@ -141,7 +143,7 @@
             "Staat vaak in de offerte van de panelen. Weet je het niet? Vul dan het vermogen in.", update)
           : amount("Opwek van je panelen per jaar (kWh)", "production", { whole: true, min: "0", max: "100000" },
             "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
-        amount("Of: vermogen van je panelen (kWp)", "kwp", { min: "0.1", max: "100" },
+        amount("Of: vermogen van je panelen (kWp)", "kwp", bounds("peak_power_kwp"),
           "Aantal panelen × wattpiek per paneel ÷ 1000, bijvoorbeeld 10 × 400 Wp = 4 kWp.", update),
         field("Ligging van de panelen", select([["south", "Zuid"], ["south_east", "Zuidoost"], ["south_west", "Zuidwest"], ["east_west", "Oost en west"], ["east", "Oost"], ["west", "West"]],
           answers.orientation, { onchange: event => { answers.orientation = event.target.value; save(); update(); } })));
@@ -154,10 +156,10 @@
         `Plan je er een? Tel het verwachte verbruik dan op bij je ${total() ? "totale verbruik" : "afname"}. ` +
         "Komt hij pas over een paar jaar? Tel hem dan hier niet op, maar kies na de uitkomst ‘Pas aan en reken opnieuw’ en vul bij ‘Verandering in verbruik’ in vanaf welk jaar."),
       h("div", { class: "grid" },
-        amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { whole: true, min: "0", max: "30000" },
+        amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { whole: true, ...bounds("heat_pump_kwh") },
           "Staat vaak in de app of op het display van de warmtepomp. Ter indicatie: CE Delft rekent bij label B en 2 personen " +
           "met ongeveer 1.960 kWh voor verwarming en 1.000 kWh voor warm water.", rerenderEv),
-        amount("Waarvan elektrische auto, thuis geladen (kWh per jaar)", "ev", { whole: true, min: "0", max: "20000" },
+        amount("Waarvan elektrische auto, thuis geladen (kWh per jaar)", "ev", { whole: true, ...bounds("ev_kwh") },
           "Staat vaak in de app van je laadpaal of auto.", rerenderEv)));
     const evChoice = h("div");
     function rerenderEv() {

@@ -348,6 +348,8 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
     let home = std::str::from_utf8(&home).unwrap();
     for (path, marker) in [
         ("/local.js", "window.Local"),
+        // Gegenereerd door tests/contract.rs, met de modelversie van de rekenkern.
+        ("/contract.js", thuisaccu_core::analysis::MODEL_VERSION),
         ("/ui.js", "window.UI"),
         ("/data.js", "estimateCosts"),
         ("/results.js", "Wat betekent dit voor jou?"),
@@ -357,8 +359,6 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
         ("/scenario.js", "Zelf doorrekenen"),
         ("/compare.js", "Berekeningen vergelijken"),
         ("/app.js", "Mijn berekeningen"),
-        // De interface noemt runs met een ander rekenmodel bij het vergelijken.
-        ("/data.js", thuisaccu_core::analysis::MODEL_VERSION),
     ] {
         assert!(
             home.contains(&format!(r#"src="{}""#, &path[1..])),
@@ -383,34 +383,4 @@ async fn every_browser_script_is_embedded_and_loaded_by_the_shell() {
     }
     // De worker van de browserversie levert de server niet, maar hij volgt dezelfde regel.
     assert!(!include_str!("../../../web/worker.js").contains("innerHTML"));
-}
-
-/// Constanten die de interface uit de rekenkern en de API overneemt, blijven daaraan gelijk.
-#[test]
-fn interface_constants_match_the_core_and_the_api() {
-    let data = include_str!("../../../web/data.js");
-    let credits = thuisaccu_core::finance::CREDIT_CATEGORIES
-        .map(|c| format!("\"{c}\""))
-        .join(", ");
-    assert!(data.contains(&format!("const CREDITS = [{credits}];")));
-    assert!(data.contains(&format!(
-        "const QUOTE_TOTAL = \"{}\";",
-        thuisaccu_storage::analysis::QUOTE_TOTAL_SOURCE
-    )));
-    assert!(data.contains(&format!(
-        "const LAST_NETTING_YEAR = {};",
-        thuisaccu_core::finance::LAST_NETTING_YEAR
-    )));
-    let start = data.find("const QUOTE_FIELDS = [").unwrap();
-    let block = &data[start..start + data[start..].find("]];").unwrap()];
-    // De volgorde is die van de interface; alleen de verzameling moet gelijk zijn.
-    let mut fields: Vec<&str> = block
-        .split("[\"")
-        .skip(1)
-        .map(|s| s.split('"').next().unwrap())
-        .collect();
-    let mut api = thuisaccu_server::scenario_api::QUOTE_FIELDS;
-    fields.sort_unstable();
-    api.sort_unstable();
-    assert_eq!(fields, api);
 }

@@ -177,6 +177,7 @@ const ASSETS: &[(&str, &str, &str)] = &[
         "text/css; charset=utf-8",
     ),
     ("/local.js", include_str!("../../../web/local.js"), JS),
+    ("/contract.js", include_str!("../../../web/contract.js"), JS),
     ("/ui.js", include_str!("../../../web/ui.js"), JS),
     ("/data.js", include_str!("../../../web/data.js"), JS),
     ("/results.js", include_str!("../../../web/results.js"), JS),

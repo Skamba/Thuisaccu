@@ -6,34 +6,43 @@ window.Scenario = (() => {
   const { h, button, link, badge, table, field, input, numberInput, select, checkbox, money, number: n, parse, plain, store,
     toast } = UI;
   const STORE = "thuisaccu-scenario";
+  // Grenzen van `validate` in analysis.rs (via contract.js), als tekst voor de min- en max-attributen van een
+  // invoerveld: `range("battery", "standby_w")` is ["0", "10000"].
+  const LIMITS = Contract.limits;
+  const range = (group, key) => [String(LIMITS[group][key].min), String(LIMITS[group][key].max)];
+  const bounds = (group, key) => { const [min, max] = range(group, key); return { min, max }; };
+  // Een jaar binnen de looptijd (een eenmalige kostenpost, de looptijd van een lening) is hoogstens de langste looptijd.
+  const MAX_YEARS = String(LIMITS.parameters.horizon_years.max);
+  // Een kalenderjaar (een verandering in verbruik, de terugleveringsvariant) ligt in het bereik van het startjaar.
+  const [FIRST_YEAR, LAST_YEAR] = range("parameters", "start_year");
   const TECH = [
-    ["usable_capacity_kwh", "Bruikbare capaciteit (kWh)", "0.01", "1000"],
-      ["charge_power_kw", "Laden AC (kW)", "0.01", "1000"],
-    ["discharge_power_kw", "Ontladen AC (kW)", "0.01", "1000"],
-      ["ac_round_trip_efficiency_pct", "Rendement AC → AC (%)", "1", "100"],
-    ["standby_w", "Sluimerverbruik (W)", "0", "10000"],
-      ["annual_capacity_loss_pct", "Capaciteitsverlies per jaar (%)", "0", "20",
+    ["usable_capacity_kwh", "Bruikbare capaciteit (kWh)"],
+      ["charge_power_kw", "Laden AC (kW)"],
+    ["discharge_power_kw", "Ontladen AC (kW)"],
+      ["ac_round_trip_efficiency_pct", "Rendement AC → AC (%)"],
+    ["standby_w", "Sluimerverbruik (W)"],
+      ["annual_capacity_loss_pct", "Capaciteitsverlies per jaar (%)",
         "Een gegarandeerde restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar."],
-    ["operating_life_years", "Levensduur (jaar)", "1", "30",
+    ["operating_life_years", "Levensduur (jaar)",
       "Na zoveel jaar stopt de accu in de berekening. Garantie is geen levensduur: garantiejaren zijn vaak korter dan hoe lang een accu meegaat."]
-  ];
+  ].map(([key, label, help]) => [key, label, ...range("battery", key), help]);
   const PARAMS = [
-    ["start_year", "Startjaar", "2026", "2100", "1"], ["horizon_years", "Looptijd (jaren)", "1", "30", "1"],
-      ["discount_pct", "Discontovoet per jaar (%)", "0", "30", "0.1"],
-    ["annual_cost_escalation_pct", "Stijging extra jaarkosten (%)", "-20", "30", "0.1"],
-      ["annual_pv_loss_pct", "Afname PV-opwek per jaar (%)", "0", "10", "0.1"],
-    ["annual_load_growth_pct", "Verandering verbruik per jaar (%)", "-20", "30", "0.1"],
-      ["price_uncertainty_pct", "Onzekerheid tarieven (± %)", "0", "80", "1"],
-    ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", "0", "80", "1"]
-  ];
+    ["start_year", "Startjaar", "1"], ["horizon_years", "Looptijd (jaren)", "1"],
+      ["discount_pct", "Discontovoet per jaar (%)", "0.1"],
+    ["annual_cost_escalation_pct", "Stijging extra jaarkosten (%)", "0.1"],
+      ["annual_pv_loss_pct", "Afname PV-opwek per jaar (%)", "0.1"],
+    ["annual_load_growth_pct", "Verandering verbruik per jaar (%)", "0.1"],
+      ["price_uncertainty_pct", "Onzekerheid tarieven (± %)", "1"],
+    ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", "1"]
+  ].map(([key, label, step]) => [key, label, ...range("parameters", key), step]);
   // Extra verbruik vanaf een later jaar, met dezelfde vormen als het geschatte profiel (crates/server/src/typical_profile.rs).
   const CONNECTIONS = Data.CONNECTIONS;
   // Groepen kostenposten in de optie-editor: [sleutel, kop]; teruggaven en restwaarde staan apart, want ze verlagen de kosten.
   const COST_GROUPS = [["upfront", "Startkosten"], ["annual", "Per jaar"], ["event", "Later: vervanging en einde"],
     ["credit", "Teruggaven, subsidie en restwaarde"]];
   const CHANGES = {
-    heat_pump: { label: "Warmtepomp", max: 30000, kwh: "2500" },
-    ev: { label: "Elektrische auto", max: 20000, kwh: "2000" }
+    heat_pump: { label: "Warmtepomp", ...Contract.loadChanges.heat_pump, kwh: "2500" },
+    ev: { label: "Elektrische auto", ...Contract.loadChanges.ev, kwh: "2000" }
   };
   const CHARGING = [["evening", "’s Avonds, vanaf 18.00 uur"], ["night", "’s Nachts, vanaf 01.00 uur"],
     ["daytime", "Overdag, vanaf 11.00 uur"]];
@@ -189,7 +198,7 @@ window.Scenario = (() => {
       if (year == null || last == null || year < start || year > last) {
         problems.push(`${kind.label}: kies een beginjaar binnen de looptijd${last == null ? "" : ` (${start} tot en met ${last})`}.`);
       }
-      if (kwh == null || kwh < 1 || kwh > kind.max) problems.push(`${kind.label}: vul 1 tot ${n(kind.max, 0)} kWh extra per jaar in.`);
+      if (kwh == null || kwh < kind.min || kwh > kind.max) problems.push(`${kind.label}: vul ${n(kind.min, 0)} tot ${n(kind.max, 0)} kWh extra per jaar in.`);
       return { kind: change.kind, from_calendar_year: year ?? 0, annual_kwh: kwh ?? 0,
         ...(change.kind === "ev" ? { charging: change.charging } : {}) };
     });
@@ -225,7 +234,8 @@ window.Scenario = (() => {
       let warranty_stress;
       if (String(option.warranty ?? "").trim()) {
         const years = parse(option.warranty);
-        if (years == null || !Number.isInteger(years) || years < 1 || years > 30) mine.push("Garantie: vul een heel aantal jaren van 1 tot 30 in, of laat het veld leeg.");
+        const life = LIMITS.warranty_stress.operating_life_years;
+        if (years == null || !Number.isInteger(years) || years < life.min || years > life.max) mine.push(`Garantie: vul een heel aantal jaren van ${life.min} tot ${life.max} in, of laat het veld leeg.`);
         else warranty_stress = { operating_life_years: years, annual_capacity_loss_pct: Data.WARRANTY_LOSS,
           basis: option.warrantyBasis?.years === years ? option.warrantyBasis.text
             : Data.warrantyNote(`garantie van ${years} jaar, ingevoerd in Zelf doorrekenen`) };
@@ -241,7 +251,8 @@ window.Scenario = (() => {
         "startkosten; meer dan de kosten krijg je niet terug. Verlaag ze tot hoogstens de startkosten.");
       else if (financing.loan_amount_eur > upfront + 1e-9) mine.push(`Leningbedrag: hoogstens de startinvestering na ` +
         `teruggaven (${money(upfront)}).`);
-      if (financing.annual_interest_pct < 0 || financing.annual_interest_pct > 30) mine.push("Rente: vul 0 tot 30% per jaar in.");
+      const interest = LIMITS.financing.annual_interest_pct;
+      if (financing.annual_interest_pct < interest.min || financing.annual_interest_pct > interest.max) mine.push(`Rente: vul ${interest.min} tot ${interest.max}% per jaar in.`);
       if (financing.loan_amount_eur > 0 && !(Number.isInteger(financing.years) && financing.years >= 1 && financing.years <= (horizon ?? 0)))
         mine.push(`Looptijd van de lening: een heel aantal jaren van 1 tot ${horizon ?? "de looptijd"}, binnen de looptijd van de berekening.`);
       return { key: option.key, name: option.name, configuration_id: option.configuration_id, battery, costs, financing,
@@ -297,8 +308,8 @@ window.Scenario = (() => {
           bindValue(numberInput({ required: true, ...props }), () => change[key], v => { change[key] = v; showSums(); }), help);
         return h("fieldset", {}, h("legend", {}, kind.label),
           h("div", { class: "grid" },
-            own("Vanaf jaar (1 januari)", "year", { min: "2026", max: "2100", step: "1" }),
-            own("Extra verbruik (kWh per jaar)", "kwh", { whole: true, min: "1", max: String(kind.max), step: "1" },
+            own("Vanaf jaar (1 januari)", "year", { min: FIRST_YEAR, max: LAST_YEAR, step: "1" }),
+            own("Extra verbruik (kWh per jaar)", "kwh", { whole: true, min: String(kind.min), max: String(kind.max), step: "1" },
               change.kind === "heat_pump" ? "Wat er bij je huidige verbruik bij komt, niet je nieuwe totaal."
                 : "Wat de auto thuis laadt, met 3,68 kW (16 A, één fase)."),
             change.kind === "ev" ? field("Laden", bindValue(select(CHARGING), () => change.charging, v => { change.charging = v; })) : null),
@@ -371,9 +382,9 @@ window.Scenario = (() => {
     const fields = h("div", { class: "grid" },
       field("Omschrijving",
         bindValue(input({ required: true, maxlength: "200" }), () => v.label, value => { v.label = value; })),
-      own("Vanaf kalenderjaar", "year", { min: "2026", max: "2100", step: "1" }, "Moet op of na het startjaar liggen."),
-      own("Vergoeding in de variant (€/kWh)", "export", { min: "-10", max: "10" }),
-      own("Terugleverkosten in de variant (€/kWh)", "fee", { min: "0", max: "10" }));
+      own("Vanaf kalenderjaar", "year", { min: FIRST_YEAR, max: LAST_YEAR, step: "1" }, "Moet op of na het startjaar liggen."),
+      own("Vergoeding in de variant (€/kWh)", "export", bounds("export_variant", "export_eur_per_kwh")),
+      own("Terugleverkosten in de variant (€/kWh)", "fee", bounds("export_variant", "export_fee_eur_per_kwh")));
     // Uitgeschakelde velden tellen niet mee in de formuliercontrole.
     const show = () => { fields.hidden = !v.on;
       fields.querySelectorAll("input").forEach(control => { control.disabled = !v.on; }); };
@@ -398,13 +409,13 @@ window.Scenario = (() => {
       h("p", { class: "help" },
         "Gebruik je contractbedragen inclusief belastingen. Het startjaar is het eerste volledige jaar met de accu; vanaf 2027 rekent het model zonder salderen. De overige waarden zijn aanpasbare aannames, geen voorspelling."),
       h("fieldset", {}, h("legend", {}, "Contract"), h("div", { class: "grid" },
-        tariff("Stroomprijs, alles inbegrepen (€/kWh)", "import", { min: "-10", max: "10" }, Data.INDICATION.importHelp),
+        tariff("Stroomprijs, alles inbegrepen (€/kWh)", "import", bounds("tariff", "import_eur_per_kwh"), Data.INDICATION.importHelp),
         priceCheck,
-        tariff("Terugleververgoeding (€/kWh)", "export", { min: "-10", max: "10" }, "Vóór aparte terugleverkosten."),
-        tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" },
+        tariff("Terugleververgoeding (€/kWh)", "export", bounds("tariff", "export_eur_per_kwh"), "Vóór aparte terugleverkosten."),
+        tariff("Terugleverkosten (€/kWh)", "fee", bounds("tariff", "export_fee_eur_per_kwh"),
           "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger."),
         feeCheck,
-        tariff("Prijsverandering per jaar (%)", "change", { min: "-20", max: "30", step: "0.1" }, Data.ASSUMPTION_HELP.annual_price_change_pct)),
+        tariff("Prijsverandering per jaar (%)", "change", { ...bounds("tariff", "annual_price_change_pct"), step: "0.1" }, Data.ASSUMPTION_HELP.annual_price_change_pct)),
         indications(),
         h("details", {}, h("summary", {}, "Terugleverkosten via vaste staffels"),
           field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; checkFee(); }),
@@ -561,7 +572,7 @@ window.Scenario = (() => {
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
       TECH.map(([key, label, min, max, help]) => field(label, bindValue(numberInput({ min, max, required: true, step: key === "operating_life_years" ? "1" : "any" }), () => option.battery[key], v => { option.battery[key] = v; }), help)),
-      h("div", { class: "wide" }, field("Garantietermijn (jaar, optioneel)", bindValue(numberInput({ min: "1", max: "30", step: "1" }),
+      h("div", { class: "wide" }, field("Garantietermijn (jaar, optioneel)", bindValue(numberInput({ ...bounds("warranty_stress", "operating_life_years"), step: "1" }),
         () => option.warranty, v => { option.warranty = v; }),
         `Staat in de garantievoorwaarden; leeg is niet doorrekenen. Ingevuld rekenen we ook door wat de accu oplevert als hij direct ` +
         `na de garantie stopt, met ${n(Data.WARRANTY_LOSS, 1)}% verlies per jaar (ongeveer 70% over na 10 jaar) in plaats van het ` +
@@ -607,7 +618,7 @@ window.Scenario = (() => {
       const line = option.costs[c.key] ||= { status: "unknown", amount: "", year: "", source: "", notes: "" };
       const amount = numberInput({ min: "0", step: "0.01", money: true, disabled: line.status !== "priced" });
       const status = select(Object.entries(Data.costStatus), line.status);
-      const year = c.timing === "event" ? numberInput({ min: "1", max: "30", step: "1",
+      const year = c.timing === "event" ? numberInput({ min: "1", max: MAX_YEARS, step: "1",
         disabled: line.status !== "priced" }) : null;
       const source = input({ placeholder: "Offerte, bron of aanname" });
       bindValue(amount, () => line.amount, v => { line.amount = v; refreshProgress(); });
@@ -674,7 +685,7 @@ window.Scenario = (() => {
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
       quoteTotal(option, categories), costGroups,
       h("details", {}, h("summary", {}, "Financiering (optioneel)"), h("p", { class: "help" }, "Een annuïtaire lening voegt alleen de rente toe; de aanschaf telt al als investering. Looptijd binnen de analysehorizon."),
-        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))),
+        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { ...bounds("financing", "annual_interest_pct"), step: "0.01" }), loan("Looptijd (jaren)", "years", { max: MAX_YEARS, step: "1" }))),
       h("div", { class: "actions option-end" }, remove));
   }
 

@@ -12,7 +12,7 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 | `crates/storage` | SQLite via rusqlite (één verbinding achter een mutex), migraties in `migrations/`, opslagmethoden en leesmodellen. Werkt native en als WebAssembly. |
 | `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`; extractors met JSON-fouten in `extract.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
 | `crates/browser` | WebAssembly-module voor de browserversie: dezelfde router uit `thuisaccu-server` zonder netwerkpoort, database als bytes in en uit (IndexedDB in `web/worker.js`). Native een lege bibliotheek. |
-| `web/` | `index.html` (shell; `data-backend` is `server` of `browser`), `styles.css`, `local.js` (API via webworker in de browserversie), `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, `compare.js` (berekeningen naast elkaar), en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`; `worker.js` hoort alleen bij de browserversie. |
+| `web/` | `index.html` (shell; `data-backend` is `server` of `browser`), `styles.css`, `contract.js` (gegenereerde feiten uit Rust), `local.js` (API via webworker in de browserversie), `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, `compare.js` (berekeningen naast elkaar), en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`; `worker.js` hoort alleen bij de browserversie. |
 | `docs/` | Architectuur, API-contract, datamodel, importafspraken, rekenmodel, onderzoek en roadmap. |
 
 ## Commando's
@@ -84,11 +84,13 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 - Toegankelijkheid: echte `<label>`s, `aria-live` voor statusmeldingen, zichtbare focus, toetsenbordbediening. Kleur is niet de enige betekenisdrager.
 - Getallen in `nl-NL`-notatie; houd valuta, eenheid en meetgrens bij elke waarde zichtbaar.
 - `crates/server/tests/http.rs` controleert de shell (`#nav`, `#view`, geen externe bronnen) en elk script.
+- `web/contract.js` (`window.Contract`: modelversie, offertevelden, grenzen van de invoer, doelen, meldingscodes en meer) wordt gegenereerd met `UPDATE_CONTRACT=1 cargo test -p thuisaccu-server --test contract`; bewerk het nooit met de hand en kopieer geen Rust-constante in een script, maar lees hem uit `Contract`.
 
 ## Tests
 
 - Schrijf gedragstests bij nieuwe berekeningen en API-contracten: `crates/core/tests/analysis.rs` (rekenkern), `crates/storage/tests/catalog.rs` (opslag, migraties, transacties), `crates/server/tests/*.rs` (HTTP, import, scenario).
 - Referentiegevallen voor de rekenkern controleren energiebehoud, vermogensgrenzen, verliezen, NPV/ROI, financiering en vervanging. Een nieuwe rekenregel krijgt een handmatig narekenbaar referentiegeval met de aanname in de testnaam of een comment.
+- `crates/server/tests/contract.rs` faalt als `web/contract.js` niet meer overeenkomt met de constanten in Rust (en als de tabel met meldingscodes in `docs/api.md` afwijkt van `analysis::MESSAGE_CODES`); vernieuw het met `UPDATE_CONTRACT=1 cargo test -p thuisaccu-server --test contract` en bekijk het verschil. Nooit met de hand bewerken.
 - `crates/core/tests/golden.rs` legt twee volledige analyses (uur- en kwartierjaar) vast in `crates/core/tests/golden/`. Verandert een getal bewust, draai dan `UPDATE_GOLDEN=1 cargo test -p thuisaccu-core --test golden`, bekijk het verschil en verhoog zo nodig `model_version`. Een refactoring hoort ze ongewijzigd te laten.
 - Testdata is synthetisch en klein. Voorbeeldbestanden voor import staan in `crates/server/resources/`.
 - `tests/e2e/data.test.js` test `web/data.js` zonder browser (ui.js en data.js in een `vm`-context), bijvoorbeeld dat elke aannamezin herkend wordt; `npm test` draait hem mee.
