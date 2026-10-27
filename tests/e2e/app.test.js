@@ -620,7 +620,11 @@ test("cumulatieve meterstanden per tarief: herkend, opgeteld en een leesfout wor
   assert.match(await page.textContent(".wizard-body .callout.problem"), /ver boven wat een huishouden/);
   await next(page);
   assert.equal(await page.locator("text=Bewaar energieprofiel").count(), 0);
+  // Waarom het niet verder kan staat boven de knoppen, niet als melding die over Volgende valt.
+  assert.match(await page.textContent(".wizard-problem"), /Pas eerst bij Kolommen of Meter/);
+  assert.equal(await page.locator(".toast.error").count(), 0);
   await page.click(".wizard-footer button:has-text('Vorige')");
+  assert.equal(await page.locator(".wizard-problem").textContent(), "");
   await page.getByLabel("Soort waarden").selectOption("cumulative");
   await next(page);
   await page.waitForSelector(".stats", { timeout: 30000 });

@@ -575,7 +575,8 @@
           // De volgende stap opent pas na een geslaagde controle door de server.
           const work = { 0: inspect, 1: () => preview(false), 2: preview, 3: plausible }[index];
           if (!work) return true;
-          try { await work(); return true; } catch (error) { if (!error.shown) toast(error.message, true); return false; }
+          await work();
+          return true;
         }
       });
       view.append(flow.element); flow.show(0);

@@ -334,13 +334,16 @@ window.UI = (() => {
     const compact = h("p", { class: "stepper-compact" }), progress = h("progress", { max: steps.length, "aria-hidden": "true" });
     const previous = button("← Vorige", () => show(current - 1), "secondary");
     // Een stap controleren kan een verzoek zijn (zoals een bestand inlezen); zolang dat loopt, staat de wizard stil.
-    const next = button("Volgende →", () => busyWith("", async () => {
+    // Waarom een stap niet verder kan, staat boven de knoppen in de balk en niet als melding die over Volgende
+    // kan vallen; de regel verdwijnt bij een nieuwe poging of een andere stap. Een fout met `shown` staat al bij een veld.
+    const problem = h("p", { class: "wizard-problem", role: "alert" });
+    const next = button("Volgende →", () => { problem.replaceChildren(); return busyWith("", async () => {
       body.querySelectorAll("input, select, textarea").forEach(control => control.setCustomValidity(""));
       if (await check(current, body)) show(current + 1);
-    }).catch(error => toast(error.message, true)));
+    }).catch(error => { if (!error.shown) problem.textContent = error.message; }); });
     const slot = h("span", { class: "wizard-action" });
     const status = h("p", { class: "wizard-status", role: "status" });
-    const footer = h("div", { class: "wizard-footer" }, previous, next, status, slot, finish ?? null);
+    const footer = h("div", { class: "wizard-footer" }, problem, previous, next, status, slot, finish ?? null);
     let current = 0, reached = 0, shown = null, working = false;
     steps.forEach((step, index) => stepper.append(h("li", {},
       h("button", { type: "button", class: "ghost", onclick: () => index <= reached && show(index) }, `${index + 1}. ${step.label}`))));
@@ -355,7 +358,7 @@ window.UI = (() => {
       });
       compact.replaceChildren(`Stap ${current + 1} van ${steps.length} · ${steps[current].label}`, progress);
       progress.value = current + 1;
-      slot.replaceChildren(); body.replaceChildren(); steps[current].render(body);
+      slot.replaceChildren(); problem.replaceChildren(); body.replaceChildren(); steps[current].render(body);
       sync(); next.hidden = current === steps.length - 1;
       onShow(current, body);
       const heading = body.querySelector("h2, h3");

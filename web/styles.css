@@ -212,7 +212,9 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .wizard-action:empty { display: none; }
 .wizard-status { margin: 0 auto 0 0; align-self: center; color: var(--muted); font-size: .9rem; }
 .wizard-status:empty { display: none; }
-.wizard-footer { position: sticky; bottom: 0; display: flex; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
+.wizard-problem { flex-basis: 100%; margin: 0; padding: .4rem .6rem; border-left: 4px solid var(--danger); background: var(--warn-bg); }
+.wizard-problem:empty { display: none; }
+.wizard-footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
 
 /* Keuzehulp en resultaat */
 .option-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: var(--gap); }
