@@ -880,11 +880,8 @@ pub fn combine_with_meter(
     }
     let first = keys[0];
     let last = keys[keys.len() - 1];
-    let outside = |b: &BTreeMap<i64, (f64, f64, i64)>| {
-        b.keys()
-            .filter(|key| (first..=last).contains(*key) && !keys.contains(key))
-            .count()
-    };
+    // Elke gemeenschappelijke periode staat in beide reeksen; de rest binnen het bereik valt af.
+    let outside = |b: &BTreeMap<i64, (f64, f64, i64)>| b.range(first..=last).count() - keys.len();
     let unmatched = outside(&solar).max(outside(&grid));
     let mut intervals = Vec::with_capacity(keys.len());
     let mut balance = GrossBalance::default();

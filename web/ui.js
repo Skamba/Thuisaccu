@@ -93,16 +93,26 @@ window.UI = (() => {
     }
   };
 
+  // De meldingenhouder staat vast in index.html (aria-live), zodat een schermlezer elke nieuwe melding voorleest.
   function toast(text, error = false) {
     let host = $("toasts");
-    if (!host) { host = h("div", { id: "toasts", class: "toasts" }); document.body.append(host); }
-    const item = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : "status" },
+    if (!host) { host = h("div", { id: "toasts", class: "toasts", "aria-live": "polite" }); document.body.append(host); }
+    const item = h("div", { class: `toast${error ? " error" : ""}`, role: error ? "alert" : null },
       h("span", {}, text),
       h("button", { type: "button", class: "ghost", "aria-label": "Melding sluiten", onclick: () => item.remove() }, "Sluiten"));
     // Eén melding tegelijk: een nieuwe vervangt de vorige, zodat meldingen zich niet over de inhoud stapelen.
     item.dataset.shown = String(Date.now());
     host.replaceChildren(item);
-    if (!error) setTimeout(() => item.remove(), 6000);
+    if (error) return;
+    // Lang genoeg om te lezen (minstens 6 s, ongeveer 3 woorden per seconde erbij), en niet zolang de muis of
+    // focus op de melding staat.
+    const wait = Math.max(6000, 2000 + String(text).split(/\s+/).length * 330);
+    let timer;
+    const start = () => { clearTimeout(timer); timer = setTimeout(() => item.remove(), wait); };
+    for (const type of ["mouseenter", "focusin"]) item.addEventListener(type, () => clearTimeout(timer));
+    item.addEventListener("mouseleave", () => { if (!item.contains(document.activeElement)) start(); });
+    item.addEventListener("focusout", event => { if (!item.contains(event.relatedTarget) && !item.matches(":hover")) start(); });
+    start();
   }
 
   // Voert een actie uit met een uitgeschakelde knop; fouten worden als melding getoond.
@@ -121,6 +131,19 @@ window.UI = (() => {
     ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text)
     : h("span", {}, text);
   const badge = (text, tone = "") => h("span", { class: `badge ${tone}` }, text);
+  // Een uitklapmenu met knoppen. Na een keuze, met Escape of bij een klik ernaast klapt het weer in.
+  function menu(label, items, props = {}) {
+    const element = h("details", { class: "menu", ...props }, h("summary", {}, label), h("div", { class: "menu-items" }, items));
+    const close = () => { element.open = false; };
+    element.addEventListener("click", event => { if (event.target.closest(".menu-items button")) close(); });
+    element.addEventListener("keydown", event => {
+      if (event.key === "Escape" && element.open) { close(); element.querySelector("summary").focus(); }
+    });
+    return element;
+  }
+  globalThis.document?.addEventListener("click", event => {
+    for (const open of document.querySelectorAll("details.menu[open]")) if (!open.contains(event.target)) open.open = false;
+  });
 
   // Formulierveld met label, optionele hulptekst en foutmelding.
   function field(labelText, control, help) {
@@ -249,8 +272,10 @@ window.UI = (() => {
         h("tbody", {}, rows.map(row => h("tr", {}, row.map((cell, i) =>
           h("td", { dataset: stack ? { label: headers[i] ?? "" } : null }, cell ?? "Onbekend")))))));
   }
+  // [label, waarde, korte uitleg]; de uitleg is optioneel en staat klein onder het label.
   const stats = items => h("dl", { class: "stats" },
-    items.map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, value))));
+    items.map(([label, value, help]) => h("div", {}, h("dt", {}, label, help ? h("small", { class: "stat-help" }, help) : null),
+      h("dd", {}, value))));
   const empty = (title, text, ...actions) => h("div", { class: "empty" }, h("h2", {}, title), h("p", {}, text),
     h("div", { class: "actions" }, actions));
 
@@ -487,7 +512,10 @@ window.UI = (() => {
               if (!finite(v)) return;
               if (i === 1) draw("circle", { cx: x(v), cy, r: 6, class: "chart-base" },
                 `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
-              else draw("rect", { x: x(v) - 2, y: cy - 9, width: 4, height: 18, class: "chart-tick" },
+              // Ongunstig en gunstig hebben elk een eigen vorm: bij terugverdientijd ligt ongunstig rechts.
+              else if (i === 0) draw("rect", { x: x(v) - 5, y: cy - 5, width: 10, height: 10, class: "chart-low" },
+                `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
+              else draw("polygon", { points: `${x(v)},${cy - 8} ${x(v) + 7},${cy + 5} ${x(v) - 7},${cy + 5}`, class: "chart-high" },
                 `${r.label}, ${series[i].label}: ${format(v)} ${unit}`);
             });
           }
@@ -507,7 +535,7 @@ window.UI = (() => {
     if (horizontal) text(width - right, height - 6, unit, "end");
     else { text(8, 14, unit); if (xLabel) text(left + plotW / 2, height - 6, xLabel, "middle"); }
     const legend = h("ul", { class: "legend" }, series.map((s, i) => h("li", {},
-      type === "range" ? h("span", { class: `swatch ${i === 1 ? "swatch-base" : "swatch-tick"}` })
+      type === "range" ? h("span", { class: `swatch ${["swatch-low", "swatch-base", "swatch-high"][i]}` })
         : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));
     const data = h("details", {}, h("summary", {}, "Toon als tabel"),
       table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")])));
@@ -520,7 +548,7 @@ window.UI = (() => {
 
   return {
     h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
-    csvCell, clip, button, link, external, badge, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
+    csvCell, clip, button, link, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();

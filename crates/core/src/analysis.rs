@@ -297,11 +297,9 @@ fn validate_additions(
     Ok(())
 }
 
-pub fn validate(
-    profile: &[EnergyInterval],
-    p: &Parameters,
-    candidates: &[Candidate],
-) -> Result<(), AnalysisError> {
+/// Controleert of een energieprofiel bruikbaar is voor een berekening: één volledig jaar met uur- of
+/// fijnere perioden en geldige waarden. Ook de capaciteitsverkenning gebruikt deze controle.
+pub fn validate_profile(profile: &[EnergyInterval]) -> Result<(), AnalysisError> {
     ensure(
         !profile.is_empty() && profile.len() <= 110_000,
         "Gebruik één volledig meetjaar met hoogstens 110.000 intervallen.",
@@ -336,7 +334,15 @@ pub fn validate(
     ensure(
         (hours - 8760.0).abs() < 0.01 || (hours - 8784.0).abs() < 0.01,
         "Gebruik een volledig jaar van 365 of 366 dagen. Korte meetreeksen worden niet automatisch naar een jaar opgeschaald.",
-    )?;
+    )
+}
+
+pub fn validate(
+    profile: &[EnergyInterval],
+    p: &Parameters,
+    candidates: &[Candidate],
+) -> Result<(), AnalysisError> {
+    validate_profile(profile)?;
     ensure(
         (2026..=2100).contains(&p.start_year) && (1..=30).contains(&p.horizon_years),
         "Kies een startjaar vanaf 2026 en een horizon van 1 tot 30 jaar.",

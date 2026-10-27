@@ -387,12 +387,8 @@ pub async fn capacity_curve(
     Path(import_id): Path<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let (profile, _) = load_profile(&catalog, import_id).await?;
-    let hours: f64 = profile.iter().map(|i| i.duration_hours).sum();
-    if !((hours - 8760.0).abs() < 0.01 || (hours - 8784.0).abs() < 0.01) {
-        return Err(invalid(
-            "Gebruik een volledig jaar van 365 of 366 dagen voor de capaciteitsverkenning.",
-        ));
-    }
+    // Dezelfde eisen als een berekening: dagtotalen zouden de bovengrens sterk overschatten.
+    analysis::validate_profile(&profile).map_err(|error| invalid(error.0))?;
     let capacities: Vec<f64> = [
         0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0,
     ]

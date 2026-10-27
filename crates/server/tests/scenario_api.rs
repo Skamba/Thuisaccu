@@ -414,6 +414,42 @@ async fn capacity_curve_uses_measured_simultaneity_instead_of_the_estimated_spre
 }
 
 #[tokio::test]
+async fn capacity_curve_refuses_daily_totals_like_a_calculation_does() {
+    // Een volledig jaar met dagtotalen: de verdeling binnen een dag is onbekend, dus geen bovengrens.
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let days: Vec<SolarInterval> = (0..365)
+        .map(|day| SolarInterval {
+            start_unix_s: 1_735_689_600 + day * 86_400,
+            end_unix_s: 1_735_689_600 + (day + 1) * 86_400,
+            production_wh: 10_000.0,
+            consumption_wh: Some(10_000.0),
+            steady_consumption_wh: None,
+            measured_import_wh: None,
+            measured_export_wh: None,
+        })
+        .collect();
+    let id = catalog
+        .save_solar("Synthetic", &format!("{:064x}", 7), "{}", "{}", &days, 1)
+        .await
+        .unwrap();
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/v1/solar/imports/{id}/capacity"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error = body(response).await;
+    assert!(
+        error["message"].as_str().unwrap().contains("dagtotalen"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
 async fn deleting_a_run_keeps_the_profile_and_deleting_a_profile_removes_its_runs() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());

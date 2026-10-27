@@ -205,12 +205,18 @@ window.Results = (() => {
     const installed = isCircuit ? result.candidates.filter(c => kinds.get(c.key) === "fixed").sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     const fixed = isPlug ? result.candidates.filter(c => kinds.get(c.key) && kinds.get(c.key) !== "plug")
       .sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
+    // De aanbevolen accu als kop, de zin van de rekenkern eronder: zo staat het antwoord ook op een telefoon in één oogopslag.
+    const lead = rec && result.recommendation.startsWith(`${option.name} `)
+      ? result.recommendation.slice(option.name.length + 1) : null;
+    const npvFirst = option && run.input.request.parameters.objective === "net_present_value";
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
-      h("h2", {}, result.recommendation),
-      option ? [h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
+      h("h2", {}, lead ? option.name : result.recommendation),
+      lead ? h("p", { class: "verdict-lead" }, lead[0].toUpperCase() + lead.slice(1)) : null,
+      option ? [lead ? null : h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
         : result.recommendation.includes(option.name) ? "Voor deze accu:" : `Voor ${option.name}:`),
         stats([
-          finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet"] : null,
+          npvFirst ? ["Netto voordeel (NPV)", eur0(option.npv_eur), "over de looptijd, in geld van nu"] : null,
+          finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet", "hoogste startinvestering die nog uitkomt"] : null,
           ["Startinvestering nu", eur0(option.initial_investment_eur)],
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
@@ -409,6 +415,8 @@ window.Results = (() => {
       sums.children.length ? fold("Zo is de besparing berekend", sums) : null,
       origin.children.length ? fold(quotedOption ? `Uit je offerte, op basis van ‘${quote.title}’`
         : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin) : null,
+      fold("Wat betekenen deze woorden?", h("dl", { class: "glossary" },
+        Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))),
       h("p", { class: "next-step" }, "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en " +
         "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
   }
@@ -1139,22 +1147,29 @@ window.Results = (() => {
     const kinds = new Map(request.candidates.map(c => [c.key, Data.CONNECTIONS.includes(c.connection) ? c.connection
       : c.connection == null ? Data.connectionOf(described.get(c.key)) : null]));
     shortNames(run, all, kinds);
+    // Eén hoofdactie in beeld; delen, exporteren en afdrukken staan onder ‘Meer’, zodat het antwoord op een telefoon
+    // niet onder een rij knoppen verdwijnt.
     UI.append(actions, [shared ? null : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"),
-      shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "secondary"),
-      button("Exporteer CSV", () => exportCsv(run), "secondary"), button("Afdrukken", () => window.print(), "secondary"),
-      // Gewoon afdrukken geeft het korte antwoord, het overzicht en de waarschuwingen (styles.css); dit alle tabbladen.
-      button("Alles afdrukken", () => {
-        document.body.classList.add("print-all");
-        addEventListener("afterprint", () => document.body.classList.remove("print-all"), { once: true });
-        window.print();
-      }, "ghost")]);
+      UI.menu("Meer", [shared ? null : button("Deel als link", event => UI.busy(event.target, () => share(run)), "ghost"),
+        button("Exporteer CSV", () => exportCsv(run), "ghost"), button("Afdrukken", () => window.print(), "ghost"),
+        // Gewoon afdrukken geeft het korte antwoord, het overzicht en de waarschuwingen (styles.css); dit alle tabbladen.
+        button("Alles afdrukken", () => {
+          document.body.classList.add("print-all");
+          addEventListener("afterprint", () => document.body.classList.remove("print-all"), { once: true });
+          window.print();
+        }, "ghost")])]);
     if (shared) view.append(h("p", { class: "callout", role: "note" },
       "Gedeelde berekening: geopend uit een link en niet bewaard in je eigen berekeningen. Deze app heeft de uitkomst niet " +
       "opnieuw berekend, dus controleer de aannames en vertrouw alleen links van iemand die je kent." +
       (run.shared_of > result.candidates.length ? ` De link bevat ${result.candidates.length} van de ${run.shared_of} ` +
         "doorgerekende accu’s: de aanbevolen accu en de beste opties." : "")));
-    const meta = h("p", { class: "help" },
-      `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${UI.dateTime(run.created_at_unix_s)}`);
+    // De tarieven bepalen de uitkomst het meest; ze staan hier, niet alleen onder Invoer en aannames.
+    const t = p.tariff, price = v => `${money(v, { decimals: Math.abs(v * 100 - Math.round(v * 100)) < 1e-9 ? 2 : 4 })} per kWh`;
+    const meta = [h("p", { class: "help" },
+      `${request.site.address} · ${run.input.profile?.filename || `Profiel ${request.solar_import_id}`} · ${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ${UI.dateTime(run.created_at_unix_s)}`),
+      h("p", { class: "help rates" }, `Gerekend met stroom ${price(t.import_eur_per_kwh)} · terugleververgoeding ` +
+        `${price(t.export_eur_per_kwh)} · terugleverkosten ${t.export_fee_bands?.length ? "volgens staffel" : price(t.export_fee_eur_per_kwh)} · ` +
+        `prijsverandering ${pct(t.annual_price_change_pct)} per jaar · discontovoet ${pct(p.discount_pct)}. Alles staat onder Invoer en aannames.`)];
     if (isFictitious(run)) view.append(h("p", { class: "banner" },
       "FICTIEVE GEGEVENS: deze berekening gebruikt fictieve invoer en zegt niets over een echte woning."));
     if (outdated(run)) view.append(await outdatedNote(run, shared));
@@ -1166,7 +1181,7 @@ window.Results = (() => {
     const warnings = warningItems(result.warnings);
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
-    view.append(verdict(run, kinds), meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
+    view.append(verdict(run, kinds), ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
       { label: "Overzicht", content: overview(run, all, kinds) },
       { label: "Offertecheck", content: quoteCheck(run, all, categories) },
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },

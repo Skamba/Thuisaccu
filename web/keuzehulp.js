@@ -373,6 +373,37 @@
     };
   }
 
+  // Je antwoorden per stap, zodat je ze vóór het berekenen nakijkt; ‘Wijzig’ gaat terug naar die stap.
+  function recap() {
+    const price = v => v == null ? "Onbekend" : `${money(v, { decimals: 4 }).replace(/0{1,2}$/, "")} per kWh`;
+    const words = { install: { plug: "zelf, met de stekker", fixed: "laten installeren", any: "nog niet gekozen" },
+      phases: { 1: "1-fase", 3: "3-fase", unknown: "onbekend" }, place: { inside: "binnen", outside: "buiten", any: "maakt niet uit" },
+      contract: { fixed: "vast", variable: "variabel", dynamic: "dynamisch", unknown: "onbekend" },
+      objective: { net_present_value: "het meeste over de looptijd", payback: "snel terugverdienen", self_consumption: "zo veel mogelijk eigen zonnestroom" } };
+    const fileName = answers.data === "file" ? "een bewaard energieprofiel" : null, made = production(), use = gross();
+    const extra = [parse(answers.heatPump) > 0 ? `warmtepomp ${kwh(parse(answers.heatPump))}` : null,
+      parse(answers.ev) > 0 ? `auto ${kwh(parse(answers.ev))}` : null].filter(Boolean);
+    const { export: paid, fee } = feedIn();
+    const groups = [
+      ["Je energie", fileName ? [`Uit ${fileName}`] : [
+        `Verbruik ${use == null ? "onbekend" : `${kwh(use)} per jaar`}`,
+        answers.panels === "no" ? "Geen zonnepanelen" : `Opwek ${made == null ? "onbekend" : `${kwh(made)} per jaar`}` +
+          (parse(answers.production) == null && made != null ? " (geschat uit kWp)" : ""),
+        extra.length ? `Waarvan ${extra.join(" en ")}` : null]],
+      ["Je woning", [`Aansluiten: ${words.install[answers.install]}`, `Meterkast ${words.phases[answers.phases]}`,
+        `Plek: ${words.place[answers.place]}`, answers.backup === "yes" ? "Noodstroom gewenst" : "Noodstroom niet nodig"]],
+      ["Je contract", [`Contract ${words.contract[answers.contract]}`, `Stroom ${price(parse(answers.tariffImport))}`,
+        `Vanaf 2027: vergoeding ${price(paid)}, terugleverkosten ${price(fee)}${answers.feedin === "indication" ? " (indicatie)" : ""}`]],
+      ["Wat je belangrijk vindt", [`Doel: ${words.objective[answers.objective]}`,
+        parse(answers.budget, { money: true }) != null ? `Budget ${money(parse(answers.budget, { money: true }), { decimals: 0 })}` : "Geen budget",
+        `Looptijd ${horizon()} jaar`]]
+    ];
+    return h("details", { class: "panel recap", open: true }, h("summary", {}, "Je antwoorden"),
+      h("dl", {}, groups.map(([title, lines], i) => h("div", {}, h("dt", {}, title,
+        button("Wijzig", () => flow.show(i), "ghost", { "aria-label": `Wijzig ${title.toLowerCase()}` })),
+        h("dd", {}, lines.filter(Boolean).join(" · "))))));
+  }
+
   function stepAdvice(body) {
     body.append(h("h2", {}, "Controleren en berekenen"),
       h("p", { class: "help", "aria-live": "polite" }, "De berekening wordt voorbereid…"));
@@ -417,7 +448,7 @@
     const MAX_CANDIDATES = 50, FEW_CANDIDATES = 5;
     let range = max > 0 && own ? own : rangeFor(answers.sizing), included = [], renderPick = () => {};
     const size1 = v => n(v, v % 1 ? 1 : 0), kwhText = v => `${size1(v)} kWh`;
-    body.replaceChildren(h("h2", {}, "Controleren en berekenen"));
+    body.replaceChildren(h("h2", {}, "Controleren en berekenen"), recap());
 
     const check = profileCheck(points);
     const size = h("section", { class: "panel" }, h("h3", {}, "1. Hoe groot moet een accu zijn?"),

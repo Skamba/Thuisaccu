@@ -222,6 +222,11 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.getByLabel("Grootste accu (bruikbaar)").focus();
   await page.keyboard.press("End");
   // De knop staat in de vaste balk; zonder bevestigingen gaat de focus naar de eerste, met de melding erbij.
+  // Vóór het berekenen staan de antwoorden op een rij, met een weg terug naar elke stap.
+  const recap = await page.textContent(".recap");
+  assert.match(recap, /Verbruik 5\.500 kWh per jaar/);
+  assert.match(recap, /Opwek 3\.800 kWh per jaar/);
+  assert.equal(await page.locator(".recap button:has-text('Wijzig')").count(), 4);
   const calculate = page.locator(".wizard-footer button:has-text('Bereken mijn advies')");
   await calculate.click();
   assert.equal(await page.evaluate(() => document.activeElement.closest(".check") !== null), true);
@@ -255,6 +260,9 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.ok(stressed.length > 0 && stressed.every(Boolean));
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
+  // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
+  assert.match(await page.textContent(".rates"), /^Gerekend met stroom €\s[\d,]+ per kWh · terugleververgoeding €\s[\d,]+ per kWh/);
+  assert.match(summary, /Wat betekenen deze woorden\?.*Zelfvoorziening/s);
   // De garantiestresstest is één waarschuwing met een tabel per accu, niet een zin per accu.
   const warningTexts = await page.locator(".warnings > li").allTextContents();
   assert.equal(warningTexts.filter(w => w.startsWith("Garantiestresstest bij")).length, stressed.length === 1 ? 1 : 0);
@@ -371,6 +379,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.waitForSelector(".verdict", { timeout: 30000 });
 
   // Delen: de link bevat de uitkomst zonder adres en opent ook in een browser zonder deze gegevens.
+  await page.click(".actions .menu summary");
   await page.click("button:has-text('Deel als link')");
   const shared = await page.getByLabel("Link naar deze berekening").inputValue();
   assert.match(shared, /#\/gedeeld\/[A-Za-z0-9_-]+$/);

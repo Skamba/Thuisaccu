@@ -172,7 +172,17 @@ window.Data = (() => {
     ["Terugverdiend na", "Na hoeveel jaar de besparingen de investering hebben goedgemaakt, zonder de discontovoet."],
     ["kWh en kW", "kWh is een hoeveelheid energie: wat er in de accu past of wat je per jaar verbruikt. kW is vermogen: hoe snel " +
       "de accu laadt of stroom levert. Een accu met 5 kWh die 0,8 kW levert, doet ruim zes uur over leeglopen."],
-    ["Startinvestering", "Alles wat je bij aanschaf betaalt, zoals accu, installatie en aansluiting, min teruggaven en subsidie."]
+    ["Startinvestering", "Alles wat je bij aanschaf betaalt, zoals accu, installatie en aansluiting, min teruggaven en subsidie."],
+    ["Eigen gebruik", "Welk deel van je zonnestroom je zelf gebruikt, direct of later via de accu. De rest lever je terug aan het net."],
+    ["Zelfvoorziening", "Welk deel van je verbruik uit je eigen zonnestroom komt, direct of via de accu. De rest haal je van het net."],
+    ["Bruikbare en nominale capaciteit", "Nominaal is wat er in de cellen past; bruikbaar is wat je er echt uit kunt halen en is " +
+      "meestal lager. Hier wordt altijd met bruikbare capaciteit gerekend."],
+    ["Sluimerverbruik", "Wat accu en omvormer zelf gebruiken zolang ze aan staan, ook als de accu niets doet. Een paar watt " +
+      "is over een jaar tientallen kWh."],
+    ["Volledige laadcycli", "De energie die de accu in een jaar levert, gedeeld door zijn bruikbare capaciteit: twee keer half " +
+      "leeg telt als één cyclus. Garanties noemen vaak een maximum aantal cycli."],
+    ["Salderen en terugleverkosten", "Tot en met 2026 mag je teruggeleverde stroom wegstrepen tegen stroom van het net " +
+      "(salderen). Daarna krijg je per teruggeleverde kWh een vergoeding, en veel leveranciers rekenen terugleverkosten."]
   ];
   // Posten die de kosten verlagen, zoals `finance::is_credit` in de rekenkern.
   const CREDITS = ["grant", "vat_refund", "residual_value"];

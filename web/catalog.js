@@ -314,7 +314,7 @@
         { onchange: event => { filters.connection = event.target.value; draw(); } });
       const count = h("p", { class: "help", "aria-live": "polite" });
       view.append(h("div", { class: "toolbar" }, field("Zoek", search), field("Fabrikant", maker), field("Aansluiting", connection),
-        h("details", { class: "menu" }, h("summary", {}, "Meer"), button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "secondary"))),
+        UI.menu("Meer", [button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "ghost")])),
         ...(Data.priceAge().stale ? [h("p", { class: "callout", role: "note" }, Data.priceAge().text)] : []),
         h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}. ` +
           "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
