@@ -196,10 +196,16 @@ window.Data = (() => {
     ["upfront_eur", "startkosten vóór teruggaven", "€"], ["subscription_eur", "abonnement per jaar", "€"]];
   const isPriceField = field => field === "upfront_eur" || field === "subscription_eur";
   // De waarde van een offerteveld bij een optie zoals die naar de rekenkern gaat (bedragen in eurocenten).
+  // Som van de betaalde startposten in euro. Met `credits` tellen teruggaven en subsidie negatief en wordt het nooit
+  // minder dan nul, zoals de startinvestering in `project()` (analysis.rs); zonder is het de prijs vóór teruggaven.
+  function upfrontCosts(lines, { credits = true } = {}) {
+    const sum = lines.filter(l => l.timing === "upfront" && l.status === "priced" && (credits || !CREDITS.includes(l.category)))
+      .reduce((total, l) => total + l.amount_minor / 100 * (CREDITS.includes(l.category) ? -1 : 1), 0);
+    return Math.max(0, sum);
+  }
   function quoteValue(candidate, field) {
     const priced = l => l.status === "priced" ? l.amount_minor / 100 : 0;
-    if (field === "upfront_eur") return candidate.costs.filter(l => l.timing === "upfront" && !CREDITS.includes(l.category))
-      .reduce((sum, l) => sum + priced(l), 0);
+    if (field === "upfront_eur") return upfrontCosts(candidate.costs, { credits: false });
     if (field === "subscription_eur") return priced(candidate.costs.find(l => l.category === "subscription") || { status: "" });
     return candidate.battery[field];
   }
@@ -716,10 +722,12 @@ window.Data = (() => {
   // Vergoeding min terugleverkosten boven het gunstigste vaste contract uit het overzicht (exportText): vaak is dan een
   // vast bedrag per jaar als 0 ingevuld. Een vast bedrag hangt van de hoeveelheid af en is geen 0 per kWh.
   const EXPORT_NET_MAX = 0.044;
-  const exportCheck = (vergoeding, kosten) => vergoeding == null || kosten == null || vergoeding - kosten <= EXPORT_NET_MAX + 1e-9 ? null :
+  // `own`: in Zelf doorrekenen, waar de staffels op hetzelfde scherm staan en het overzicht van contracten niet.
+  const exportCheck = (vergoeding, kosten, { own = false } = {}) => vergoeding == null || kosten == null || vergoeding - kosten <= EXPORT_NET_MAX + 1e-9 ? null :
     `Vergoeding min terugleverkosten is ${n((vergoeding - kosten) * 100, 1)} cent per kWh, meer dan de 4,4 cent van het ` +
-    "gunstigste vaste contract voor 2027 in het overzicht hierboven. Rekent je leverancier nu een vast bedrag per jaar? Dat is " +
-    "geen 0: vraag wat teruglevering vanaf 2027 per kWh kost, kies de indicatie, of reken met staffels in Zelf doorrekenen.";
+    `gunstigste vaste contract voor 2027 ${own ? "dat we vonden" : "in het overzicht hierboven"}. Rekent je leverancier nu een vast bedrag per jaar? Dat is ` +
+    (own ? "geen 0: vraag wat teruglevering vanaf 2027 per kWh kost, of vul de jaarkosten in bij de staffels hieronder."
+      : "geen 0: vraag wat teruglevering vanaf 2027 per kWh kost, kies de indicatie, of reken met staffels in Zelf doorrekenen.");
   // Vermeden netafname boven de grens van de tweede belastingschijf, voor het jaar waarin die het grootst is: { y, without,
   // kwh, eur } met `eur` de besparing die de ene stroomprijs dat jaar te hoog rekent, of null. `candidate` uit het
   // resultaat, `base` het eerste jaar zonder accu, `p` de parameters. Pas vanaf 2027 telt de belasting over alle netafname.
@@ -764,6 +772,6 @@ window.Data = (() => {
     RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
-    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
+    RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, upfrontCosts, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
   };
 })();

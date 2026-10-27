@@ -44,7 +44,9 @@ window.UI = (() => {
   const pct = (value, decimals = 1) => finite(value) ? `${number(value, decimals).replace(/^-/, "−")}%` : "Niet bepaald";
   const years = value => value == null ? "Niet binnen de looptijd" : `${number(value, 0)} jaar`;
   const dateTime = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleString("nl-NL");
-  const dateOnly = seconds => seconds == null ? "Onbekend" : new Date(seconds * 1000).toLocaleDateString("nl-NL");
+  // Datums van meetgegevens in Nederlandse tijd, zoals het profieloverzicht, ook in een browser in een andere tijdzone.
+  const dateOnly = seconds => seconds == null ? "Onbekend"
+    : new Date(seconds * 1000).toLocaleDateString("nl-NL", { timeZone: "Europe/Amsterdam" });
   // Getal uit een invoerveld in Nederlandse notatie: komma (of punt) als decimaalteken, punten in groepen
   // van drie als duizendtallen (6.500,00 en 1.250.000). Leeg of geen getal geeft null.
   // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na. Bij een
@@ -244,18 +246,30 @@ window.UI = (() => {
       const described = (control.getAttribute("aria-describedby") || "").split(" ").filter(id => id && !id.startsWith("fout-"));
       if (!valid) {
         first ||= control;
-        const holder = control.closest(".field, fieldset");
-        let error = holder?.querySelector(":scope > .error");
+        // Een bestandskeuze in een sleepvak (label.drop) krijgt de melding direct onder het vak, niet erin:
+        // dan hoort de melding niet bij de naam van het veld.
+        const drop = control.closest(".drop"), holder = drop || control.closest(".field, fieldset");
+        let error = drop ? null : holder?.querySelector(":scope > .error");
         // Direct onder het veld, vóór de toelichting: zo staat de melding in beeld bij het veld dat focus krijgt.
         if (holder && !error) { error = h("small", { class: "error", id: uid("fout") }, invalidMessage(control));
-          if (control.parentElement === holder) control.after(error); else holder.append(error); }
+          if (drop) drop.after(error);
+          else if (control.parentElement === holder) control.after(error); else holder.append(error); }
         if (error) described.push(error.id);
       }
       if (described.length) control.setAttribute("aria-describedby", described.join(" "));
       else control.removeAttribute("aria-describedby");
     }
+    // Een ongeldig veld in een ingeklapt blok klapt dat eerst open, anders krijgt het geen focus.
+    for (let fold = first?.closest("details:not([open])"); fold; fold = fold.parentElement?.closest("details:not([open])")) fold.open = true;
     first?.focus();
     return !first;
+  }
+  // Een waarschuwing die meeloopt met de invoer: `check()` geeft een tekst of null; roep `run()` aan na elke wijziging.
+  function liveCheck(check, className = "") {
+    const element = h("p", { class: `warning live-check ${className}`.trim(), "aria-live": "polite" });
+    const run = () => { element.textContent = check() ?? ""; };
+    run();
+    return { element, run };
   }
   // Een fout die meer velden betreft, bij het veld waar je hem oplost: dezelfde melding en focus als bij
   // één veld. De wizard wist zulke meldingen bij de volgende poging. Zonder veld blijft het een melding.
@@ -576,7 +590,7 @@ window.UI = (() => {
   const page = (key, definition) => pages.set(key, definition);
 
   return {
-    h, append, $, uid, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
+    h, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
     csvCell, clip, button, link, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };

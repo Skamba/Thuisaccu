@@ -28,6 +28,9 @@ window.Scenario = (() => {
   ];
   // Extra verbruik vanaf een later jaar, met dezelfde vormen als het geschatte profiel (crates/server/src/typical_profile.rs).
   const CONNECTIONS = Data.CONNECTIONS;
+  // Groepen kostenposten in de optie-editor: [sleutel, kop]; teruggaven en restwaarde staan apart, want ze verlagen de kosten.
+  const COST_GROUPS = [["upfront", "Startkosten"], ["annual", "Per jaar"], ["event", "Later: vervanging en einde"],
+    ["credit", "Teruggaven, subsidie en restwaarde"]];
   const CHANGES = {
     heat_pump: { label: "Warmtepomp", max: 30000, kwh: "2500" },
     ev: { label: "Elektrische auto", max: 20000, kwh: "2000" }
@@ -53,6 +56,8 @@ window.Scenario = (() => {
     };
   }
   let state = { ...blank(), ...store.get(STORE, {}) }, flow = null, saveTimer = null, focusOption = null;
+  // Alleen voor dit bezoek: welke kostengroepen open staan en wat de totaalprijs laatst deed, per optie.
+  const openGroups = new WeakMap(), quoteNotes = new WeakMap();
   const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.set(STORE, state), 300); };
   const bindValue = (control, read, write) => { control.value = read() ?? "";
     control.addEventListener("input", () => { write(control.value); persist(); }); return control; };
@@ -347,14 +352,12 @@ window.Scenario = (() => {
   function stepTariffs(body) {
     const tariff = (label, key, props, help) => field(label,
       bindValue(numberInput({ step: "0.0001", required: true, ...props }), () => state.tariff[key],
-        v => { state.tariff[key] = v; if (key === "import") checkPrice(); }),
+        v => { state.tariff[key] = v; if (key === "import") checkPrice(); else checkFee(); }),
       help);
-    const priceCheck = h("p", { class: "warning live-check wide", "aria-live": "polite" });
-    const checkPrice = () => {
-      const message = Data.importPriceCheck(UI.parse(state.tariff.import));
-      priceCheck.textContent = message ?? "";
-    };
-    checkPrice();
+    const { element: priceCheck, run: checkPrice } = UI.liveCheck(() => Data.importPriceCheck(UI.parse(state.tariff.import)), "wide");
+    // Met staffels zijn de terugleverkosten per kWh alleen een aanvulling; dan is 0 per kWh gewoon.
+    const { element: feeCheck, run: checkFee } = UI.liveCheck(() => String(state.tariff.bands || "").trim() ? null
+      : Data.exportCheck(UI.parse(state.tariff.export), UI.parse(state.tariff.fee), { own: true }), "wide");
     body.append(h("h2", {}, "Tarieven en looptijd"),
       h("p", { class: "help" },
         "Gebruik je contractbedragen inclusief belastingen. Het startjaar is het eerste volledige jaar met de accu; vanaf 2027 rekent het model zonder salderen. De overige waarden zijn aanpasbare aannames, geen voorspelling."),
@@ -364,10 +367,11 @@ window.Scenario = (() => {
         tariff("Terugleververgoeding (€/kWh)", "export", { min: "-10", max: "10" }, "Vóór aparte terugleverkosten."),
         tariff("Terugleverkosten (€/kWh)", "fee", { min: "0", max: "10" },
           "Rekent je leverancier geen terugleverkosten per kWh, vul dan 0 in. Hogere terugleverkosten maken een accu gunstiger."),
+        feeCheck,
         tariff("Prijsverandering per jaar (%)", "change", { min: "-20", max: "30", step: "0.1" }, Data.ASSUMPTION_HELP.annual_price_change_pct)),
         indications(),
         h("details", {}, h("summary", {}, "Terugleverkosten via vaste staffels"),
-          field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; }),
+          field("Staffels", bindValue(h("textarea", { rows: "4", placeholder: "1000;120\n2000;240\n;360" }), () => state.tariff.bands, v => { state.tariff.bands = v; checkFee(); }),
             "Per regel: maximale teruglevering in kWh, puntkomma, jaarkosten in euro. Laat de laatste grens leeg. Alleen aanvullende staffelkosten."))),
       variantFields(),
       h("fieldset", {}, h("legend", {}, "Looptijd en aannames"), h("div", { class: "grid" },
@@ -524,11 +528,23 @@ window.Scenario = (() => {
         else if (c.timing === "upfront") { if (Data.CREDITS.includes(c.key)) credit += euro; else gross += euro; }
       }
       const eur = value => money(value, { decimals: 0 });
+      for (const [key, , summary] of groups) {
+        const members = categories.filter(c => groupOf(c) === key);
+        const assessed = members.filter(c => (option.costs[c.key]?.status || "unknown") !== "unknown").length;
+        const sum = members.reduce((acc, c) => acc + (option.costs[c.key]?.status === "priced"
+          ? parse(option.costs[c.key].amount, { money: true }) ?? 0 : 0), 0);
+        summary.textContent = ` · ${assessed} van ${members.length} beoordeeld${sum ? ` · ${eur(sum)}${key === "annual" ? " per jaar" : ""}` : ""}`;
+      }
       total.textContent = `Startkosten volgens deze posten: ${eur(gross)}` +
         (credit ? ` vóór teruggaven, ${eur(gross - credit)} erna` : "") + ` · jaarlijks ${eur(yearly)}` +
         (invalid ? ` · ${invalid === 1 ? "één bedrag is" : `${invalid} bedragen zijn`} nog geen geldig getal` : "") +
         (open ? " · onbekende posten tellen nog niet mee" : "");
     };
+    // De 26 posten in vier groepen, elk inklapbaar met een telling en bedrag in de kop. Standaard staat alleen de groep
+    // met de eerste onbekende post open; wat je zelf open- of dichtklapt, blijft zo tot je de pagina verlaat.
+    const groupOf = c => Data.CREDITS.includes(c.key) ? "credit" : c.timing;
+    const groups = COST_GROUPS.filter(([key]) => categories.some(c => groupOf(c) === key))
+      .map(([key, label]) => [key, label, h("span", { class: "fold-count" })]);
     const rows = categories.map(c => {
       const line = option.costs[c.key] ||= { status: "unknown", amount: "", year: "", source: "", notes: "" };
       const amount = numberInput({ min: "0", step: "0.01", money: true, disabled: line.status !== "priced" });
@@ -543,10 +559,25 @@ window.Scenario = (() => {
         () => { line.status = status.value; amount.disabled = line.status !== "priced";
           if (year) year.disabled = amount.disabled;
           if (amount.disabled) { amount.value = ""; line.amount = ""; } persist(); refreshProgress(); });
-      return h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), h("small", {}, c.note)),
-        h("div", { class: "cost-controls" }, field("Status", status), field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount), year ? field("Einde van jaar", year) : h("span"),
+      const sourceField = field("Bron of aanname", source, line.notes && line.notes !== "Invoer in Zelf doorrekenen" ? line.notes : undefined);
+      sourceField.classList.add("cost-source");
+      const statusField = field("Status", status);
+      statusField.classList.add("cost-status");
+      return [c, h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), h("small", {}, c.note)),
+        h("div", { class: "cost-controls" }, statusField, field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount),
+          year ? field("Einde van jaar", year) : null,
           // De toelichting bij een indicatie (bijvoorbeeld wat niet is meegeteld) staat onder de bron.
-          field("Bron of aanname", source, line.notes && line.notes !== "Invoer in Zelf doorrekenen" ? line.notes : undefined)));
+          sourceField))];
+    });
+    const firstOpen = categories.find(c => (option.costs[c.key]?.status || "unknown") === "unknown");
+    const opened = openGroups.get(option) || {};
+    openGroups.set(option, opened);
+    const costGroups = groups.map(([key, label, count]) => {
+      const fold = h("details", { class: "fold cost-group", open: opened[key] ?? (firstOpen && groupOf(firstOpen) === key) },
+        h("summary", {}, h("strong", {}, label), count),
+        h("div", { class: "cost-rows" }, rows.filter(([c]) => groupOf(c) === key).map(([, row]) => row)));
+      fold.addEventListener("toggle", () => { opened[key] = fold.open; });
+      return fold;
     });
     const kind = select([["unknown", "Onbekend"], ["fixed", "Vaste installatie"], ["plug", "Stekkerbatterij in een stopcontact"],
       ["circuit", "Stekkerbatterij op een eigen groep"]], option.kind ?? "unknown",
@@ -576,9 +607,65 @@ window.Scenario = (() => {
           "de post voor een extra groep."), estimate),
       h("p", { class: "help" },
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
-        h("div", { class: "cost-rows" }, rows),
+      quoteTotal(option, categories), costGroups,
       h("details", {}, h("summary", {}, "Financiering (optioneel)"), h("p", { class: "help" }, "Een annuïtaire lening voegt alleen de rente toe; de aanschaf telt al als investering. Looptijd binnen de analysehorizon."),
         h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))));
+  }
+
+  // Eén totaalprijs uit een offerte in de kostenposten, zoals de offertecheck bij een uitkomst (`Data.applyQuotePrice`): het
+  // bedrag op de accupost, de aangevinkte posten met een bedrag als inbegrepen, en bij een vaste prijs geen reserve voor
+  // meerwerk. Onbekende posten blijven onbekend; die moet je zelf beoordelen.
+  function quoteTotal(option, categories) {
+    const note = quoteNotes.get(option);
+    const amountOf = line => line?.status === "priced" ? parse(line.amount, { money: true }) : null;
+    const others = categories.filter(c => c.timing === "upfront" && !Data.CREDITS.includes(c.key) &&
+      !["battery", "contingency"].includes(c.key) && amountOf(option.costs[c.key]) != null);
+    // Niet verplicht: het blok is optioneel en mag ‘Volgende’ niet tegenhouden; ‘Zet in de kostenposten’ vraagt erom.
+    const price = numberInput({ min: "1", step: "0.01", money: true });
+    const boxes = others.map(c => [c, UI.checkbox(`${c.label} (${money(amountOf(option.costs[c.key]), { decimals: 0 })})`,
+      { checked: true })]);
+    const terms = select([["", "Weet ik niet"], ["fixed", "Vaste prijs"], ["survey", "Onder voorbehoud van schouw"]], "");
+    const status = h("p", { class: "help", role: "status" }, note || "");
+    const block = h("div", { class: "grid" });
+    const apply = button("Zet in de kostenposten", () => {
+      if (!UI.validate(block)) return;
+      const value = parse(price.value, { money: true });
+      if (value == null) { UI.reject(price, "Vul de totaalprijs uit de offerte in.", block); price.setCustomValidity(""); return; }
+      const lines = categories.map(c => { const l = option.costs[c.key];
+        return { category: c.key, timing: c.timing, status: l.status, source: l.source, notes: l.notes,
+          amount_minor: l.status === "priced" ? Math.round((amountOf(l) ?? 0) * 100) : 0 }; });
+      const before = lines.map(l => ({ ...l }));
+      const separate = boxes.filter(([, b]) => !b.box.checked).map(([c]) => c.key);
+      Data.applyQuotePrice({ costs: lines }, "upfront_eur", value, { separate, fixedPrice: terms.value === "fixed" });
+      const changed = [];
+      lines.forEach((l, i) => {
+        const old = before[i];
+        if (l.status === old.status && l.amount_minor === old.amount_minor && l.source === old.source) return;
+        option.costs[l.category] = { ...option.costs[l.category], status: l.status, source: l.source, notes: l.notes,
+          amount: l.status === "priced" ? (l.amount_minor / 100).toFixed(2).replace(".", ",") : "" };
+        changed.push(l);
+      });
+      const label = key => categories.find(c => c.key === key).label;
+      const included = changed.filter(l => l.status === "included").map(l => label(l.category).toLowerCase());
+      const open = categories.filter(c => (option.costs[c.key]?.status || "unknown") === "unknown").length;
+      quoteNotes.set(option, [`Totaalprijs ${money(value)} staat op de accupost.`,
+        included.length ? `Als inbegrepen gemarkeerd: ${included.join(", ")}.` : null,
+        separate.length ? `Apart gehouden: ${separate.map(key => label(key).toLowerCase()).join(", ")}.` : null,
+        changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs." : null,
+        open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend; zet ze op Inbegrepen of Niet van toepassing als de offerte ze dekt.` : null]
+        .filter(Boolean).join(" "));
+      persist(); flow.rerender();
+    }, "secondary");
+    block.append(field("Totaalprijs inclusief btw (€)", price, "Het bedrag dat je volgens de offerte in totaal betaalt."),
+      field("Soort prijs", terms, "Alleen bij een vaste prijs vervalt de reserve voor meerwerk."));
+    return h("details", { class: "fold", open: Boolean(note) }, h("summary", {}, "Eén totaalprijs uit een offerte invullen"),
+      h("p", { class: "help" }, "Noemt je offerte één prijs voor alles? Die komt op de accupost; de posten hieronder met een " +
+        "bedrag tellen dan als inbegrepen, behalve wat je uitvinkt omdat de offerte het niet noemt."),
+      block,
+      boxes.length ? h("fieldset", {}, h("legend", {}, "Telt als inbegrepen in de totaalprijs (vink uit wat de offerte niet noemt)"),
+        boxes.map(([, b]) => b.element))
+        : h("p", { class: "help" }, "Nog geen andere startposten met een bedrag. Vul eerst de open posten met indicaties om te zien wat de offerte moet dekken."),
+      h("p", { class: "actions" }, apply), status);
   }
 
   // Een overgenomen run weet niet of een catalogusoptie een stekkeraccu is; zonder dat zou ‘Vul open posten’ het
@@ -626,6 +713,8 @@ window.Scenario = (() => {
       focusOption = null;
       if (card) {
         const target = [...card.querySelectorAll(".cost-row select")].find(s => s.value === "unknown") || card.querySelector("summary");
+        const group = target.closest(".cost-group");
+        if (group) group.open = true;
         target.scrollIntoView({ block: "center" }); target.focus();
       }
     }).catch(error => host.replaceChildren(h("p", { class: "warning" }, error.message)));

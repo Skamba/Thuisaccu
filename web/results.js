@@ -236,6 +236,7 @@ window.Results = (() => {
       ? "Geen accu komt in deze berekening het beste uit."
       : `Het beste in deze berekening komt ${best.name} uit: ${netText(best.npv_eur)} in geld van nu.`;
     const npvFirst = option && run.input.request.parameters.objective === "net_present_value";
+    const stress = option && warrantyFlip(run, option);
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
       h("h2", {}, quote ? option.name : lead ? option.name : result.recommendation),
       quote ? h("p", { class: "verdict-lead" }, quoteLead(run, option)) : null,
@@ -250,6 +251,7 @@ window.Results = (() => {
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
         ].filter(Boolean)), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
           : h("p", { class: "verdict-for" }, other)) : closeCall(run, option)] : null,
+      stress ? h("p", { class: "verdict-warn" }, h("strong", {}, "Let op de garantie. "), stress) : null,
       isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
         "eigen groep aansluit, geen vaste thuisaccu. "),
         "Vraag vooraf of een installateur hem zo wil aansluiten en of de fabrikant dat toestaat. " +
@@ -263,8 +265,37 @@ window.Results = (() => {
         toAdvice("Lees waarom en wat veiliger is")) : null);
   }
 
+  // Kantelt de uitkomst als de accu direct na de garantie stopt? Dan een zin met wat het dan kost en tot welke
+  // startinvestering hij dan nog lonend is, anders null. Alleen als de accu met de basisaannames wel uitkomt.
+  function warrantyFlip(run, c) {
+    const w = warranty(run, c);
+    if (!w || !finite(c.npv_eur) || c.npv_eur < 0 || !finite(w.result.npv_eur) || w.result.npv_eur >= 0) return null;
+    const limit = w.result.break_even_investment_eur, start = c.initial_investment_eur;
+    return `Stopt ${c.name} direct na de garantie van ${w.operating_life_years} jaar, dan kost hij je netto ` +
+      `${eur0(-w.result.npv_eur)} in geld van nu in plaats van dat hij iets oplevert. ` +
+      (!finite(limit) ? "" : limit <= 0 ? "Dan is hij zelfs gratis niet lonend."
+        : `Dan is hij lonend tot een startinvestering van ${roundedLimit(limit)}` +
+          (finite(start) && start > limit ? `; deze ligt ${eur0(start - limit)} hoger.` : ".")) +
+      " Vraag naar een langere garantie of reken met een lagere prijs.";
+  }
+
   // Een inklapbaar onderdeel van de uitleg; de titel zegt wat erin staat.
   const fold = (title, ...content) => h("details", { class: "fold" }, h("summary", {}, title), ...content);
+
+  // Wat er over de kosten van de eigen groep te zeggen valt: de richtprijs alleen als daarmee gerekend is, anders wat
+  // de invoer (bijvoorbeeld een offerte) erover zegt.
+  function circuitCost(run, best, circuit) {
+    const line = run.input.request.candidates.find(o => o.key === best.key)?.costs.find(l => l.category === "installation");
+    if (!line) return "";
+    const kast = "een volle of verouderde groepenkast komt erbij.";
+    if (line.status === "priced" && circuit && line.amount_minor === Math.round(circuit.amount_eur * 100))
+      return ` De richtprijs van ${eur0(circuit.amount_eur)} is voor een extra groep met aansluiting in de meterkast; ${kast}`;
+    if (line.status === "priced") return ` Voor de installatie is gerekend met ${eur0(line.amount_minor / 100)}; controleer dat ` +
+      `de eigen groep met aansluiting in de meterkast daarin zit; ${kast}`;
+    if (line.status === "included") return " De installatie is volgens je invoer inbegrepen; controleer dat de eigen groep met " +
+      `aansluiting in de meterkast in de prijs zit; ${kast}`;
+    return "";
+  }
 
   function summary(run, kinds, circuit, categories) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
@@ -276,8 +307,7 @@ window.Results = (() => {
     if (best && kinds.get(best.key) === "circuit") list.append(h("li", {}, `${best.name} is een stekkerbatterij die een elektricien op ` +
       "een eigen groep aansluit. Een installateur steekt de stekker volgens de NEN 1010 niet in een stopcontact (Milieu Centraal): " +
       "vraag vooraf of hij dit product vast wil aansluiten en of de fabrikant dat toestaat zonder dat de garantie vervalt." +
-      (circuit ? ` De richtprijs van ${eur0(circuit.amount_eur)} is voor een extra groep met aansluiting in de meterkast; ` +
-        "een volle of verouderde groepenkast komt erbij." : "")));
+      circuitCost(run, best, circuit)));
     // Een offerte die niet de aanbevolen accu is: eerst wat die oplevert, dan de aanbevolen accu.
     if (best && best === quoted(run) && rec && best.key !== rec.key) list.append(h("li", {},
       `Je offerte voor ${best.name} geeft over ${p.horizon_years} jaar ${netText(best.npv_eur)} in geld van nu, vergeleken met ` +
@@ -484,7 +514,8 @@ window.Results = (() => {
       { caption: `Grensprijs voor ${c.name}`, stack: true, numeric: [1, 2] }),
       w ? h("p", { class: "help" }, `Stopt na de garantie: dezelfde accu werkt maar ${w.operating_life_years} jaar en verliest ` +
         `${pct(w.annual_capacity_loss_pct)} capaciteit per jaar (bij 3,5% is na 10 jaar ongeveer 70% over). Garantie is geen levensduur, ` +
-        "maar een defect daarna betaal je zelf. Het advies verandert er niet door.") : null);
+        "maar een defect daarna betaal je zelf. Het advies gaat uit van de levensduur bij de accu" +
+        (warrantyFlip(run, c) ? "; stopt hij na de garantie, dan komt geen accu beter uit." : "; ook in deze stresstest blijft het zo.")) : null);
   }
 
   function overview(run, all, kinds) {

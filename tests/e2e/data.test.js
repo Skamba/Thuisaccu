@@ -243,6 +243,22 @@ test("exportCheck(): waarschuwt boven 4,4 cent netto per kWh, niet bij de indica
   assert.equal(Data.exportCheck(0.0615, 0.0515), null);
   assert.equal(Data.exportCheck(0.05, 0.006), null, "precies 4,4 cent is nog gangbaar");
   assert.equal(Data.exportCheck(null, 0), null);
+  // In Zelf doorrekenen staan de staffels op hetzelfde scherm en het contractenoverzicht niet.
+  const own = Data.exportCheck(0.06, 0, { own: true });
+  assert.match(own, /dat we vonden/);
+  assert.match(own, /staffels hieronder/);
+  assert.doesNotMatch(own, /hierboven|in Zelf doorrekenen/);
+});
+
+test("upfrontCosts(): betaalde startposten, teruggaven negatief en nooit onder nul, zoals project()", () => {
+  const line = (category, amount_minor, status = "priced", timing = "upfront") => ({ category, amount_minor, status, timing });
+  const lines = [line("battery", 300000), line("installation", 50000), line("contingency", 0, "unknown"),
+    line("vat_refund", 40000), line("subscription", 1200, "priced", "annual")];
+  // 3.000 + 500 − 400; het abonnement en de onbekende post tellen niet mee.
+  assert.equal(Data.upfrontCosts(lines), 3100);
+  assert.equal(Data.upfrontCosts(lines, { credits: false }), 3500);
+  // Een subsidie boven de kosten geeft geen negatieve startinvestering (analysis.rs: `.max(0.0)`).
+  assert.equal(Data.upfrontCosts([line("battery", 10000), line("grant", 25000)]), 0);
 });
 
 test("described(): de uitvoering achter een optie, op naam en soort aansluiting", async () => {

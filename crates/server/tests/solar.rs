@@ -515,8 +515,9 @@ fn combine(
     }
     .as_import_options();
     let table = read_table("meter.csv", meter.as_bytes(), &meter_options)?;
-    let (grid, _) = normalize(&table, &meter_options)?;
-    combine_with_meter(&production, &summary, &grid, "UTC").map(|(_, summary)| summary)
+    let (grid, grid_summary) = normalize(&table, &meter_options)?;
+    combine_with_meter(&production, &summary, &grid, &grid_summary, "UTC")
+        .map(|(_, summary)| summary)
 }
 
 #[test]
@@ -594,8 +595,9 @@ fn combined_meter_files_keep_measured_import_and_export_per_period() {
     .as_import_options();
     let meter = "time,import,export\n2026-06-01T10:00:00Z,0.5,0.75\n";
     let table = read_table("meter.csv", meter.as_bytes(), &meter_options).unwrap();
-    let (grid, _) = normalize(&table, &meter_options).unwrap();
-    let (intervals, _) = combine_with_meter(&production, &summary, &grid, "UTC").unwrap();
+    let (grid, grid_summary) = normalize(&table, &meter_options).unwrap();
+    let (intervals, _) =
+        combine_with_meter(&production, &summary, &grid, &grid_summary, "UTC").unwrap();
     // 1 kWh opwek, 0,5 kWh afname, 0,75 kWh teruglevering → 0,75 kWh bruto verbruik.
     assert_eq!(intervals.len(), 1);
     assert!((intervals[0].consumption_wh.unwrap() - 750.0).abs() < 1e-9);
@@ -650,8 +652,9 @@ fn meter_readings_per_tariff_are_summed_and_the_grid_totals_are_kept() {
     }
     .as_import_options();
     let table = read_table("meter.csv", meter.as_bytes(), &meter_options).unwrap();
-    let (grid, _) = normalize(&table, &meter_options).unwrap();
-    let (intervals, combined) = combine_with_meter(&production, &summary, &grid, "UTC").unwrap();
+    let (grid, grid_summary) = normalize(&table, &meter_options).unwrap();
+    let (intervals, combined) =
+        combine_with_meter(&production, &summary, &grid, &grid_summary, "UTC").unwrap();
     // Uur 10: afname 0,2 + 0,1 kWh, teruglevering 0,5 kWh; uur 11: afname 0 + 0,8 kWh.
     assert_eq!(intervals.len(), 2);
     assert!((intervals[0].measured_import_wh.unwrap() - 300.0).abs() < 1e-6);
@@ -713,4 +716,59 @@ fn extra_columns_need_their_own_main_column_and_count_once() {
     assert!(stored.get("consumption_extra_columns").is_none());
     let stored = serde_json::to_value(MeterOptions::default()).unwrap();
     assert!(stored.get("import_extra_columns").is_none());
+}
+
+#[test]
+fn what_was_noticed_in_the_meter_file_stays_visible_after_combining() {
+    // Omvormer in UTC per kwartier; meter in lokale tijd met het dubbele uur van de overgang naar
+    // wintertijd (02:00 zomertijd = 00:00 UTC, 02:00 wintertijd = 01:00 UTC) en een lege rij.
+    let inverter_options = ImportOptions {
+        period: "15min".into(),
+        ..Default::default()
+    };
+    let mut inverter = String::from("time,production\n");
+    for quarter in 0..8 {
+        inverter += &format!(
+            "2026-10-25T{:02}:{:02}:00Z,0.1\n",
+            quarter / 4,
+            quarter % 4 * 15
+        );
+    }
+    let table = read_table("omvormer.csv", inverter.as_bytes(), &inverter_options).unwrap();
+    let (production, summary) = normalize(&table, &inverter_options).unwrap();
+    let meter_options = MeterOptions {
+        period: "hour".into(),
+        timezone: "Europe/Amsterdam".into(),
+        missing_rows: "skip".into(),
+        ..Default::default()
+    }
+    .as_import_options();
+    let meter =
+        "time,import,export\n2026-10-25 02:00,0.5,0\n2026-10-25 02:00,0.25,0\n2026-10-25 03:00,,\n";
+    let table = read_table("meter.csv", meter.as_bytes(), &meter_options).unwrap();
+    let (grid, grid_summary) = normalize(&table, &meter_options).unwrap();
+    let (intervals, combined) =
+        combine_with_meter(&production, &summary, &grid, &grid_summary, "UTC").unwrap();
+    assert_eq!(intervals.len(), 2);
+    let meter_warnings: Vec<&String> = combined
+        .warnings
+        .iter()
+        .filter(|w| w.starts_with("Meterbestand: "))
+        .collect();
+    assert!(
+        meter_warnings.iter().any(|w| w.contains("wintertijd")),
+        "{meter_warnings:?}"
+    );
+    assert!(
+        meter_warnings
+            .iter()
+            .any(|w| w.contains("1 rij(en)") && w.ends_with("netafname of teruglevering van nul.")),
+        "{meter_warnings:?}"
+    );
+    // De algemene regels over opwek en maandtotalen staan er één keer, niet ook voor de meter.
+    assert!(
+        !meter_warnings
+            .iter()
+            .any(|w| w.contains("Opwek alleen") || w.contains("Maandtotalen"))
+    );
 }

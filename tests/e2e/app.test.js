@@ -149,7 +149,8 @@ function syntheticYear(dir) {
 
 // Synthetisch jaar zoals een Nederlandse energiemonitor: puntkomma, decimale komma en lokale tijd,
 // dus zonder 02.00 uur eind maart en met 02.00 uur twee keer eind oktober.
-function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv", timeZone = "Europe/Amsterdam") {
+// `baseLoad`: verbruik per uur buiten de avond; een andere waarde geeft een ander bestand, dus een nieuw profiel.
+function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv", timeZone = "Europe/Amsterdam", baseLoad = 0.25) {
   const lines = ["Datum;Opwek (kWh);Verbruik (kWh)"];
   const local = new Intl.DateTimeFormat("nl-NL", { timeZone, day: "2-digit", month: "2-digit",
     year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -158,7 +159,7 @@ function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv", timeZone
     const parts = Object.fromEntries(local.formatToParts(new Date(start + hour * 3600e3)).map(p => [p.type, p.value]));
     const h = Number(parts.hour);
     const solar = h >= 7 && h < 19 ? 0.4 * Math.sin(Math.PI * (h - 7) / 12) : 0;
-    const load = 0.25 + (h >= 17 && h < 22 ? 0.6 : 0);
+    const load = baseLoad + (h >= 17 && h < 22 ? 0.6 : 0);
     const comma = v => v.toFixed(3).replace(".", ",");
     lines.push(`${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute};${comma(solar)};${comma(load)}`);
   }
@@ -1198,6 +1199,89 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   assert.deepEqual(more.after.battery, more.before.battery);
   assert.match(more.message, /kostenpost/);
   assert.notDeepEqual(more.after.costs.installation, more.before.costs.installation);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("optie-editor: kosten in groepen, één totaalprijs uit een offerte en een terugleverwaarschuwing", async () => {
+  // In een browser in een andere tijdzone staan de datums van het profiel toch in Nederlandse tijd.
+  const { page, problems, close } = await open({ timezoneId: "America/New_York" });
+  await page.goto(`${base}/#/energie/import`);
+  // Zonder bestand: een melding onder het sleepvak, gekoppeld aan het bestandsveld.
+  await next(page);
+  const missing = page.locator(".drop + .error");
+  assert.equal(await missing.textContent(), "Kies een bestand.");
+  assert.equal(await page.locator(".drop input[type=file]").getAttribute("aria-describedby"), await missing.getAttribute("id"));
+  await page.setInputFiles("input[type=file]", dutchLocalYear(workdir, 8760, "optie-editor.csv", "Europe/Amsterdam", 0.3));
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  await next(page);
+  await page.click("button:has-text('Bewaar energieprofiel')");
+  await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
+  await page.goto(`${base}/#/energie`);
+  await page.waitForSelector("text=optie-editor.csv");
+  assert.match(await page.textContent("#view"), /1-1-2025 – 31-12-2025/);
+
+  await page.goto(`${base}/#/zelf`);
+  await page.getByLabel("Naam van de berekening").fill("Synthetische totaalprijs");
+  const profiles = page.getByLabel(/Energieprofiel/);
+  await page.waitForFunction(() => [...document.querySelectorAll("select option")].some(o => /optie-editor/.test(o.textContent) && !o.disabled));
+  await profiles.selectOption(await profiles.evaluate(s => [...s.options].find(o => /optie-editor/.test(o.textContent)).value));
+  await next(page);
+  // Een vast bedrag per jaar als 0 per kWh: dezelfde waarschuwing als in de keuzehulp, met de staffels als uitweg.
+  await page.getByLabel("Stroomprijs, alles inbegrepen (€/kWh)").fill("0,25");
+  await page.getByLabel("Terugleververgoeding (€/kWh)").fill("0,10");
+  await page.getByLabel("Terugleverkosten (€/kWh)").fill("0");
+  const feeWarning = page.locator(".live-check", { hasText: "Vergoeding min terugleverkosten" });
+  assert.match(await feeWarning.textContent(), /10,0 cent per kWh.*staffels hieronder/);
+  await page.getByLabel("Terugleverkosten (€/kWh)").fill("0,06");
+  assert.equal(await feeWarning.count(), 0);
+  await next(page);
+
+  const fixed = await page.evaluate(async () => {
+    const cmp = await Data.catalog();
+    return String(cmp.configurations.find(c => Data.describe(cmp, c).kind === "fixed").id);
+  });
+  await page.getByLabel("Uit de catalogus").selectOption(fixed);
+  await page.click("button:has-text('Neem over')");
+  const card = page.locator(".option-editor").first();
+  await card.waitFor();
+  // Vier groepen met een telling in de kop.
+  const groups = card.locator(".cost-group > summary");
+  assert.deepEqual((await groups.allTextContents()).map(t => t.split(" · ")[0]),
+    ["Startkosten", "Per jaar", "Later: vervanging en einde", "Teruggaven, subsidie en restwaarde"]);
+  assert.match(await groups.first().textContent(), /Startkosten · \d+ van 12 beoordeeld/);
+
+  await card.locator("summary:has-text('Eén totaalprijs uit een offerte invullen')").click();
+  await card.locator("button:has-text('Zet in de kostenposten')").click();
+  assert.match(await card.textContent(), /Vul de totaalprijs uit de offerte in\./);
+  await card.getByLabel("Totaalprijs inclusief btw (€)").fill("8.000");
+  await card.getByLabel("Soort prijs").selectOption("fixed");
+  const boxes = card.locator(".option-editor fieldset input[type=checkbox], fieldset input[type=checkbox]");
+  const kept = await boxes.count();
+  assert.ok(kept >= 2, `${kept} posten met een bedrag`);
+  await boxes.first().uncheck();
+  await card.locator("button:has-text('Zet in de kostenposten')").click();
+  const status = page.locator(".option-editor [role=status]").first();
+  await status.waitFor();
+  assert.match(await status.textContent(), /Totaalprijs €\s*8\.000(,00)? staat op de accupost\. Als inbegrepen gemarkeerd: .+\. Apart gehouden: .+\./);
+  // Het concept wordt kort na een wijziging bewaard.
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("thuisaccu-scenario"))?.options?.[0]?.costs.battery.amount === "8000,00");
+  const option = await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")).options[0]);
+  assert.equal(option.costs.battery.status, "priced");
+  assert.equal(option.costs.battery.amount, "8000,00");
+  assert.equal(Object.values(option.costs).filter(l => l.source === "In de totaalprijs van de offerte").length, kept - 1);
+
+  // Op een telefoon staan status en bron elk over de volle breedte.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await card.locator(".cost-group > summary").first().evaluate(s => { s.parentElement.open = true; });
+  const widths = await card.locator(".cost-row").first().evaluate(row => ["cost-controls", "cost-status", "cost-source"]
+    .map(name => Math.round((name === "cost-controls" ? row.querySelector(".cost-controls") : row.querySelector(`.${name}`)).getBoundingClientRect().width)));
+  assert.equal(widths[1], widths[0]);
+  assert.equal(widths[2], widths[0]);
   assert.deepEqual(problems, []);
   await close();
 });

@@ -317,13 +317,13 @@ async fn upload_inspection_and_preview_do_not_persist_until_save_and_repeat_save
     assert_eq!(response_json(preview).await["production_kwh"], 3.0);
     assert!(catalog.list_solar().await.unwrap().is_empty());
     let mut ids = Vec::new();
-    for _ in 0..2 {
+    for expected in [StatusCode::CREATED, StatusCode::OK] {
         let response = app
             .clone()
             .oneshot(upload("/api/v1/solar/imports", csv, json!({})))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.status(), expected);
         ids.push(response_json(response).await["id"].clone());
     }
     assert_eq!(ids[0], ids[1]);
@@ -402,7 +402,7 @@ async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
 }
 
 #[tokio::test]
-async fn an_own_profile_name_is_saved_apart_from_the_file_name_and_is_validated() {
+async fn an_own_profile_name_is_validated_and_does_not_make_the_same_upload_a_new_profile() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());
     let form = |name: Option<&str>| {
@@ -429,22 +429,28 @@ async fn an_own_profile_name_is_saved_apart_from_the_file_name_and_is_validated(
     }
     assert!(catalog.list_solar().await.unwrap().is_empty());
 
-    let plain = app.clone().oneshot(form(None)).await.unwrap();
-    assert_eq!(plain.status(), StatusCode::CREATED);
-    let named = app.oneshot(form(Some(" Ons huis 2026 "))).await.unwrap();
+    let named = app
+        .clone()
+        .oneshot(form(Some(" Ons huis 2026 ")))
+        .await
+        .unwrap();
     assert_eq!(named.status(), StatusCode::CREATED);
+    let named = response_json(named).await;
+    assert_eq!(named["existing"], false);
+    assert_eq!(named["filename"], "Ons huis 2026");
+    // Dezelfde upload onder een andere of zonder naam is hetzelfde profiel, met de naam van toen.
+    for again in [Some("Profiel B"), None] {
+        let response = app.clone().oneshot(form(again)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = response_json(response).await;
+        assert_eq!(response["id"], named["id"]);
+        assert_eq!(response["existing"], true);
+        assert_eq!(response["filename"], "Ons huis 2026");
+    }
     let imports = catalog.list_solar().await.unwrap();
-    let by_name = |name: &str| imports.iter().find(|i| i.filename == name).unwrap();
-    assert!(
-        by_name("export.csv")
-            .options
-            .get("source_filename")
-            .is_none()
-    );
-    assert_eq!(
-        by_name("Ons huis 2026").options["source_filename"],
-        "export.csv"
-    );
+    assert_eq!(imports.len(), 1);
+    assert_eq!(imports[0].filename, "Ons huis 2026");
+    assert!(imports[0].options.get("source_filename").is_none());
 }
 
 #[tokio::test]

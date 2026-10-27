@@ -371,12 +371,14 @@ async fn process(
         let meter_options = meter.options.as_import_options();
         let meter_table = solar_import::read_table(&meter.filename, &meter.bytes, &meter_options)
             .map_err(|e| format!("Meterbestand: {e}"))?;
-        let (meter_intervals, _) = solar_import::normalize(&meter_table, &meter_options)
-            .map_err(|e| format!("Meterbestand: {e}"))?;
+        let (meter_intervals, meter_summary) =
+            solar_import::normalize(&meter_table, &meter_options)
+                .map_err(|e| format!("Meterbestand: {e}"))?;
         let (intervals, summary) = solar_import::combine_with_meter(
             &intervals,
             &summary,
             &meter_intervals,
+            &meter_summary,
             &input.options.timezone,
         )?;
         Ok((input, intervals, summary))
@@ -433,8 +435,9 @@ pub async fn save_solar(
         });
         filename = format!("{} + {}", input.filename, meter.filename);
     }
+    // De naam hoort niet bij de instellingen: hetzelfde bestand onder een andere naam is hetzelfde
+    // profiel.
     if let Some(name) = &input.name {
-        options["source_filename"] = json!(input.filename);
         filename.clone_from(name);
     }
     let sha256 = if input.meter.is_some() {
@@ -444,6 +447,16 @@ pub async fn save_solar(
     };
     let options_json = serde_json::to_string(&options).map_err(|e| bad_request(e.to_string()))?;
     let summary_json = serde_json::to_string(&summary).map_err(|e| bad_request(e.to_string()))?;
+    if let Some((id, filename)) = catalog
+        .find_solar(&sha256, &options_json)
+        .await
+        .map_err(database_error)?
+    {
+        return Ok((
+            StatusCode::OK,
+            Json(json!({"id":id, "existing":true, "filename":filename, "summary":summary})),
+        ));
+    }
     let id = catalog
         .save_solar(
             &filename,
@@ -457,7 +470,7 @@ pub async fn save_solar(
         .map_err(database_error)?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"id":id, "summary":summary})),
+        Json(json!({"id":id, "existing":false, "filename":filename, "summary":summary})),
     ))
 }
 

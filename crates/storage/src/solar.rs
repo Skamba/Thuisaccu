@@ -150,6 +150,18 @@ impl Catalog {
         Ok(id)
     }
 
+    /// Het al bewaarde profiel met dezelfde bestanden en instellingen: ID en naam, of `None`.
+    pub async fn find_solar(&self, sha256: &str, options: &str) -> Result<Option<(i64, String)>> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, filename FROM solar_imports WHERE sha256 = ? AND options_json = ?",
+                params![sha256, options],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?)
+    }
+
     pub async fn list_solar(&self) -> Result<Vec<SavedSolar>> {
         let connection = self.connection();
         let rows = connection

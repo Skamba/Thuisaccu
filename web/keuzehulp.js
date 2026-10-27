@@ -192,12 +192,7 @@
         "lager uitvallen dan in werkelijkheid."));
     }
     const useImport = () => { answers.tariffImport = UI.plain(INDICATION.import); save(); rerender(); };
-    const priceCheck = h("p", { class: "warning live-check", "aria-live": "polite" });
-    const checkPrice = () => {
-      const message = Data.importPriceCheck(parse(answers.tariffImport));
-      priceCheck.textContent = message ?? "";
-    };
-    checkPrice();
+    const { element: priceCheck, run: checkPrice } = UI.liveCheck(() => Data.importPriceCheck(parse(answers.tariffImport)));
     body.append(
       h("div", { class: "grid" }, amount("Prijs voor stroom van het net (€ per kWh, alles inbegrepen)", "tariffImport",
         { min: "-1", max: "2", step: "0.0001", required: true }, `${INDICATION.importHelp} ${INDICATION.importText}`, checkPrice)),
@@ -210,9 +205,7 @@
           "€ 0,0615 vergoeding en € 0,0515 terugleverkosten per kWh."]
       ]));
     if (answers.feedin === "known") {
-      const feeCheck = h("p", { class: "warning live-check", "aria-live": "polite" });
-      const checkFee = () => { feeCheck.textContent = Data.exportCheck(parse(answers.tariffExport), parse(answers.exportFee)) ?? ""; };
-      checkFee();
+      const { element: feeCheck, run: checkFee } = UI.liveCheck(() => Data.exportCheck(parse(answers.tariffExport), parse(answers.exportFee)));
       body.append(h("div", { class: "grid" },
         amount("Terugleververgoeding vanaf 2027 (€ per kWh)", "tariffExport", { min: "-1", max: "2", step: "0.0001", required: true },
           "Bij een vast contract dat doorloopt na 2027: de vergoeding die in je contract staat.", checkFee),
@@ -329,9 +322,7 @@
   }
   const plugLimit = Data.plugLimit;
   // Som van de startposten zoals de rekenkern die telt; teruggaven verlagen de kosten.
-  const CREDITS = Data.CREDITS;
-  const startCosts = lines => lines.filter(l => l.timing === "upfront" && l.status === "priced")
-    .reduce((sum, l) => sum + l.amount_minor / 100 * (CREDITS.includes(l.category) ? -1 : 1), 0);
+  const startCosts = lines => Data.upfrontCosts(lines);
 
   function buildRequest(importId, chosen, check) {
     const d = Data.defaults(), tariffImport = parse(answers.tariffImport), feed = feedIn();

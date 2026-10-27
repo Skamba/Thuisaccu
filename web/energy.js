@@ -556,7 +556,9 @@
           const form = multipart(), own = state.name.trim();
           if (own && own !== defaultName()) form.append("name", own);
           const result = await UI.api("/api/v1/solar/imports", { method: "POST", body: form });
-          toast("Energieprofiel bewaard. Hetzelfde bestand met dezelfde instellingen wordt niet dubbel opgeslagen.");
+          toast(result.existing
+            ? `Dit bestand met deze instellingen stond al bewaard als ‘${result.filename}’; dat profiel wordt geopend.`
+            : "Energieprofiel bewaard.");
           location.hash = `#/energie/${result.id}`;
         }));
         body.append(h("h2", {}, "Bewaren"),

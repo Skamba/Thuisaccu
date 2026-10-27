@@ -1041,6 +1041,7 @@ pub fn combine_with_meter(
     production: &[SolarInterval],
     production_summary: &SolarSummary,
     meter: &[SolarInterval],
+    meter_summary: &SolarSummary,
     timezone: &str,
 ) -> Result<(Vec<SolarInterval>, SolarSummary), String> {
     let timezone: Tz = timezone
@@ -1123,6 +1124,28 @@ pub fn combine_with_meter(
         .filter(|w| !w.starts_with("Maandtotalen") && !w.contains("gat(en)"))
         .cloned()
         .collect();
+    // Wat bij het lezen van het meterbestand opviel (klokwisseling, overgeslagen rijen,
+    // meterstanden, vermogen) blijft zichtbaar. Het meterbestand wordt gelezen met netafname als
+    // ‘opwek’, dus de algemene regels over opwek en maandtotalen gelden er niet voor.
+    warnings.extend(
+        meter_summary
+            .warnings
+            .iter()
+            .filter(|w| {
+                !w.starts_with("Opwek alleen")
+                    && !w.starts_with("Maandtotalen")
+                    && !w.contains("gat(en)")
+            })
+            .map(|w| {
+                format!(
+                    "Meterbestand: {}",
+                    w.replace(
+                        "dit is geen nulproductie.",
+                        "dit is geen netafname of teruglevering van nul."
+                    )
+                )
+            }),
+    );
     warnings.push(format!(
         "Omvormer- en meterbestand zijn gecombineerd per {}. Bruto verbruik is afgeleid als opwek + netafname − teruglevering; dat klopt alleen zonder bestaande accu en als beide bestanden dezelfde tijdsperioden beschrijven.",
         match period {
