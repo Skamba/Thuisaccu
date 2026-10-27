@@ -40,8 +40,11 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
         response_json(response).await
     };
     // De status laadt zelf niets; ze zegt alleen hoeveel sets er nog niet in staan.
-    assert_eq!(status(app.clone()).await, json!({"sets": 9, "pending": 9}));
-    assert_eq!(status(app.clone()).await["pending"], 9);
+    assert_eq!(
+        status(app.clone()).await,
+        json!({"sets": 10, "pending": 10})
+    );
+    assert_eq!(status(app.clone()).await["pending"], 10);
     for expected in [true, false] {
         let response = app
             .clone()
@@ -82,8 +85,8 @@ async fn researched_references_are_optional_idempotent_and_keep_important_unknow
     let offers = data["offers"].as_array().unwrap();
     // De catalogus noemt geen winkel bij zijn straatprijzen; die zijn geen aanbieding. De zesde
     // set voegt 35 webwinkelprijzen toe aan bestaande uitvoeringen, de zevende twee (AlphaESS) en
-    // de achtste zes.
-    assert_eq!(offers.len(), 75);
+    // de achtste zes en de negende twee (Powerness, afhalen in Duitsland).
+    assert_eq!(offers.len(), 77);
     assert!(offers.iter().all(
         |o| o["currency"] == "EUR" && o["source_url"].as_str().unwrap().starts_with("https://")
     ));
