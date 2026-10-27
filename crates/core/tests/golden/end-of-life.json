@@ -321,6 +321,60 @@
       ]
     }
   ],
+  "messages": [
+    {
+      "code": "model.strategy",
+      "kind": "note",
+      "text": "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing."
+    },
+    {
+      "code": "model.repeat_year",
+      "kind": "note",
+      "text": "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst."
+    },
+    {
+      "code": "model.roi",
+      "kind": "note",
+      "text": "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Een lening telt als rente en aflossing in het jaar waarin je ze betaalt; alleen het eigen deel van de investering staat op tijdstip nul. ROI deelt door de volledige netto startinvestering. Dit is geen eigenvermogenrendement."
+    },
+    {
+      "code": "model.vat",
+      "kind": "note",
+      "text": "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt."
+    },
+    {
+      "code": "model.address",
+      "kind": "note",
+      "text": "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde."
+    },
+    {
+      "code": "model.load_variation",
+      "kind": "note",
+      "text": "Het verbruik is binnen iedere meetperiode gelijkmatig verondersteld. Bij uur- of kwartierwaarden ontbreken korte pieken, waardoor vermogensgrenzen van de accu minder vaak knellen dan in werkelijkheid."
+    },
+    {
+      "code": "model.measured",
+      "kind": "note",
+      "text": "In 744 van de 8760 meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt uit de meter hoeveel opwek en verbruik binnen de periode samenvielen; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt."
+    },
+    {
+      "code": "grid_tariff.2029",
+      "kind": "warning",
+      "text": "Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen."
+    },
+    {
+      "candidate_key": "short_life",
+      "code": "life.inactive",
+      "kind": "warning",
+      "text": "short_life: na de aangenomen levensduur van 4 jaar werkt de accu in jaar 5–8 van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op."
+    },
+    {
+      "candidate_key": "short_life",
+      "code": "warranty_stress",
+      "kind": "warning",
+      "text": "Garantiestresstest bij short_life: dezelfde berekening met 3 jaar levensduur en 4% capaciteitsverlies per jaar (Synthetische garantietoets; nooit gunstiger dan de basisaannames). Het is een stresstest, geen voorspelling; de keuze hierboven gebruikt de basisaannames."
+    }
+  ],
   "model_version": "nl-self-consumption-v8",
   "notes": [
     "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.",

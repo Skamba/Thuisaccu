@@ -177,7 +177,7 @@ Gunstige en ongunstige varianten combineren de opgegeven afwijking in inkoop-/te
 
 ### Beleidswaarschuwingen
 
-De rekenkern voegt waarschuwingen toe die de uitkomst niet veranderen:
+De rekenkern voegt waarschuwingen toe die de uitkomst niet veranderen, elk ook met een vaste code in `messages` (zie de [API](api.md)):
 
 - **Nettarieven vanaf 2029.** Loopt de horizon tot in 2029 of later, dan meldt de run dat de ACM vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven wil invoeren ([ontwerpbesluit van 8 oktober 2026](https://www.acm.nl/nl/publicaties/uitleg-bij-ontwerp-codebesluit-volume-en-tijdsafhankelijke-tarieven-voor-kleine-aansluitingen); ongeveer tweederde van het nettarief gaat afhangen van hoeveel en wanneer je afneemt; definitief besluit begin 2027). Het model rekent met vaste ingevoerde tarieven; een tariefvariant volgt pas als de tariefstructuur vaststaat (zie de [roadmap](roadmap.md)).
 - **Btw-teruggave.** Een ingevoerde teruggave krijgt een waarschuwing: het model rekent alleen eigen gebruik, en volgens de [Belastingdienst](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/thuisbatterij-btw) geeft alleen privégebruik geen recht op teruggave; bij aftrek kan btw over privégebruik verschuldigd zijn in het aanschafjaar en de vier jaren daarna.

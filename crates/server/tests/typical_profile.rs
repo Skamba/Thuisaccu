@@ -166,6 +166,11 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
             .unwrap()
             .starts_with("GESCHAT PROFIEL")
     );
+    assert_eq!(body["result"]["messages"][0]["code"], "profile.estimated");
+    assert_eq!(
+        body["result"]["messages"][0]["text"],
+        body["result"]["warnings"][0]
+    );
     // Zonder `load_variation` (runs van vóór modelversie 2) blijft het verbruik gelijkmatig.
     // De verdeling binnen de meetperiode is modeluitleg, geen waarschuwing.
     let notes = |body: &Value| body["result"]["notes"].to_string();

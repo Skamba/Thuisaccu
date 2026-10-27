@@ -44,8 +44,52 @@ window.Results = (() => {
   };
   const { CREDITS, QUOTE_FIELDS, quoteChange: changeText } = Data;
 
-  const isFictitious = run => Data.isDemo(run.input.profile) || run.result.warnings.some(w => /FICTIEF/i.test(w));
-  const isEstimated = run => run.result.warnings.some(w => /GESCHAT PROFIEL/.test(w));
+  // De garantiestresstest per accu, zoals `analyze_with` hem schrijft. Runs van vóór 26 oktober 2026 missen ‘nooit
+  // gunstiger dan de basisaannames’.
+  const STRESS_WARNING = /^Garantiestresstest bij (.+?): dezelfde berekening met (\d+) jaar levensduur en ([\d,]+)% capaciteitsverlies per jaar \((.*?)(?:; nooit gunstiger dan de basisaannames)?\)\. Het is een stresstest/;
+  // Herkenning aan de tekst, alleen voor runs zonder `messages` (van vóór 27 oktober 2026). Volgorde telt: de eerste
+  // passende code wint, zodat een stresstest bij een accu met ‘FICTIEF’ in de naam geen profielwaarschuwing wordt.
+  const LEGACY_WARNINGS = [
+    ["warranty_stress", STRESS_WARNING],
+    ["load_change.added", /^Extra verbruik/],
+    ["load_change.unmetered", /meet de slimme meter niet meer/],
+    ["profile.demo", /FICTIEF/i],
+    ["profile.estimated", /GESCHAT PROFIEL/],
+    ["profile.modelled", /gemodelleerd/i]
+  ];
+  // Modeluitleg staat sinds 27 oktober 2026 apart in `notes`; in oudere runs staat hij tussen de waarschuwingen en is
+  // hij te herkennen aan het begin van de zin.
+  const LEGACY_NOTES = [
+    ["model.strategy", /^Model: /],
+    ["model.repeat_year", /^Het gemeten jaar wordt /],
+    ["model.roi", /^ROI = /],
+    ["model.vat", /^Bedragen zijn inclusief /],
+    ["model.address", /^Een adres bepaalt /],
+    ["model.load_variation", /^(Binnen iedere meetperiode |Het verbruik is binnen iedere meetperiode )/],
+    ["model.measured", /^In \d+ van de \d+ meetperioden /]
+  ];
+  const PROFILE_CODES = ["profile.demo", "profile.estimated", "profile.modelled"];
+  // Alle meldingen van een uitkomst als { kind, code, candidate_key, text }, met `kind` "warning" of "note". Uit
+  // `messages` als de run die heeft; anders herkend aan de tekst (code null als niets past). Dit is de enige plek
+  // waar de interface zinnen herkent; de rest werkt met de code.
+  function messagesOf(result) {
+    if (Array.isArray(result.messages)) return result.messages.filter(m => typeof m?.text === "string")
+      .map(m => ({ kind: m.kind === "note" ? "note" : "warning", code: typeof m.code === "string" ? m.code : null,
+        candidate_key: typeof m.candidate_key === "string" ? m.candidate_key : null, text: m.text }));
+    const legacy = (kind, patterns) => text => ({ kind, code: patterns.find(([, pattern]) => pattern.test(text))?.[0] ?? null,
+      candidate_key: null, text });
+    const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+    const isNote = text => LEGACY_NOTES.some(([, pattern]) => pattern.test(text));
+    return Array.isArray(result.notes)
+      ? [...warnings.map(legacy("warning", LEGACY_WARNINGS)), ...result.notes.map(legacy("note", LEGACY_NOTES))]
+      : warnings.map(text => isNote(text) ? legacy("note", LEGACY_NOTES)(text) : legacy("warning", LEGACY_WARNINGS)(text));
+  }
+  const ofKind = (result, kind) => messagesOf(result).filter(m => m.kind === kind);
+  const notesOf = result => ({ warnings: ofKind(result, "warning").map(m => m.text), notes: ofKind(result, "note").map(m => m.text) });
+  const hasCode = (result, code) => messagesOf(result).some(m => m.code === code);
+
+  const isFictitious = run => Data.isDemo(run.input.profile) || hasCode(run.result, "profile.demo");
+  const isEstimated = run => hasCode(run.result, "profile.estimated");
   function options(run) {
     const result = run.result;
     const baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, within_budget: true, color: "#7d847f",
@@ -879,8 +923,8 @@ window.Results = (() => {
         `(${n1(capacity(other))} kWh bruikbaar, ${kw} kW)`) + `: netto voordeel ${eur0(other.npv_eur)}, ` +
         (Math.round(diff) === 0 ? "even duur in aanschaf." : `${eur0(Math.abs(diff))} ${diff < 0 ? "goedkoper" : "duurder"} in aanschaf.`));
     };
-    for (const warning of result.warnings.filter(w => /FICTIEF|gemodelleerd|GESCHAT/i.test(w))) out.append(h("p",
-      { class: "callout" }, warning));
+    for (const warning of ofKind(result, "warning").filter(m => PROFILE_CODES.includes(m.code))) out.append(h("p",
+      { class: "callout" }, warning.text));
     // Een rangnummer (de volgorde van je doel) koppelt kaart, grafiek en tabel zonder op kleur te leunen.
     const numbered = (c, label) => c.key === "no_battery" ? label : `${all.indexOf(c)}. ${label}`;
     // De grafiek vergelijkt alle getoonde opties in één beeld; daarom vóór de kaarten, die per optie de details geven.
@@ -1009,7 +1053,7 @@ window.Results = (() => {
     };
     pick.addEventListener("change", render); render();
     // Een warmtepomp of auto vanaf een later jaar verklaart de sprong in het verbruik.
-    const changes = run.result.warnings.filter(w => /^Extra verbruik|meet de slimme meter niet meer/.test(w));
+    const changes = ofKind(run.result, "warning").filter(m => m.code?.startsWith("load_change.")).map(m => m.text);
     if (run.input.request.load_changes?.length) changes.push("De aanschaf van de warmtepomp of auto en het gas of de benzine die je bespaart " +
       "tellen niet mee: het extra verbruik zit zowel in ‘geen accu’ als in iedere accu-optie, dus de uitkomst gaat alleen over de accu.");
     out.append(UI.field("Jaartabel van", pick), target, ...changes.map(w => h("p", { class: "help" }, w)));
@@ -1529,7 +1573,8 @@ window.Results = (() => {
       throw new Error(/te groot/.test(error.message) ? error.message : "Deze link is beschadigd of onvolledig.");
     }
     const valid = run?.v === SHARE_VERSION && typeof run.title === "string" && Array.isArray(run.result?.candidates) &&
-      Array.isArray(run.result?.warnings) && (run.result.notes === undefined || Array.isArray(run.result.notes)) && run.input?.request?.parameters?.tariff && Array.isArray(run.input.request.candidates);
+      Array.isArray(run.result?.warnings) && (run.result.notes === undefined || Array.isArray(run.result.notes)) &&
+      (run.result.messages === undefined || Array.isArray(run.result.messages)) && run.input?.request?.parameters?.tariff && Array.isArray(run.input.request.candidates);
     if (!valid) throw new Error("Deze link bevat geen berekening die deze versie kan tonen.");
     return run;
   }
@@ -1598,26 +1643,28 @@ window.Results = (() => {
   }
 
   // De waarschuwingen als lijst. De garantiestresstest geeft per accu dezelfde zin; die worden één regel met een tabel
-  // per accu, op de plaats van de eerste, zodat de andere waarschuwingen niet ondersneeuwen. Runs van vóór
-  // 26 oktober 2026 missen ‘nooit gunstiger dan de basisaannames’.
-  const STRESS_WARNING = /^Garantiestresstest bij (.+?): dezelfde berekening met (\d+) jaar levensduur en ([\d,]+)% capaciteitsverlies per jaar \((.*?)(?:; nooit gunstiger dan de basisaannames)?\)\. Het is een stresstest/;
-  // Modeluitleg staat sinds 27 oktober 2026 apart in `notes`; in oudere runs staat hij tussen de waarschuwingen en is
-  // hij te herkennen aan het begin van de zin.
-  const NOTE_START = /^(Model: |Het gemeten jaar wordt |ROI = |Bedragen zijn inclusief |Een adres bepaalt |Binnen iedere meetperiode |Het verbruik is binnen iedere meetperiode |In \d+ van de \d+ meetperioden )/;
-  const notesOf = result => Array.isArray(result.notes) ? { warnings: result.warnings, notes: result.notes }
-    : { warnings: result.warnings.filter(w => !NOTE_START.test(w)), notes: result.warnings.filter(w => NOTE_START.test(w)) };
-  function warningItems(warnings) {
-    const stress = warnings.map(w => w.match(STRESS_WARNING));
+  // per accu, op de plaats van de eerste, zodat de andere waarschuwingen niet ondersneeuwen.
+  // Een regel van de tabel: uit de invoer van de optie (`candidate_key`), of uit de zin als de run geen `messages` heeft
+  // of de optie er niet meer in staat (een gedeelde link houdt alleen de beslissende opties).
+  function stressRow(run, message) {
+    const c = run.result.candidates.find(o => o.key === message.candidate_key), w = c ? warranty(run, c) : null;
+    if (w) return [c.name, `${w.operating_life_years} jaar`, `${String(w.annual_capacity_loss_pct).replace(".", ",")}% per jaar`,
+      String(w.basis ?? "").trim()];
+    const parsed = message.text.match(STRESS_WARNING);
+    return parsed ? [parsed[1], `${parsed[2]} jaar`, `${parsed[3]}% per jaar`, parsed[4]] : null;
+  }
+  function warningItems(run, warnings) {
+    const stress = warnings.map(m => m.code === "warranty_stress" ? stressRow(run, m) : null);
     const count = stress.filter(Boolean).length, first = stress.findIndex(Boolean);
-    if (count < 2) return warnings.map(w => h("li", {}, w));
-    const rows = stress.filter(Boolean).map(([, name, life, loss, basis]) => [name, `${life} jaar`, `${loss}% per jaar`, basis]);
+    if (count < 2) return warnings.map(m => h("li", {}, m.text));
+    const rows = stress.filter(Boolean);
     const grouped = h("li", {}, `Garantiestresstest voor ${count} accu’s: dezelfde berekening als de accu direct na zijn ` +
       "productgarantie stopt en elk jaar meer capaciteit verliest, nooit gunstiger dan de basisaannames. Het is een stresstest, " +
       "geen voorspelling; de keuze gebruikt de basisaannames.",
       h("details", { class: "fold print-closed" }, h("summary", {}, "Per accu"),
         table(["Accu", "Levensduur", "Capaciteitsverlies", "Herkomst"], rows,
           { caption: "Aannames in de garantiestresstest", stack: true })));
-    return warnings.flatMap((w, i) => i === first ? [grouped] : stress[i] ? [] : [h("li", {}, w)]);
+    return warnings.flatMap((m, i) => i === first ? [grouped] : stress[i] ? [] : [h("li", {}, m.text)]);
   }
 
   async function render(run, view, actions, onDuplicate, { shared = false } = {}) {
@@ -1663,7 +1710,7 @@ window.Results = (() => {
     if (age >= 3) view.append(h("p", { class: "callout", role: "note" },
       `Deze berekening is ${age} maanden oud. Stroomprijs, terugleververgoeding en prijzen van accu’s en installatie zijn van toen` +
       (shared ? "." : ". Kijk ze na met ‘Pas aan en reken opnieuw’, of reken opnieuw in de keuzehulp voor de indicaties van nu.")));
-    const split = notesOf(result), warnings = warningItems(split.warnings);
+    const split = notesOf(result), warnings = warningItems(run, ofKind(result, "warning"));
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de waarschuwingen (met hun aantal, zodat ze
     // ook bij een afgebroken rij tabbladen in beeld blijven), de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
@@ -1699,5 +1746,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, notesOf, lanes, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap, tipping, answer };
+  return { render, notesOf, messagesOf, lanes, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap, tipping, answer };
 })();

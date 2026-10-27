@@ -822,3 +822,44 @@ fn the_run_list_keeps_only_options_with_a_quote_total_and_only_that_line() {
             .is_none()
     );
 }
+
+#[test]
+fn the_run_list_keeps_profile_warnings_by_code_and_by_text_in_older_runs() {
+    use thuisaccu_storage::analysis::SummaryResult;
+    let message =
+        |code: &str, text: &str| serde_json::json!({"kind": "warning", "code": code, "text": text});
+    // Met `messages` telt de code: ook een anders geformuleerde profielzin blijft, een andere zin met FICTIEF niet.
+    let current: SummaryResult = serde_json::from_value(serde_json::json!({
+        "model_version": "test",
+        "warnings": ["Synthetisch demoprofiel", "Geschat uit jaartotalen", "FICTIEF in een andere waarschuwing"],
+        "notes": ["Model: synthetische uitleg"],
+        "messages": [
+            message("profile.demo", "Synthetisch demoprofiel"),
+            message("profile.estimated", "Geschat uit jaartotalen"),
+            message("warranty_stress", "FICTIEF in een andere waarschuwing"),
+            {"kind": "note", "code": "model.strategy", "text": "Model: synthetische uitleg"},
+        ],
+    }))
+    .unwrap();
+    assert_eq!(
+        current.warnings,
+        ["Synthetisch demoprofiel", "Geschat uit jaartotalen"]
+    );
+    // De lijst houdt dezelfde vorm: geen `messages` of `notes` erbij.
+    let listed = serde_json::to_value(&current).unwrap();
+    assert!(listed.get("messages").is_none() && listed.get("notes").is_none());
+    // Runs van vóór 27 oktober 2026 hebben geen `messages`: dan de tekst.
+    let older: SummaryResult = serde_json::from_value(serde_json::json!({
+        "warnings": ["FICTIEF DEMOPROFIEL: synthetisch", "GESCHAT PROFIEL: synthetisch", "De opwek is gemodelleerd", "Nettarieven"],
+    }))
+    .unwrap();
+    assert_eq!(
+        older.warnings,
+        [
+            "FICTIEF DEMOPROFIEL: synthetisch",
+            "GESCHAT PROFIEL: synthetisch"
+        ]
+    );
+    let empty: SummaryResult = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert!(empty.warnings.is_empty() && empty.candidates.is_empty());
+}

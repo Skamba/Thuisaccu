@@ -129,29 +129,67 @@ pub struct SummaryOrigin {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(from = "StoredResult")]
 pub struct SummaryResult {
-    #[serde(default)]
     pub model_version: String,
-    #[serde(default)]
     pub recommended_key: String,
     /// Alleen de waarschuwingen die het overzicht nodig heeft (fictief of geschat profiel); een keuzehulprun heeft er
     /// tientallen en die maken de lijst anders megabytes groot.
-    #[serde(default, deserialize_with = "profile_warnings")]
     pub warnings: Vec<String>,
-    #[serde(default)]
     pub candidates: Vec<SummaryCandidate>,
 }
 
-/// Houdt van de waarschuwingen alleen die met `FICTIEF` of `GESCHAT PROFIEL`, zoals `isFictitious` en `isEstimated` in
-/// `web/results.js` ze zoeken.
-fn profile_warnings<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error> {
-    let all = Vec::<String>::deserialize(deserializer)?;
-    Ok(all
-        .into_iter()
-        .filter(|w| w.to_uppercase().contains("FICTIEF") || w.contains("GESCHAT PROFIEL"))
-        .collect())
+/// Een bewaarde uitkomst zoals hij gelezen wordt, voordat de waarschuwingen gefilterd zijn.
+#[derive(Deserialize)]
+struct StoredResult {
+    #[serde(default)]
+    model_version: String,
+    #[serde(default)]
+    recommended_key: String,
+    #[serde(default)]
+    warnings: Vec<String>,
+    /// Ontbreekt in runs van vóór 27 oktober 2026; dan herkent de lijst de waarschuwingen aan de tekst.
+    #[serde(default)]
+    messages: Option<Vec<StoredMessage>>,
+    #[serde(default)]
+    candidates: Vec<SummaryCandidate>,
+}
+
+#[derive(Deserialize)]
+struct StoredMessage {
+    #[serde(default)]
+    code: String,
+    #[serde(default)]
+    text: String,
+}
+
+/// De codes van de profielwaarschuwingen die het overzicht toont (zie `save_run` in `thuisaccu-server`).
+const PROFILE_CODES: [&str; 2] = ["profile.demo", "profile.estimated"];
+
+impl From<StoredResult> for SummaryResult {
+    /// Houdt van de waarschuwingen alleen die over een fictief of geschat profiel, zoals `isFictitious` en
+    /// `isEstimated` in `web/results.js` ze zoeken: aan de code, of in oudere runs zonder `messages` aan `FICTIEF` of
+    /// `GESCHAT PROFIEL` in de tekst.
+    fn from(stored: StoredResult) -> Self {
+        let warnings = match stored.messages {
+            Some(messages) => messages
+                .into_iter()
+                .filter(|m| PROFILE_CODES.contains(&m.code.as_str()))
+                .map(|m| m.text)
+                .collect(),
+            None => stored
+                .warnings
+                .into_iter()
+                .filter(|w| w.to_uppercase().contains("FICTIEF") || w.contains("GESCHAT PROFIEL"))
+                .collect(),
+        };
+        Self {
+            model_version: stored.model_version,
+            recommended_key: stored.recommended_key,
+            warnings,
+            candidates: stored.candidates,
+        }
+    }
 }
 
 /// Wat de lijst nodig heeft om dezelfde accu te bespreken als de uitkomst (`rank` in `web/results.js`): budget en de

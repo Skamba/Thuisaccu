@@ -765,3 +765,42 @@ test("answer(): de kop zegt of een accu loont en hoe zeker, over de doorgerekend
   // Een ander doel kan een accu aanraden die geld kost.
   assert.match(spaced(Results.answer(run("a", none), none)), /kost in deze berekening geld: netto € 500 over 15 jaar/);
 });
+
+test("messagesOf leest de vaste codes, en herkent ze in oudere runs aan de tekst", () => {
+  const { Results } = context;
+  const codes = result => Array.from(Results.messagesOf(result), m => `${m.kind}:${m.code}${m.candidate_key ? `@${m.candidate_key}` : ""}`);
+  const stress = name => `Garantiestresstest bij ${name}: dezelfde berekening met 10 jaar levensduur en 3% capaciteitsverlies ` +
+    "per jaar (synthetische garantie; nooit gunstiger dan de basisaannames). Het is een stresstest, geen voorspelling; de keuze " +
+    "hierboven gebruikt de basisaannames.";
+  const demo = "FICTIEF DEMOPROFIEL: synthetisch voorbeeld.";
+  const estimated = "GESCHAT PROFIEL: synthetisch voorbeeld.";
+  const roi = "ROI = synthetische uitleg.";
+  const measured = "In 12 van de 8760 meetperioden zijn netafname en teruglevering zonder accu gemeten.";
+  const extra = "Extra verbruik ‘Warmtepomp’: synthetisch.";
+  const other = "Nettarieven: synthetisch.";
+  // Nieuwe vorm: de code telt, ook als de zin anders luidt.
+  const current = { warnings: ["Anders geformuleerd demoprofiel", other, stress("FICTIEF A")], notes: [roi],
+    messages: [{ kind: "warning", code: "profile.demo", text: "Anders geformuleerd demoprofiel" },
+      { kind: "note", code: "model.roi", text: roi },
+      { kind: "warning", code: "grid_tariff.2029", text: other },
+      { kind: "warning", code: "warranty_stress", candidate_key: "a", text: stress("FICTIEF A") }] };
+  assert.deepEqual(codes(current), ["warning:profile.demo", "note:model.roi", "warning:grid_tariff.2029", "warning:warranty_stress@a"]);
+  const run = result => ({ input: { profile: { options: {} }, request: { candidates: [] } }, result });
+  assert.equal(Results.isFictitious(run(current)), true);
+  assert.equal(Results.isFictitious(run({ ...current, messages: current.messages.slice(1) })), false);
+  assert.deepEqual(Array.from(Results.notesOf(current).notes), [roi]);
+  assert.deepEqual(Array.from(Results.notesOf(current).warnings), current.warnings);
+  // Oude vorm zonder `messages` en `notes`: de modeluitleg staat tussen de waarschuwingen.
+  const old = { warnings: [estimated, roi, measured, extra, other, stress("FICTIEF A"), stress("B")] };
+  assert.deepEqual(codes(old), ["warning:profile.estimated", "note:model.roi", "note:model.measured", "warning:load_change.added",
+    "warning:null", "warning:warranty_stress", "warning:warranty_stress"]);
+  assert.equal(Results.isFictitious(run(old)), false);
+  assert.deepEqual(Array.from(Results.notesOf(old).notes), [roi, measured]);
+  assert.deepEqual(Array.from(Results.notesOf(old).warnings), [estimated, extra, other, stress("FICTIEF A"), stress("B")]);
+  // Een oud demoprofiel; met `notes` maar zonder `messages` blijven de waarschuwingen waarschuwingen.
+  const between = { warnings: [demo, roi], notes: [measured] };
+  assert.deepEqual(codes(between), ["warning:profile.demo", "warning:null", "note:model.measured"]);
+  assert.equal(Results.isFictitious(run(between)), true);
+  // Een lijstregel heeft alleen de profielwaarschuwingen.
+  assert.deepEqual(codes({ warnings: [demo] }), ["warning:profile.demo"]);
+});

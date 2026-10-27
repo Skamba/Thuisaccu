@@ -424,6 +424,54 @@
       ]
     }
   ],
+  "messages": [
+    {
+      "code": "model.strategy",
+      "kind": "note",
+      "text": "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing."
+    },
+    {
+      "code": "model.repeat_year",
+      "kind": "note",
+      "text": "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst."
+    },
+    {
+      "code": "model.roi",
+      "kind": "note",
+      "text": "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Een lening telt als rente en aflossing in het jaar waarin je ze betaalt; alleen het eigen deel van de investering staat op tijdstip nul. ROI deelt door de volledige netto startinvestering. Dit is geen eigenvermogenrendement."
+    },
+    {
+      "code": "model.vat",
+      "kind": "note",
+      "text": "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt."
+    },
+    {
+      "code": "model.address",
+      "kind": "note",
+      "text": "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde."
+    },
+    {
+      "code": "model.load_variation",
+      "kind": "note",
+      "text": "Binnen iedere meetperiode van 5 tot 60 minuten volgt het verbruik de gemiddelde verdeling van 74 per seconde gemeten Duitse huishoudens (HTW Berlin, 2010). Korte pieken boven het ontlaadvermogen en wisselingen tussen overschot en tekort binnen het uur tellen zo mee. Opwek is binnen de periode gelijkmatig. De regelvertraging van de accu is niet meegerekend: HTW Berlin mat bij 22 thuisaccusystemen gemiddeld 1 s totdat de accu reageert en 4,5 s totdat het nieuwe vermogen bereikt is (Stromspeicher-Inspektion 2025); in een controle per seconde kostte een vertraging van 2 tot 5 s ongeveer 2 tot 3% van de besparing."
+    },
+    {
+      "code": "grid_tariff.2029",
+      "kind": "warning",
+      "text": "Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen."
+    },
+    {
+      "candidate_key": "fixed",
+      "code": "life.inactive",
+      "kind": "warning",
+      "text": "fixed: na de aangenomen levensduur van 3 jaar werkt de accu in jaar 4 van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op."
+    },
+    {
+      "code": "life.beyond_horizon",
+      "kind": "warning",
+      "text": "Bij plug is de aangenomen levensduur langer dan de looptijd van 5 jaar. De jaren na de looptijd tellen niet mee en de accu heeft aan het eind geen restwaarde; met een langere looptijd (als je zo lang in dit huis blijft) komt de uitkomst gunstiger uit."
+    }
+  ],
   "model_version": "nl-self-consumption-v8",
   "notes": [
     "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.",

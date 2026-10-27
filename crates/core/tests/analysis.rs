@@ -1098,3 +1098,124 @@ fn whole_numbers_use_dutch_grouping_and_a_real_minus_sign() {
     // Afgerond nul is geen negatief getal.
     assert_eq!(whole(-0.4), "0");
 }
+
+#[test]
+fn every_warning_and_note_has_a_message_with_a_known_code_in_the_same_order() {
+    // Vaste codes waarop interface en opslag vertrouwen (zie `docs/api.md`); de profielcodes voegt de server toe.
+    const NOTES: [&str; 7] = [
+        "model.strategy",
+        "model.repeat_year",
+        "model.roi",
+        "model.vat",
+        "model.address",
+        "model.load_variation",
+        "model.measured",
+    ];
+    const WARNINGS: [&str; 11] = [
+        "load_change.added",
+        "load_change.unmetered",
+        "netting.simplified",
+        "export_variant",
+        "grid_tariff.2029",
+        "credit.vat_refund",
+        "credit.grant",
+        "life.inactive",
+        "life.beyond_horizon",
+        "warranty_stress",
+        "objective.self_consumption",
+    ];
+    // Synthetische invoer die elke melding oproept: een gemeten profiel, extra verbruik vanaf 2028, een start in het
+    // laatste saldeerjaar over vijf jaar, een terugleveringsvariant, teruggave en subsidie, een accu die na twee jaar
+    // stopt, een accu die langer meegaat dan de looptijd en een garantiestresstest.
+    let measured: Vec<_> = profile()
+        .into_iter()
+        .map(|i| EnergyInterval {
+            measured_import_kwh: Some(i.consumption_kwh),
+            measured_export_kwh: Some(i.production_kwh),
+            ..i
+        })
+        .collect();
+    let mut p = parameters();
+    p.start_year = finance::LAST_NETTING_YEAR;
+    p.horizon_years = 5;
+    p.objective = Objective::SelfConsumption;
+    p.export_variant = Some(analysis::ExportVariant {
+        label: "Synthetische variant".into(),
+        from_calendar_year: 2028,
+        export_eur_per_kwh: 0.0,
+        export_fee_eur_per_kwh: 0.0,
+    });
+    let addition = analysis::LoadAddition {
+        label: "Warmtepomp".into(),
+        from_calendar_year: 2028,
+        steady_kwh: vec![0.1; 8760],
+    };
+    let mut short = candidate("kort", 1.0, 50_000);
+    short.battery.operating_life_years = 2;
+    let mut long = candidate("lang", 2.0, 60_000);
+    for line in long.costs.iter_mut() {
+        if ["vat_refund", "grant"].contains(&line.category.as_str()) {
+            line.status = CostStatus::Priced;
+            line.amount_minor = 10_000;
+        }
+    }
+    long.warranty_stress = Some(analysis::BatteryStress {
+        operating_life_years: 3,
+        annual_capacity_loss_pct: 2.5,
+        basis: "Synthetische garantie".into(),
+    });
+    let r = analysis::analyze_with(&measured, &p, &[short, long], &[addition]).unwrap();
+    let texts = |kind| {
+        r.messages
+            .iter()
+            .filter(|m| m.kind == kind)
+            .map(|m| m.text.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(texts(analysis::MessageKind::Warning), r.warnings);
+    assert_eq!(texts(analysis::MessageKind::Note), r.notes);
+    assert_eq!(r.messages.len(), r.warnings.len() + r.notes.len());
+    let codes = |kind| {
+        r.messages
+            .iter()
+            .filter(|m| m.kind == kind)
+            .map(|m| m.code.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(analysis::MessageKind::Note), NOTES);
+    assert_eq!(codes(analysis::MessageKind::Warning), WARNINGS);
+    let key = |code| {
+        r.messages
+            .iter()
+            .find(|m| m.code == code)
+            .and_then(|m| m.candidate_key.as_deref())
+    };
+    assert_eq!(key("life.inactive"), Some("kort"));
+    assert_eq!(key("warranty_stress"), Some("lang"));
+    assert_eq!(key("life.beyond_horizon"), None);
+    // Zonder deze invoer alleen de vaste uitleg; ook dan staan alle codes in de bekende lijst.
+    let plain =
+        analysis::analyze(&profile(), &parameters(), &[candidate("b", 2.0, 50_000)]).unwrap();
+    assert!(
+        plain
+            .messages
+            .iter()
+            .all(|m| NOTES.contains(&m.code.as_str()) || WARNINGS.contains(&m.code.as_str()))
+    );
+    assert_eq!(
+        plain.messages.len(),
+        plain.warnings.len() + plain.notes.len()
+    );
+    // De velden van een melding, zoals de interface ze leest; zonder optie ontbreekt `candidate_key`.
+    let json = serde_json::to_value(&r.messages).unwrap();
+    assert_eq!(json[0]["kind"], "note");
+    assert!(json[0].get("candidate_key").is_none());
+    let stress = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["code"] == "warranty_stress")
+        .unwrap();
+    assert_eq!(stress["kind"], "warning");
+    assert_eq!(stress["candidate_key"], "lang");
+}

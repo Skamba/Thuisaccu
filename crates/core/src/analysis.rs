@@ -260,9 +260,77 @@ pub struct AnalysisResult {
     /// deze zinnen nog tussen de waarschuwingen.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Iedere zin uit `warnings` en `notes` met een vaste code, in de volgorde waarin ze ontstaan: de interface en de
+    /// opslag herkennen een melding aan de code in plaats van aan de tekst. De codes staan in `docs/api.md`. Runs van
+    /// vóór 27 oktober 2026 hebben dit veld niet.
+    #[serde(default)]
+    pub messages: Vec<Message>,
     /// Beste optie volgens hetzelfde doel, maar binnen de terugleveringsvariant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export_variant_recommended_key: Option<String>,
+}
+
+/// Soort melding: een waarschuwing (zie [`AnalysisResult::warnings`]) of modeluitleg (zie [`AnalysisResult::notes`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageKind {
+    Warning,
+    Note,
+}
+
+/// Een melding bij een uitkomst met een vaste code, zoals `warranty_stress` of `model.roi`. De tekst is dezelfde
+/// zin als in `warnings` of `notes`; de code verandert niet als de zin anders geformuleerd wordt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Message {
+    pub kind: MessageKind,
+    pub code: String,
+    /// De optie waar de melding over gaat, als het er precies één is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_key: Option<String>,
+    pub text: String,
+}
+
+impl Message {
+    /// Een waarschuwing zonder bijbehorende optie, zoals de profielwaarschuwingen van de server.
+    pub fn warning(code: &str, text: impl Into<String>) -> Self {
+        Self {
+            kind: MessageKind::Warning,
+            code: code.into(),
+            candidate_key: None,
+            text: text.into(),
+        }
+    }
+}
+
+/// Bouwt `warnings`, `notes` en `messages` tegelijk op, zodat iedere zin precies één keer met zijn code wordt
+/// toegevoegd.
+#[derive(Default)]
+struct Messages {
+    warnings: Vec<String>,
+    notes: Vec<String>,
+    all: Vec<Message>,
+}
+
+impl Messages {
+    fn warn(&mut self, code: &str, candidate_key: Option<&str>, text: String) {
+        self.all.push(Message {
+            kind: MessageKind::Warning,
+            code: code.into(),
+            candidate_key: candidate_key.map(Into::into),
+            text: text.clone(),
+        });
+        self.warnings.push(text);
+    }
+
+    fn note(&mut self, code: &str, text: String) {
+        self.all.push(Message {
+            kind: MessageKind::Note,
+            code: code.into(),
+            candidate_key: None,
+            text: text.clone(),
+        });
+        self.notes.push(text);
+    }
 }
 
 fn ensure(condition: bool, message: &str) -> Result<(), AnalysisError> {
@@ -978,31 +1046,44 @@ pub fn analyze_with(
             results.iter().find(|r| r.key == best_key).unwrap().name
         )
     };
-    let mut notes = vec![
+    let mut messages = Messages::default();
+    messages.note(
+        "model.strategy",
         "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.".into(),
+    );
+    messages.note(
+        "model.repeat_year",
         "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst.".into(),
+    );
+    messages.note(
+        "model.roi",
         "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Een lening telt als rente en aflossing in het jaar waarin je ze betaalt; alleen het eigen deel van de investering staat op tijdstip nul. ROI deelt door de volledige netto startinvestering. Dit is geen eigenvermogenrendement.".into(),
+    );
+    messages.note(
+        "model.vat",
         "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt.".into(),
+    );
+    messages.note(
+        "model.address",
         "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde.".into(),
-    ];
-    notes.push(match parameters.load_variation {
+    );
+    messages.note("model.load_variation", match parameters.load_variation {
         LoadVariation::Households => "Binnen iedere meetperiode van 5 tot 60 minuten volgt het verbruik de gemiddelde verdeling van 74 per seconde gemeten Duitse huishoudens (HTW Berlin, 2010). Korte pieken boven het ontlaadvermogen en wisselingen tussen overschot en tekort binnen het uur tellen zo mee. Opwek is binnen de periode gelijkmatig. De regelvertraging van de accu is niet meegerekend: HTW Berlin mat bij 22 thuisaccusystemen gemiddeld 1 s totdat de accu reageert en 4,5 s totdat het nieuwe vermogen bereikt is (Stromspeicher-Inspektion 2025); in een controle per seconde kostte een vertraging van 2 tot 5 s ongeveer 2 tot 3% van de besparing.".into(),
         LoadVariation::Uniform => "Het verbruik is binnen iedere meetperiode gelijkmatig verondersteld. Bij uur- of kwartierwaarden ontbreken korte pieken, waardoor vermogensgrenzen van de accu minder vaak knellen dan in werkelijkheid.".into(),
     });
-    let mut warnings = Vec::new();
     let measured = profile
         .iter()
         .filter(|i| i.measured_import_kwh.is_some())
         .count();
     if measured > 0 {
-        notes.push(format!(
+        messages.note("model.measured", format!(
             "In {} van de {} meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt uit de meter hoeveel opwek en verbruik binnen de periode samenvielen; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt.",
             measured,
             profile.len()
         ));
     }
     for a in additions {
-        warnings.push(format!(
+        messages.warn("load_change.added", None, format!(
             "Extra verbruik ‘{}’: vanaf 1 januari {} komt er {} kWh per jaar bij, bovenop het verbruik in het profiel; binnen iedere meetperiode loopt het gelijkmatig.",
             a.label,
             a.from_calendar_year,
@@ -1012,16 +1093,16 @@ pub fn analyze_with(
     if let Some(first) = additions.iter().map(|a| a.from_calendar_year).min()
         && measured > 0
     {
-        warnings.push(format!(
+        messages.warn("load_change.unmetered", None, format!(
             "Vanaf {first} meet de slimme meter niet meer het huis waarmee gerekend wordt. In perioden met extra verbruik schat het model daarom weer met de verdeling hoeveel opwek en verbruik samenvallen; de uitkomst is vanaf dat jaar minder zeker en kan wat hoger of lager uitvallen."
         ));
     }
     let last = crate::finance::LAST_NETTING_YEAR;
     if parameters.start_year <= last {
-        warnings.push(format!("Voor {last} gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf {} wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.", last + 1));
+        messages.warn("netting.simplified", None, format!("Voor {last} gebruikt dit model vereenvoudigde jaarlijkse saldering met één vast tarief. Vanaf {} wordt iedere geïmporteerde kWh betaald en iedere teruggeleverde kWh apart vergoed. Controleer de contractafrekening.", last + 1));
     }
     if let Some(v) = &parameters.export_variant {
-        warnings.push(format!(
+        messages.warn("export_variant", None, format!(
             "Terugleveringsvariant ‘{}’: vanaf {} rekent deze variant met € {} vergoeding en € {} terugleverkosten per kWh, met verder dezelfde aannames. Het is een stresstest voor toekomstige contracten, geen prognose of aangekondigde regel: volgens de ACM houd je recht op een redelijke vergoeding, tot 2030 minstens 50% van het kale leveringstarief, terwijl terugleverkosten die vergoeding kunnen overtreffen.",
             v.label,
             v.from_calendar_year,
@@ -1031,7 +1112,7 @@ pub fn analyze_with(
     }
     // De ACM wil vanaf 2029 volume- en tijdsafhankelijke nettarieven (ontwerpbesluit 8 oktober 2026).
     if parameters.start_year + parameters.horizon_years > 2029 {
-        warnings.push("Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen.".into());
+        messages.warn("grid_tariff.2029", None, "Nettarieven: de ACM wil vanaf 1 januari 2029 volume- en tijdsafhankelijke transporttarieven voor huishoudens invoeren (ontwerpbesluit van 8 oktober 2026, definitief besluit begin 2027). Ongeveer tweederde van het nettarief gaat dan afhangen van hoeveel en wanneer je stroom afneemt. Dit model rekent met de ingevoerde vaste tarieven; zo’n wijziging kan de besparing van een accu in beide richtingen veranderen.".into());
     }
     // Namen van opties met een ingevoerde teruggave of subsidie in deze categorie.
     let credited = |category: &str| {
@@ -1048,11 +1129,11 @@ pub fn analyze_with(
     };
     let vat = credited("vat_refund");
     if !vat.is_empty() {
-        warnings.push(format!("Btw-teruggave ingevoerd bij {}. Dit model rekent alleen met eigen gebruik van zonnestroom; volgens de Belastingdienst geeft alleen privégebruik geen recht op teruggave. Teruggave vraagt onder meer handel in stroom als btw-ondernemer, en dan kan btw over privégebruik verschuldigd zijn in het aanschafjaar en de vier jaren daarna. Die lasten zitten niet in deze berekening.", vat));
+        messages.warn("credit.vat_refund", None, format!("Btw-teruggave ingevoerd bij {}. Dit model rekent alleen met eigen gebruik van zonnestroom; volgens de Belastingdienst geeft alleen privégebruik geen recht op teruggave. Teruggave vraagt onder meer handel in stroom als btw-ondernemer, en dan kan btw over privégebruik verschuldigd zijn in het aanschafjaar en de vier jaren daarna. Die lasten zitten niet in deze berekening.", vat));
     }
     let grant = credited("grant");
     if !grant.is_empty() {
-        warnings.push(format!("Subsidie ingevoerd bij {}. Tel een subsidie alleen mee als die is toegekend; regionale regelingen hebben eigen voorwaarden en een beperkt budget. Noteer regeling, toekenning en datum bij de kostenpost.", grant));
+        messages.warn("credit.grant", None, format!("Subsidie ingevoerd bij {}. Tel een subsidie alleen mee als die is toegekend; regionale regelingen hebben eigen voorwaarden en een beperkt budget. Noteer regeling, toekenning en datum bij de kostenpost.", grant));
     }
     for c in candidates {
         let inactive: Vec<u32> = battery_ages(c, parameters.horizon_years)
@@ -1067,7 +1148,7 @@ pub fn analyze_with(
         let annual = c.costs.iter().any(|l| {
             l.timing == CostTiming::Annual && l.status == CostStatus::Priced && l.amount_minor > 0
         });
-        warnings.push(format!(
+        messages.warn("life.inactive", Some(&c.key), format!(
             "{}: na de aangenomen levensduur van {} jaar werkt de accu in jaar {} van de looptijd niet meer, en voor die jaren is geen accuvervanging ingevoerd. Die jaren leveren geen besparing op{}.",
             c.name,
             c.battery.operating_life_years,
@@ -1092,7 +1173,7 @@ pub fn analyze_with(
         .map(|c| c.name.clone())
         .collect();
     if !shorter.is_empty() {
-        warnings.push(format!(
+        messages.warn("life.beyond_horizon", None, format!(
             "Bij {} is de aangenomen levensduur langer dan de looptijd van {} jaar. De jaren na de looptijd tellen niet mee en de accu heeft aan het eind geen restwaarde; met een langere looptijd (als je zo lang in dit huis blijft) komt de uitkomst gunstiger uit.",
             if shorter.len() > 3 {
                 format!("{} en {} andere accu’s", shorter[..3].join(", "), shorter.len() - 3)
@@ -1105,7 +1186,7 @@ pub fn analyze_with(
     for c in candidates {
         if let Some(s) = &c.warranty_stress {
             let b = stressed_battery(&c.battery, s);
-            warnings.push(format!(
+            messages.warn("warranty_stress", Some(&c.key), format!(
                 "Garantiestresstest bij {}: dezelfde berekening met {} jaar levensduur en {}% capaciteitsverlies per jaar ({}; nooit gunstiger dan de basisaannames). Het is een stresstest, geen voorspelling; de keuze hierboven gebruikt de basisaannames.",
                 c.name,
                 b.operating_life_years,
@@ -1115,7 +1196,7 @@ pub fn analyze_with(
         }
     }
     if matches!(parameters.objective, Objective::SelfConsumption) {
-        warnings.push("Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
+        messages.warn("objective.self_consumption", None, "Het gekozen doel optimaliseert eigen gebruik; de aanbeveling kan financieel onrendabel zijn. Controleer NPV en ROI naast het doelresultaat.".into());
     }
     Ok(AnalysisResult {
         model_version: MODEL_VERSION.into(),
@@ -1123,8 +1204,9 @@ pub fn analyze_with(
         recommendation,
         baseline_first_year: baseline,
         candidates: results,
-        warnings,
-        notes,
+        warnings: messages.warnings,
+        notes: messages.notes,
+        messages: messages.all,
         export_variant_recommended_key,
     })
 }

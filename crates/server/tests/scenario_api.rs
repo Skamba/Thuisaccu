@@ -78,6 +78,16 @@ async fn legacy_demo_year_stays_fictitious_and_analysis_is_saved_with_input_and_
             .unwrap()
             .contains("FICTIEF")
     );
+    // Dezelfde zin vooraan in `messages`, met een vaste code waarop interface en lijst vertrouwen.
+    let first = &result["result"]["messages"][0];
+    assert_eq!(first["code"], "profile.demo");
+    assert_eq!(first["kind"], "warning");
+    assert_eq!(first["text"], result["result"]["warnings"][0]);
+    assert_eq!(
+        result["result"]["messages"].as_array().unwrap().len(),
+        result["result"]["warnings"].as_array().unwrap().len()
+            + result["result"]["notes"].as_array().unwrap().len()
+    );
     assert_eq!(
         result["result"]["candidates"][0]["years"]
             .as_array()

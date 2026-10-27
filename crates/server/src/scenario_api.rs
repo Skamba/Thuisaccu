@@ -355,18 +355,30 @@ async fn save_run(
     })
     .await?
     .map_err(invalid)?;
-    if metadata["options"]["is_demo"] == true {
-        result.warnings.insert(0, "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.".into());
+    // De profielwaarschuwing komt vooraan, als tekst en als melding met een vaste code.
+    let profile_warning = if metadata["options"]["is_demo"] == true {
+        Some((
+            "profile.demo",
+            "FICTIEF DEMOPROFIEL: dit resultaat is uitsluitend een softwarevoorbeeld en geen advies voor het ingevoerde adres.",
+        ))
     } else if metadata["options"]["generator"] == crate::typical_profile::GENERATOR {
-        result.warnings.insert(
-            0,
-            "GESCHAT PROFIEL: verbruik en opwek zijn afgeleid uit jaartotalen met een standaardprofiel en één PVGIS-weerjaar. Dit is een indicatie, geen meting van dit huishouden.".into(),
-        );
+        Some((
+            "profile.estimated",
+            "GESCHAT PROFIEL: verbruik en opwek zijn afgeleid uit jaartotalen met een standaardprofiel en één PVGIS-weerjaar. Dit is een indicatie, geen meting van dit huishouden.",
+        ))
     } else if metadata["options"]["data_kind"] == "modelled" {
-        result.warnings.insert(
-            0,
-            "De opwek is gemodelleerd; dit is geen volledig gemeten huishoudprofiel.".into(),
-        );
+        Some((
+            "profile.modelled",
+            "De opwek is gemodelleerd; dit is geen volledig gemeten huishoudprofiel.",
+        ))
+    } else {
+        None
+    };
+    if let Some((code, text)) = profile_warning {
+        result.warnings.insert(0, text.into());
+        result
+            .messages
+            .insert(0, analysis::Message::warning(code, text));
     }
     let input_json = serde_json::to_string(&input_snapshot).map_err(|e| invalid(e.to_string()))?;
     let result_json = serde_json::to_string(&result).map_err(|e| invalid(e.to_string()))?;
