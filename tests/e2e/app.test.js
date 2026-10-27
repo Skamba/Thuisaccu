@@ -320,6 +320,10 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.ok(await certain.evaluate(el => el === document.activeElement));
   // Per accu staan de details in een venster achter de naam in het overzicht; de inhoud ontstaat pas bij openen.
   const detailButton = page.locator("table.options button[aria-haspopup=dialog]").first();
+  // De productnaam is de knop; waarmee gerekend is staat klein eronder.
+  assert.doesNotMatch(await detailButton.textContent(), /kWh|unit/);
+  assert.match(await page.locator("table.options tbody tr").nth(1).locator(".option-cell > small").textContent(),
+    /^(Stekker|Vast|Stekker op eigen groep) · [\d,]+ kWh · [\d,]+ kW$/);
   await detailButton.click();
   const detail = page.locator("dialog.option-detail[open]");
   assert.match(await detail.textContent(), /Stekker · [\d,]+ kWh bruikbaar · 0,8 kW ontladen, [\d,]+ kW laden/);

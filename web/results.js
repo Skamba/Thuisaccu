@@ -143,11 +143,23 @@ window.Results = (() => {
   const connectionText = (c, kinds) => !kinds.get(c.key) ? "Onbekend"
     : kinds.get(c.key) === "circuit" && /\(afgeleid\)$/.test(c.name) ? "Stekker op eigen groep, afgeleid van de stekkeruitvoering"
       : CONNECTION[kinds.get(c.key)];
-  // Een leesbare naam uit wat de accu doet: aansluiting, bruikbare capaciteit en ontlaadvermogen. De productnaam staat
-  // er klein onder; die noemt vaak een nominale capaciteit of een uitvoering die niet zegt waarmee gerekend is.
+  // Een leesbare naam uit wat de accu doet: aansluiting, bruikbare capaciteit en ontlaadvermogen. In tabellen staat hij
+  // klein onder de productnaam; die noemt vaak een nominale capaciteit die niet zegt waarmee gerekend is.
   const plainName = (run, c, kinds) => {
     const b = run.input.request.candidates.find(o => o.key === c.key)?.battery;
     return b ? `${CONNECTION[kinds.get(c.key)] ?? "Accu"} · ${n1(b.usable_capacity_kwh)} kWh · ${n1(b.discharge_power_kw)} kW` : c.name;
+  };
+  // De productnaam zonder de uitvoering ("1 unit · 5,12 kWh · …"): die staat in gewone woorden in `plainName`. Een
+  // aantal units groter dan één blijft erbij, want dat is een andere aanschaf.
+  const productName = c => {
+    const [product, ...rest] = c.name.split(" · "), units = rest.find(part => /^\d+ units$/.test(part));
+    return units ? `${product} · ${units}` : product;
+  };
+  // Een accu in een tabel: de productnaam groot (in het overzicht en op het beslisblad een knop naar de details),
+  // eronder klein waarmee gerekend is.
+  const nameCell = (run, c, kinds, name, className) => {
+    const setup = plainName(run, c, kinds);
+    return [name, setup !== c.name ? h("small", { class: className }, setup) : null];
   };
   // Netto voordeel als woord: een negatief bedrag is een verlies, geen ‘netto −€ …’.
   const netText = value => value >= 0 ? `netto ${eur0(value)} voordeel` : `netto ${eur0(-value)} verlies`;
@@ -308,8 +320,8 @@ window.Results = (() => {
     const longest = list.filter(c => finite(life(c))).sort((a, b) => life(b) - life(a) || b.npv_eur - a.npv_eur)[0];
     const shortest = Math.min(...list.map(life).filter(finite));
     const row = c => h("tr", { class: c.key === option.key ? "lane-lead" : null },
-      h("th", { scope: "row", dataset: { label: "Accu" } }, h("span", { class: "plain-name" }, plainName(run, c, kinds)),
-        h("small", {}, c.name), c.key === option.key ? h("small", {}, "Aanbevolen") : null),
+      h("th", { scope: "row", dataset: { label: "Accu" } },
+        nameCell(run, c, kinds, h("span", { class: "plain-name" }, productName(c))), c.key === option.key ? h("small", {}, "Aanbevolen") : null),
       h("td", { class: "num", dataset: { label: "Netto voordeel (NPV)" } }, eur0(c.npv_eur)),
       h("td", { class: "num", dataset: { label: "Startinvestering nu" } }, eur0(c.initial_investment_eur)),
       h("td", { dataset: { label: "Garantie" } }, finite(life(c)) ? `${life(c)} jaar` : "Onbekend"),
@@ -544,8 +556,8 @@ window.Results = (() => {
         h("caption", {}, `Beslisblad, ${variants(run, shownLanes).find(([key]) => key === variant)[1].toLowerCase()}`),
         h("thead", {}, h("tr", {}, h("td", {}), shownLanes.map((lane, i) => h("th", { scope: "col", class: lead(lane) },
           h("span", { class: "lane-title" }, lane.titles.join(" · ")),
-          lane.option ? [h("span", { class: "lane-name" }, toDetail(run, lane.option, plainName(run, lane.option, kinds))),
-            h("span", { class: "lane-product" }, lane.option.name)] : null,
+          lane.option ? nameCell(run, lane.option, kinds, h("span", { class: "lane-name" },
+            toDetail(run, lane.option, productName(lane.option))), "lane-product") : null,
           status(lane, i) ? h("span", { class: "lane-status" }, status(lane, i)) : null)))),
         h("tbody", {}, rows.map(([label, help, cell, none]) => h("tr", {},
           h("th", { scope: "row" }, label, help ? h("small", { class: "stat-help" }, help) : null),
@@ -1118,8 +1130,8 @@ window.Results = (() => {
       shown(all).map(c => [
         h("span", { class: "option-cell" }, h("i", { class: "swatch", style: `background:${c.color}`, "aria-hidden": "true" }),
           c.key === "no_battery" ? h("span", { class: "plain-name" }, c.name)
-            : h("span", { class: "plain-name" }, `${all.indexOf(c)}. `, toDetail(run, c, plainName(run, c, kinds))),
-          c.key === "no_battery" ? null : h("small", {}, c.name), tags(c).length ? h("span", { class: "option-tags" }, tags(c)) : null),
+            : nameCell(run, c, kinds, h("span", { class: "plain-name" }, `${all.indexOf(c)}. `, toDetail(run, c, productName(c)))),
+          tags(c).length ? h("span", { class: "option-tags" }, tags(c)) : null),
         c.key === "no_battery" ? none : connectionText(c, kinds), eur0(c.npv_eur),
         c.key === "no_battery" ? none : breakEven(c.break_even_investment_eur) ?? "Niet berekend", eur0(c.initial_investment_eur),
         c.key === "no_battery" ? none : c.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(c.payback_years)]),
@@ -1962,7 +1974,7 @@ window.Results = (() => {
     const circuit = costCatalog.estimates?.amounts?.dedicated_circuit, advice = plugAdvice(run, quoted(run) ?? judged(run), kinds, circuit);
     if (advice) ADVICE.set(run, UI.dialogPanel("Stekkerbatterijen: het advies van Milieu Centraal", advice));
     DETAILS.set(run, new Map(all.filter(c => c.key !== "no_battery").map(c => [c.key,
-      UI.dialogPanel(plainName(run, c, kinds), () => optionDetail(run, all, kinds, c), { className: "option-detail" })])));
+      UI.dialogPanel(productName(c), () => optionDetail(run, all, kinds, c), { className: "option-detail" })])));
     // De kop van de pagina is het antwoord; de titel van de berekening (waarmee is gerekend) staat eronder. Bij een
     // offerte gaat het korte antwoord over die offerte en blijft de titel de kop.
     if (page && !quoted(run)) page.setTitle(answer(run, judged(run)), run.title, run.title);

@@ -298,7 +298,7 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .wizard-footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
 
 /* Keuzehulp en resultaat */
-/* De opties in het overzicht: per optie de naam in gewone woorden (een knop naar de details), het product klein eronder. */
+/* De opties in het overzicht: per optie de productnaam (een knop naar de details), klein eronder waarmee gerekend is. */
 @media (min-width: 40.01rem) { table.options :is(th, td):first-child { min-width: 17rem; } }
 table.options .option-cell { display: grid; grid-template-columns: .75rem minmax(0, 1fr); column-gap: .5rem; align-items: baseline; }
 table.options .option-cell > :not(.swatch) { grid-column: 2; }
