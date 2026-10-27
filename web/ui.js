@@ -454,7 +454,7 @@ window.UI = (() => {
     const width = narrow ? 400 : 880, horizontal = type === "range" || type === "stacked", above = narrow && horizontal;
     const height = horizontal ? Math.max(220, rows.length * (above ? 64 : 56) + 80) : 320;
     const longest = Math.max(0, ...rows.map(r => String(r.label).length));
-    const left = above ? 40 : horizontal ? Math.min(380, Math.max(110, Math.min(longest, 56) * 6.6 + 24)) : 80, right = 24,
+    const left = above ? 40 : horizontal ? Math.min(380, Math.max(110, Math.min(longest, 56) * 6.6 + 24)) : narrow ? 64 : 80, right = 24,
       top = !horizontal && unit ? 32 : 20, bottom = 50, plotW = width - left - right, plotH = height - top - bottom;
     const maxLabel = above ? Math.floor(plotW / 7.7) : 56;
     const svg = document.createElementNS(SVG, "svg");
@@ -573,7 +573,9 @@ window.UI = (() => {
                 height: Math.max(1, Math.abs(y(v) - y(0))), fill: colour(si, series[si]) },
               `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
           });
-          text(left + (ri + 0.5) * groupW, height - 28, r.label, "middle");
+          // Alleen elke zoveelste naam als ze elkaar anders raken (ongeveer 0,6 × de lettergrootte per teken).
+          const every = Math.max(1, Math.ceil((longest * (narrow ? 8.4 : 7.2) + 6) / groupW));
+          if (ri % every === 0) text(left + (ri + 0.5) * groupW, height - 28, r.label, "middle");
         }
       });
     }

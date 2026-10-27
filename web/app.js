@@ -70,8 +70,9 @@
       };
       UI.append(view, [backupHint(runs.length), h("div", { class: "toolbar" }, compare, status)]);
       view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Besproken accu", "Netto voordeel", ""], runs.map(run => {
-        // Uit een offerte: de accu uit die offerte, anders de aanbevolen accu.
-        const quote = Results.quoted(run), rec = quote ?? run.result.candidates.find(c => c.key === run.result.recommended_key);
+        // Dezelfde accu als in Vergelijken: uit de offerte, anders de aanbevolen, anders die het dichtst in de buurt komt.
+        const quote = Results.quoted(run), rec = quote ?? Results.judged(run);
+        const closest = !quote && rec && rec.key !== run.result.recommended_key;
         const when = UI.dateTime(run.created_at_unix_s), p = run.input.request.parameters;
         // Berekeningen hebben vaak dezelfde titel; deze kenmerken maken ze uit elkaar te houden.
         const options = run.result.candidates.filter(c => c.key !== "no_battery").length;
@@ -87,8 +88,9 @@
             Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null, h("small", { class: "help run-facts" }, facts)), when,
           Data.objectives[run.input.request.parameters.objective],
             quote ? h("span", {}, badge("Je offerte", "success"), " ", quote.name)
-              : rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
-          money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost",
+              : rec ? h("span", {}, rec.name, closest ? h("small", { class: "help run-facts" }, "Geen accu komt beter uit; dit komt het dichtst in de buurt") : null)
+              : "Geen accu doorgerekend",
+          rec ? money(rec.npv_eur, { decimals: 0 }) : "—", h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost",
             { "aria-label": `Pas ${run.title} van ${when} aan` }),
             button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title} van ${when}` }))];
       }), { caption: "Laatste 100 berekeningen", stack: true }));

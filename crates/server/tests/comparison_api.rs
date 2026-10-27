@@ -359,38 +359,40 @@ async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
             "--test-boundary\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{body}\r\n"
         ),
     };
-    let body = [
-        part("options", None, r#"{"timezone":"UTC"}"#),
-        part(
-            "file",
-            Some("omvormer.csv"),
-            "time,production\n2026-06-01T10:00:00Z,2\n2026-06-01T11:00:00Z,1\n",
-        ),
-        part(
-            "meter_options",
-            None,
-            r#"{"timezone":"UTC","period":"hour"}"#,
-        ),
-        part(
-            "meter_file",
-            Some("p1.csv"),
-            "time,import,export\n2026-06-01T10:00:00Z,0,1.5\n2026-06-01T11:00:00Z,0.5,0\n",
-        ),
-    ]
-    .concat()
-        + "--test-boundary--\r\n";
-    let response = app
-        .oneshot(
+    let body = |meter_name: &str| {
+        [
+            part("options", None, r#"{"timezone":"UTC"}"#),
+            part(
+                "file",
+                Some("omvormer.csv"),
+                "time,production\n2026-06-01T10:00:00Z,2\n2026-06-01T11:00:00Z,1\n",
+            ),
+            part(
+                "meter_options",
+                None,
+                r#"{"timezone":"UTC","period":"hour"}"#,
+            ),
+            part(
+                "meter_file",
+                Some(meter_name),
+                "time,import,export\n2026-06-01T10:00:00Z,0,1.5\n2026-06-01T11:00:00Z,0.5,0\n",
+            ),
+        ]
+        .concat()
+            + "--test-boundary--\r\n"
+    };
+    let send = |meter_name: &str| {
+        app.clone().oneshot(
             Request::post("/api/v1/solar/imports")
                 .header(
                     "content-type",
                     "multipart/form-data; boundary=test-boundary",
                 )
-                .body(Body::from(body))
+                .body(Body::from(body(meter_name)))
                 .unwrap(),
         )
-        .await
-        .unwrap();
+    };
+    let response = send("p1.csv").await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let saved = response_json(response).await;
     // (2 + 0 − 1,5) + (1 + 0,5 − 0) = 2 kWh bruto verbruik.
@@ -399,6 +401,14 @@ async fn inverter_and_meter_files_are_saved_as_one_gross_profile() {
     assert_eq!(imports[0].filename, "omvormer.csv + p1.csv");
     assert_eq!(imports[0].options["combined_period"], "hour");
     assert_eq!(imports[0].options["meter"]["import_column"], 1);
+    assert!(imports[0].options.get("meter_filename").is_none());
+    // Hetzelfde meterbestand onder een andere naam is hetzelfde profiel.
+    let again = send("p1 (1).csv").await.unwrap();
+    assert_eq!(again.status(), StatusCode::OK);
+    let again = response_json(again).await;
+    assert_eq!(again["id"], saved["id"]);
+    assert_eq!(again["filename"], "omvormer.csv + p1.csv");
+    assert_eq!(catalog.list_solar().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

@@ -425,7 +425,6 @@ pub async fn save_solar(
         hasher.update(Sha256::digest(&meter.bytes));
         options["meter"] =
             serde_json::to_value(&meter.options).map_err(|e| bad_request(e.to_string()))?;
-        options["meter_filename"] = json!(meter.filename);
         let seconds = intervals
             .first()
             .map_or(0, |i| i.end_unix_s - i.start_unix_s);
@@ -447,18 +446,8 @@ pub async fn save_solar(
     };
     let options_json = serde_json::to_string(&options).map_err(|e| bad_request(e.to_string()))?;
     let summary_json = serde_json::to_string(&summary).map_err(|e| bad_request(e.to_string()))?;
-    if let Some((id, filename)) = catalog
-        .find_solar(&sha256, &options_json)
-        .await
-        .map_err(database_error)?
-    {
-        return Ok((
-            StatusCode::OK,
-            Json(json!({"id":id, "existing":true, "filename":filename, "summary":summary})),
-        ));
-    }
-    let id = catalog
-        .save_solar(
+    let stored = catalog
+        .import_solar(
             &filename,
             &sha256,
             &options_json,
@@ -468,9 +457,16 @@ pub async fn save_solar(
         )
         .await
         .map_err(database_error)?;
+    let status = if stored.existing {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
     Ok((
-        StatusCode::CREATED,
-        Json(json!({"id":id, "existing":false, "filename":filename, "summary":summary})),
+        status,
+        Json(
+            json!({"id":stored.id, "existing":stored.existing, "filename":stored.filename, "summary":summary}),
+        ),
     ))
 }
 

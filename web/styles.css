@@ -80,6 +80,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .9rem; }
 .field > label { font-weight: 600; font-size: .9rem; }
 input, select, textarea { font: inherit; width: 100%; min-width: 0; padding: var(--control); border: 1px solid var(--control-line); border-radius: calc(var(--radius) - .15rem); background: var(--surface); color: var(--ink); }
+/* Vinkjes en keuzerondjes houden hun eigen maat, ook buiten .check (bijvoorbeeld in de catalogus). */
+input:is([type="checkbox"], [type="radio"]) { width: 1.15rem; height: 1.15rem; padding: 0; accent-color: var(--accent); }
 input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
 /* Een veld dat nu niet telt (bijvoorbeeld het bedrag van een inbegrepen post) ziet er ook zo uit. */
 input:disabled, select:disabled, textarea:disabled { background: var(--soft); color: var(--muted); border-style: dashed; cursor: not-allowed; }
@@ -220,6 +222,10 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .option-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: var(--gap); }
 .option { margin: 0; display: flex; flex-direction: column; gap: .35rem; border-top-width: 4px; }
 .option .badge { align-self: flex-start; }
+/* Geen accu is de vergelijkingsbasis: een smalle balk over de volle breedte, geen kaart met lege ruimte. */
+.option.baseline { grid-column: 1 / -1; flex-flow: row wrap; align-items: baseline; gap: .25rem 1rem; padding-block: .6rem; }
+.option.baseline h3, .option.baseline .help { margin: 0; }
+.option.baseline .help { flex: 1 1 24rem; }
 .product-group { margin-top: var(--gap); }
 .product-group > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--gap); }
 .verdict { background: var(--accent-soft); border-color: transparent; }

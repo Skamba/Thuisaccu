@@ -535,8 +535,11 @@ window.Scenario = (() => {
           ? parse(option.costs[c.key].amount, { money: true }) ?? 0 : 0), 0);
         summary.textContent = ` · ${assessed} van ${members.length} beoordeeld${sum ? ` · ${eur(sum)}${key === "annual" ? " per jaar" : ""}` : ""}`;
       }
+      // Zoals Data.upfrontCosts: teruggaven maken de startinvestering nooit negatief.
       total.textContent = `Startkosten volgens deze posten: ${eur(gross)}` +
-        (credit ? ` vóór teruggaven, ${eur(gross - credit)} erna` : "") + ` · jaarlijks ${eur(yearly)}` +
+        (credit ? ` vóór teruggaven, ${eur(Math.max(0, gross - credit))} erna` +
+          (credit > gross ? ` (de teruggaven zijn hoger dan de kosten; er wordt met ${eur(0)} gerekend)` : "") : "") +
+        ` · jaarlijks ${eur(yearly)}` +
         (invalid ? ` · ${invalid === 1 ? "één bedrag is" : `${invalid} bedragen zijn`} nog geen geldig getal` : "") +
         (open ? " · onbekende posten tellen nog niet mee" : "");
     };
@@ -766,13 +769,17 @@ window.Scenario = (() => {
       UI.append(host, [table(["Onderdeel", "Invoer"], [
         ["Naam en adres", `${state.title} · ${state.address || "geen adres"}`],
           ["Doel", Data.objectives[state.objective]],
-        ["Stroomprijs / terugleververgoeding",
-          [state.tariff.import, state.tariff.export].map(v => { const x = UI.parse(v);
-            return x == null ? "?" : UI.money(x, { decimals: 4 }); }).join(" / ") + " per kWh"],
+        ["Stroomprijs / terugleververgoeding / terugleverkosten",
+          [state.tariff.import, state.tariff.export, state.tariff.fee].map(v => { const x = UI.parse(v);
+            return x == null ? "?" : UI.money(x, { decimals: 4 }); }).join(" / ") + " per kWh" +
+            (request.parameters.tariff.export_fee_bands.length ? ", plus staffels" : "")],
           ["Looptijd", `${state.params.horizon_years} jaar vanaf ${state.params.start_year}`],
         ["Accu-opties", state.options.length <= 3 ? state.options.map(o => o.name).join(", ") || "Geen"
           : h("details", { class: "fold" }, h("summary", {}, `${state.options.length} opties`),
             h("ul", { class: "compact" }, state.options.map(o => h("li", {}, o.name))))],
+        // De garantie verandert de rangorde niet, maar wel de waarschuwing in de uitkomst; daarom ook hier.
+        ["Garantie", state.options.map(o => `${o.name}: ${String(o.warranty ?? "").trim() ? `${o.warranty} jaar`
+          : "niet ingevuld"}`).join("; ") || "—"],
         ...(request.quote_basis ? [["Uit de offerte", request.quote_basis.changes.map(Data.quoteChange).join("; ")]] : [])]),
         count ? reviewProblems(problems, optionProblems, costCatalog) : h("p", { class: "derived" }, "De invoer is compleet."),
         h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)),

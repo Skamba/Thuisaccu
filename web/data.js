@@ -157,7 +157,7 @@ window.Data = (() => {
     discount_pct: "Hoeveel minder geld in de toekomst waard is dan geld nu. Bij 4% telt een euro over tien jaar als ongeveer 68 cent van nu. Dit is een gewone rente, met inflatie erin; laat prijzen en kosten daarom ook meestijgen.",
     annual_cost_escalation_pct: "Hoeveel jaarlijkse kosten zoals een abonnement, onderhoud of verzekering elk jaar duurder worden.",
     annual_pv_loss_pct: "Hoeveel minder je panelen elk jaar opwekken door veroudering.",
-    annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je bij Zelf doorrekenen apart in.",
+    annual_load_growth_pct: "Hoeveel je verbruik elk jaar groeit of krimpt. Een warmtepomp of auto vanaf een later jaar vul je apart in bij ‘Verandering in verbruik’, in de eerste stap van Zelf doorrekenen.",
     annual_price_change_pct: "Hoeveel stroomprijs, terugleververgoeding en terugleverkosten elk jaar veranderen; vaste contractkosten blijven gelijk. Standaard 2%, net als de jaarkosten: de energiebelasting wordt in de wet elk jaar voor inflatie gecorrigeerd. Met 0% wordt stroom elk jaar goedkoper ten opzichte van de rest.",
     price_uncertainty_pct: "Hoeveel de tarieven afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid.",
     cost_uncertainty_pct: "Hoeveel de kosten afwijken in de gunstige en ongunstige variant op het tabblad Gevoeligheid."

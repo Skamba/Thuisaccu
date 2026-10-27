@@ -50,6 +50,19 @@ pub struct RunRequest {
     /// technische waarden uit de offerte kwamen. Alleen ter vergelijking; rekent niet mee.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_basis: Option<QuoteBasis>,
+    /// Het bereik van bruikbare capaciteit dat de keuzehulp bij het doel liet zien. Alleen
+    /// ter uitleg bij het advies; rekent niet mee en ontbreekt in oudere runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sizing_range: Option<SizingRange>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SizingRange {
+    /// Omschrijving, bijvoorbeeld ‘het zinvolle bereik voor veel opbrengst per kWh accu’.
+    pub label: String,
+    pub low_kwh: f64,
+    pub high_kwh: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,6 +271,19 @@ fn validate_request(request: &RunRequest) -> Result<(), ApiError> {
     {
         return Err(invalid(
             "Ongeldige coördinaten voor de Nederlandse adresondersteuning.",
+        ));
+    }
+    if request.sizing_range.as_ref().is_some_and(|r| {
+        r.label.trim().is_empty()
+            || r.label.chars().count() > 200
+            || !r.low_kwh.is_finite()
+            || !r.high_kwh.is_finite()
+            || r.low_kwh < 0.0
+            || r.low_kwh > r.high_kwh
+            || r.high_kwh > 1000.0
+    }) {
+        return Err(invalid(
+            "Ongeldig capaciteitsbereik: een omschrijving en 0 ≤ ondergrens ≤ bovengrens ≤ 1000 kWh.",
         ));
     }
     validate_quote_basis(request)

@@ -724,3 +724,67 @@ async fn deleting_a_profile_removes_intervals_and_runs_and_leaves_other_profiles
     assert!(!catalog.delete_analysis(run).await.unwrap());
     assert_eq!(catalog.list_solar().await.unwrap()[0].analysis_runs, 0);
 }
+
+#[tokio::test]
+async fn a_profile_saved_with_a_name_in_its_settings_is_found_again_without_that_name() {
+    use thuisaccu_storage::solar::{SolarInterval, StoredSolar};
+    let catalog = Catalog::in_memory().await.unwrap();
+    let interval = SolarInterval {
+        start_unix_s: 0,
+        end_unix_s: 3600,
+        production_wh: 100.0,
+        consumption_wh: Some(200.0),
+        steady_consumption_wh: None,
+        measured_import_wh: None,
+        measured_export_wh: None,
+    };
+    let sha = "c".repeat(64);
+    // Zo bewaarden eerdere versies een eigen naam en de naam van het meterbestand.
+    let legacy = r#"{"timezone":"UTC","source_filename":"oud.csv","meter_filename":"p1.csv","meter":{"period":"hour"}}"#;
+    let first = catalog
+        .import_solar(
+            "Ons huis",
+            &sha,
+            legacy,
+            "{}",
+            std::slice::from_ref(&interval),
+            0,
+        )
+        .await
+        .unwrap();
+    assert!(!first.existing);
+    let current = r#"{"timezone":"UTC","meter":{"period":"hour"}}"#;
+    let again = catalog
+        .import_solar(
+            "Andere naam",
+            &sha,
+            current,
+            "{}",
+            std::slice::from_ref(&interval),
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        again,
+        StoredSolar {
+            id: first.id,
+            existing: true,
+            filename: "Ons huis".into()
+        }
+    );
+    // Andere instellingen zijn wel een ander profiel.
+    let other = catalog
+        .import_solar(
+            "Ons huis",
+            &sha,
+            r#"{"timezone":"Europe/Amsterdam","meter":{"period":"hour"}}"#,
+            "{}",
+            &[interval],
+            2,
+        )
+        .await
+        .unwrap();
+    assert!(!other.existing);
+    assert_eq!(catalog.list_solar().await.unwrap().len(), 2);
+}

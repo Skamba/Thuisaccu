@@ -21,9 +21,11 @@ window.Results = (() => {
     ["cost_uncertainty_pct", "Onzekerheid kosten (± %)", 0]
   ];
   const TIMING = { upfront: "Start", annual: "Per jaar", event: "Later" };
-  // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs.
-  // Naar beneden afgerond op € 10: de grens is een schatting, geen bedrag op de euro.
-  const roundedLimit = value => eur0(Math.floor(value / 10) * 10);
+  // Hoogste netto startinvestering met een NPV van nul (rekenkern); ontbreekt in oudere runs. Naar beneden afgerond
+  // op € 10: de grens is een schatting, geen bedrag op de euro. Verschillen met de grens rekenen met dit afgeronde
+  // getal, zodat de bedragen in een zin optellen.
+  const floorLimit = value => Math.floor(value / 10) * 10;
+  const roundedLimit = value => eur0(floorLimit(value));
   const limitText = value => value > 0 ? `ongeveer ${roundedLimit(value)}` : "niets: zelfs gratis niet";
   // Wat teruglevering in de variant netto doet: met terugleverkosten en geen vergoeding kost ze geld.
   const variantEffect = v => {
@@ -212,15 +214,51 @@ window.Results = (() => {
     if (!finite(limit)) return `Lonend tot is niet berekend; vergelijk het netto voordeel met de andere opties.`;
     if (limit <= 0) return "Zelfs gratis niet lonend binnen deze aannames: de jaarkosten, verliezen en het sluimerverbruik wegen " +
       "zwaarder dan de besparing.";
+    const under = floorLimit(limit) - start;
     return start <= limit
-      ? `Lonend: ${startText} liggen ${eur0(limit - start)} onder de grens van ${roundedLimit(limit)}.`
-      : `Niet lonend: ${startText} liggen ${eur0(start - limit)} boven de grens van ${roundedLimit(limit)}. ` +
+      ? `Lonend: ${startText} liggen ${Math.round(under) >= 1 ? `${eur0(under)} onder` : "rond"} de grens van ${roundedLimit(limit)}.`
+      : `Niet lonend: ${startText} liggen ${eur0(start - floorLimit(limit))} boven de grens van ${roundedLimit(limit)}. ` +
         "Onder die grens wordt deze offerte lonend.";
+  }
+
+  // De kerngetallen van een accu, in het korte antwoord (met toelichting) en op elke kaart in dezelfde volgorde. Het
+  // korte antwoord noemt het netto voordeel alleen als dat het doel is; de kaart altijd, op dezelfde plek of na de besparing.
+  function figures(run, c, lead = false) {
+    const limit = c.break_even_investment_eur, npvFirst = run.input.request.parameters.objective === "net_present_value";
+    const npv = ["Netto voordeel (NPV)", eur0(c.npv_eur), lead ? "over de looptijd, in geld van nu" : null];
+    return [
+      npvFirst ? npv : null,
+      finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet", lead ? "hoogste startinvestering die nog uitkomt" : null] : null,
+      ["Startinvestering nu", eur0(c.initial_investment_eur)],
+      ["Besparing in jaar 1", c.years?.[0] ? eur0(c.years[0].energy_saving_eur) : "—"],
+      npvFirst || lead ? null : npv,
+      ["Terugverdiend na", c.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(c.payback_years)]
+    ].filter(Boolean);
+  }
+
+  // Valt de aanbevolen accu binnen het capaciteitsbereik dat de keuzehulp bij het doel liet zien? Dat bereik gaat over
+  // energie, het advies over geld; een accu erbuiten kan dus toch het beste uitkomen. Null zonder bereik (oudere runs,
+  // Zelf doorrekenen).
+  function sizeNote(run, c) {
+    const range = run.input.request.sizing_range;
+    const capacity = run.input.request.candidates.find(o => o.key === c?.key)?.battery.usable_capacity_kwh;
+    if (!range || !finite(capacity)) return null;
+    const size = v => `${n(v, v % 1 ? 1 : 0)} kWh`;
+    const where = `${range.label} van ${n(range.low_kwh, range.low_kwh % 1 ? 1 : 0)} tot ${size(range.high_kwh)}`;
+    const own = `Deze accu (${size(capacity)} bruikbaar)`;
+    if (capacity >= range.low_kwh && capacity <= range.high_kwh) return `${own} valt binnen ${where}.`;
+    // Alleen bij het netto voordeel als doel volgt uit de rangorde waarom; bij een ander doel telt iets anders.
+    const npv = run.input.request.parameters.objective === "net_present_value";
+    return capacity > range.high_kwh
+      ? `${own} is groter dan ${where}. Hij komt met dit doel toch het beste uit` + (npv ? ", bijvoorbeeld omdat hij per kWh " +
+        "goedkoop is of meer vermogen heeft" : "") + "; de extra capaciteit wordt wel minder vaak helemaal gebruikt."
+      : `${own} is kleiner dan ${where}. Hij komt met dit doel toch het beste uit` + (npv ? ": de grotere accu’s in deze " +
+        "berekening kosten meer dan ze extra opleveren." : ".");
   }
 
   function verdict(run, kinds) {
     const result = run.result, quote = quoted(run), option = quote ?? judged(run), rec = option?.key === result.recommended_key;
-    const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
+    const plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
     const isPlug = option && kinds.get(option.key) === "plug", isCircuit = option && kinds.get(option.key) === "circuit";
     // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
     // installateur die hem vast wil aansluiten.
@@ -235,7 +273,6 @@ window.Results = (() => {
     const other = !quote || rec ? null : result.recommended_key === "no_battery" || !best || best.key === quote.key
       ? "Geen accu komt in deze berekening het beste uit."
       : `Het beste in deze berekening komt ${best.name} uit: ${netText(best.npv_eur)} in geld van nu.`;
-    const npvFirst = option && run.input.request.parameters.objective === "net_present_value";
     const stress = option && warrantyFlip(run, option);
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
       h("h2", {}, quote ? option.name : lead ? option.name : result.recommendation),
@@ -243,14 +280,9 @@ window.Results = (() => {
       lead ? h("p", { class: "verdict-lead" }, lead[0].toUpperCase() + lead.slice(1)) : null,
       option ? [lead || quote ? null : h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
         : result.recommendation.includes(option.name) ? "Voor deze accu:" : `Voor ${option.name}:`),
-        stats([
-          npvFirst ? ["Netto voordeel (NPV)", eur0(option.npv_eur), "over de looptijd, in geld van nu"] : null,
-          finite(limit) ? ["Lonend tot", limit > 0 ? roundedLimit(limit) : "Zelfs gratis niet", "hoogste startinvestering die nog uitkomt"] : null,
-          ["Startinvestering nu", eur0(option.initial_investment_eur)],
-          ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
-          ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
-        ].filter(Boolean)), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
+        stats(figures(run, option, true)), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
           : h("p", { class: "verdict-for" }, other)) : closeCall(run, option)] : null,
+      rec && !quote && sizeNote(run, option) ? h("p", { class: "verdict-for" }, sizeNote(run, option)) : null,
       stress ? h("p", { class: "verdict-warn" }, h("strong", {}, "Let op de garantie. "), stress) : null,
       isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
         "eigen groep aansluit, geen vaste thuisaccu. "),
@@ -275,7 +307,7 @@ window.Results = (() => {
       `${eur0(-w.result.npv_eur)} in geld van nu in plaats van dat hij iets oplevert. ` +
       (!finite(limit) ? "" : limit <= 0 ? "Dan is hij zelfs gratis niet lonend."
         : `Dan is hij lonend tot een startinvestering van ${roundedLimit(limit)}` +
-          (finite(start) && start > limit ? `; deze ligt ${eur0(start - limit)} hoger.` : ".")) +
+          (finite(start) && start > limit ? `, ${eur0(start - floorLimit(limit))} minder dan de ${eur0(start)} waarmee nu gerekend is.` : ".")) +
       " Vraag naar een langere garantie of reken met een lagere prijs.";
   }
 
@@ -560,11 +592,7 @@ window.Results = (() => {
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
       c.quoted ? badge("Je offerte", "success") : null,
       c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
-      stats([
-        finite(c.break_even_investment_eur) ? ["Lonend tot", c.break_even_investment_eur > 0 ? roundedLimit(c.break_even_investment_eur) : "Zelfs gratis niet"] : null,
-        ["Startinvestering nu", eur0(c.initial_investment_eur)], ["Netto voordeel (NPV)", eur0(c.npv_eur)],
-        ["Terugverdiend na", years(c.payback_years)]
-      ].filter(Boolean)), sibling(c),
+      stats(figures(run, c)), sibling(c),
       h("details", { class: "fold more-figures" }, h("summary", {}, "Meer cijfers"), stats([
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
         ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
@@ -630,17 +658,18 @@ window.Results = (() => {
       const c = all.find(o => o.key === pick.value);
       // Zonder accu is de rekening met accu die zonder accu, en zijn er geen extra kosten of financiering.
       const none = c.key === "no_battery", list = none ? horizon : c.years;
+      // Wat je per jaar overhoudt direct na het jaar, zodat het op een telefoon zonder schuiven in beeld staat.
       const columns = [
         ["Jaar", y => String(y.calendar_year)],
-        ["Bruto verbruik", y => kwh(y.energy.consumption_kwh)],
+        ["Netto voordeel", y => money(none ? 0 : y.net_cashflow_eur)],
+        ["Cumulatief", y => money(none ? 0 : y.cumulative_eur)],
         ["Rekening zonder accu", y => money(y.baseline_bill_eur)],
         ["Rekening met accu", y => money(none ? y.baseline_bill_eur : y.battery_bill_eur)],
         ["Extra kosten", y => money(y.extra_costs_eur), "extra_costs_eur"],
         ["Leningrente", y => money(y.financing_interest_eur), "financing_interest_eur"],
         // Vóór modelversie 5 stond de hele investering op tijdstip nul en was er geen aflossing per jaar.
         ["Aflossing", y => finite(y.financing_principal_eur) ? money(y.financing_principal_eur) : "—", "financing_principal_eur"],
-        ["Netto voordeel", y => money(none ? 0 : y.net_cashflow_eur)],
-        ["Cumulatief", y => money(none ? 0 : y.cumulative_eur)],
+        ["Bruto verbruik", y => kwh(y.energy.consumption_kwh)],
         ["Zelfvoorziening", y => none ? "—" : pct(y.energy.self_sufficiency_pct)]
       ];
       // Kosten- en financieringskolommen die in elk jaar precies € 0 zijn, worden één zin onder de tabel;
@@ -1296,5 +1325,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, outdated, recalculation, ranked, trimmed, trimmedText };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, ranked, trimmed, trimmedText };
 })();

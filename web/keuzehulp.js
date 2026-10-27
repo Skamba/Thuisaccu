@@ -324,7 +324,8 @@
   // Som van de startposten zoals de rekenkern die telt; teruggaven verlagen de kosten.
   const startCosts = lines => Data.upfrontCosts(lines);
 
-  function buildRequest(importId, chosen, check) {
+  // `range`: het bereik van bruikbare capaciteit uit stap 1 van deze pagina, of null; het rekent niet mee.
+  function buildRequest(importId, chosen, check, range = null) {
     const d = Data.defaults(), tariffImport = parse(answers.tariffImport), feed = feedIn();
     if (tariffImport == null) throw new Error("Vul in stap 3 je stroomprijs in, of kies ‘Gebruik de indicatie’.");
     if (feed.export == null || feed.fee == null) {
@@ -365,7 +366,10 @@
         export_variant: variant, load_variation: "households"
       },
       candidates, costs_confirmed: true, technical_assumptions_confirmed: true, consumption_is_gross: true,
-        production_is_ac: true
+        production_is_ac: true,
+      ...(range ? { sizing_range: { label: SIZING[answers.sizing]
+        ? `het zinvolle bereik voor ‘${SIZING[answers.sizing].label.replace(/^./, c => c.toLowerCase())}’` : "je eigen bereik",
+      low_kwh: range.low, high_kwh: range.high } } : {})
     };
   }
 
@@ -592,7 +596,7 @@
       if (!UI.validate(run)) return;
       if (!included.length) throw new Error("Er is geen accu om door te rekenen; reken een offerte door met Zelf doorrekenen.");
       const response = await flow.busy(`Bezig met rekenen aan ${included.length} ${included.length === 1 ? "accu" : "accu’s"}…`,
-        () => UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included, check) }));
+        () => UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included, check, range) }));
       flow.arrive(`#/berekeningen/${response.id}`, "Je advies is klaar.");
     }));
     // De knop staat in de vaste balk onderaan; de bevestigingen staan er vlak boven.

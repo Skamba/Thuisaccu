@@ -905,7 +905,11 @@ pub fn normalize(
             "Geen meetperioden; voor cumulatieve standen zijn minstens twee metingen nodig.".into(),
         );
     }
-    let mut warnings = vec!["Opwek alleen bepaalt geen geschikte accucapaciteit of terugverdientijd. Combineer met gelijktijdig verbruik, tarieven en systeemgrenzen.".into()];
+    // Alleen zonder verbruik in het bestand: met verbruik is het profiel wel bruikbaar voor de scenariotool.
+    let mut warnings: Vec<String> = Vec::new();
+    if intervals.iter().all(|i| i.consumption_wh.is_none()) {
+        warnings.push("Opwek alleen bepaalt geen geschikte accucapaciteit of terugverdientijd. Combineer met gelijktijdig verbruik, tarieven en systeemgrenzen.".into());
+    }
     if !repeated.is_empty() {
         warnings.push(format!(
             "{} lokale tijdstip(pen) staan twee keer in het bestand door de overgang naar wintertijd; {}",

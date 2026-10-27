@@ -250,6 +250,49 @@ async fn the_connection_is_an_optional_label_that_is_stored_and_does_not_change_
 }
 
 #[tokio::test]
+async fn the_sizing_range_is_an_optional_explanation_that_is_stored_and_strictly_validated() {
+    let catalog = Catalog::in_memory().await.unwrap();
+    let app = thuisaccu_server::app(catalog.clone());
+    let id = legacy_demo_year(&catalog).await;
+    let mut request = input(id);
+    request["sizing_range"] =
+        json!({"label": "het zinvolle bereik", "low_kwh": 3.0, "high_kwh": 3.5});
+    let response = app
+        .clone()
+        .oneshot(post("/api/v1/analysis/runs", request.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let saved = catalog.list_analyses().await.unwrap();
+    assert_eq!(saved[0].input["request"]["sizing_range"]["high_kwh"], 3.5);
+    for range in [
+        json!({"label": " ", "low_kwh": 3.0, "high_kwh": 3.5}),
+        json!({"label": "bereik", "low_kwh": 4.0, "high_kwh": 3.5}),
+        json!({"label": "bereik", "low_kwh": -1.0, "high_kwh": 3.5}),
+    ] {
+        request["sizing_range"] = range;
+        assert_eq!(
+            app.clone()
+                .oneshot(post("/api/v1/analysis/runs", request.clone()))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    request["sizing_range"] =
+        json!({"label": "bereik", "low_kwh": 3.0, "high_kwh": 3.5, "goal": "max"});
+    assert_eq!(
+        app.oneshot(post("/api/v1/analysis/runs", request))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(catalog.list_analyses().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn cost_catalog_covers_every_cost_category() {
     let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
     let response = app

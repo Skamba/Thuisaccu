@@ -27,6 +27,24 @@ fn semicolon_decimal_comma_and_bom_preserve_energy_and_consumption() {
 }
 
 #[test]
+fn the_production_only_caveat_is_given_only_without_consumption() {
+    let caveat = |summary: &thuisaccu_storage::solar::SolarSummary| {
+        summary
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("Opwek alleen"))
+    };
+    let text =
+        "time,production,consumption\n2026-06-01T10:00:00Z,0.5,0.2\n2026-06-01T11:00:00Z,1.5,0.6\n";
+    let with = ImportOptions {
+        consumption_column: Some(2),
+        ..Default::default()
+    };
+    assert!(!caveat(&analyze(text, &with).unwrap()));
+    assert!(caveat(&analyze(text, &ImportOptions::default()).unwrap()));
+}
+
+#[test]
 fn average_power_uses_interval_duration_and_end_timestamps() {
     let options = ImportOptions {
         unit: "w".into(),

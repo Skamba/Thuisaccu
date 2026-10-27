@@ -1,6 +1,7 @@
 "use strict";
 
-// Eenheidstests voor web/data.js zonder browser: ui.js en data.js draaien in een eigen context.
+// Eenheidstests voor web/data.js en de zinnen uit web/results.js zonder browser: ui.js, data.js en results.js draaien
+// in een eigen context.
 // Alleen synthetische, hier opgebouwde gegevens.
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -11,10 +12,10 @@ const vm = require("node:vm");
 const context = { console, Intl, Map, Set };
 context.window = context;
 vm.createContext(context);
-for (const file of ["ui.js", "data.js"]) {
+for (const file of ["ui.js", "data.js", "results.js"]) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "web", file), "utf8"), context, { filename: file });
 }
-const { Data } = context;
+const { Data, Results } = context;
 
 const config = { id: 1, name: "FICTIEF 5 kWh", manufacturer_name: "Fictief", product_name: "Testaccu" };
 const UNITS = { _wh: "Wh", _w: "W", _pct: "%", _va: "VA" };
@@ -363,7 +364,7 @@ test("grafieknamen worden in het midden ingekort: aansluiting en capaciteit blij
 });
 
 test("importcontrole: een niet door te rekenen profiel krijgt uitleg in gewone taal", () => {
-  const { Data } = context;
+  const { Data, Results } = context;
   const full = { consumption_kwh: 3500, gaps: 0, coverage_hours: 8760 };
   assert.equal(Data.unusableText(full), null);
   assert.equal(Data.unusableText({ ...full, coverage_hours: 8784 }), null);
@@ -378,4 +379,65 @@ test("importcontrole: een niet door te rekenen profiel krijgt uitleg in gewone t
   assert.ok(Data.implausible({ ...full, production_kwh: 150000, coverage_hours: 72 }));
   // Twee jaar van 90.000 kWh is per jaar nog binnen de grens.
   assert.ok(!Data.implausible({ ...full, production_kwh: 0, consumption_kwh: 180000, coverage_hours: 2 * 8760 }));
+});
+
+// Een synthetische run met één accu; `stress` is de uitkomst als de accu direct na de garantie stopt.
+const quoteRun = (option, { stress = null, price = null } = {}) => ({
+  input: { request: {
+    parameters: { objective: "net_present_value", horizon_years: 15 },
+    quote_basis: { price },
+    candidates: [{ key: "a", battery: { operating_life_years: 15, annual_capacity_loss_pct: 2 },
+      warranty_stress: stress ? { operating_life_years: 10, annual_capacity_loss_pct: 3, source: "test" } : null }]
+  } },
+  result: { candidates: [{ key: "a", name: "FICTIEF A", ...option, warranty_stress: stress }] }
+});
+const euros = text => [...text.matchAll(/€\s?([\d.]+)/g)].map(m => Number(m[1].replace(/\./g, "")));
+
+test("de garantiezin telt op: verschil plus afgeronde grens is de startinvestering", () => {
+  const c = { key: "a", name: "FICTIEF A", npv_eur: 300, initial_investment_eur: 4000 };
+  assert.equal(Results.warrantyFlip(quoteRun(c), c), null);
+  const lucky = { npv_eur: 50, break_even_investment_eur: 4050 };
+  const luckyRun = quoteRun(c, { stress: lucky });
+  assert.equal(Results.warrantyFlip(luckyRun, luckyRun.result.candidates[0]), null);
+  const stress = { npv_eur: -620.4, break_even_investment_eur: 3376.9 };
+  const run = quoteRun(c, { stress });
+  const text = Results.warrantyFlip(run, run.result.candidates[0]);
+  assert.match(text, /garantie van 10 jaar/);
+  const [cost, limit, diff, start] = euros(text);
+  assert.equal(cost, 620);
+  assert.equal(limit, 3370);
+  assert.equal(diff + limit, start);
+  assert.equal(start, 4000);
+});
+
+test("de offertezin telt op en zegt ‘rond de grens’ tussen de afgeronde en de echte grens", () => {
+  const under = { key: "a", npv_eur: 120, initial_investment_eur: 3500, break_even_investment_eur: 3989 };
+  const [start, gap, limit] = euros(Results.quoteLead(quoteRun(under), under));
+  assert.equal(start + gap, limit);
+  const over = { key: "a", npv_eur: -80, initial_investment_eur: 4213, break_even_investment_eur: 4005 };
+  const text = Results.quoteLead(quoteRun(over), over);
+  assert.match(text, /^Niet lonend/);
+  const [start2, gap2, limit2] = euros(text);
+  assert.equal(start2 - gap2, limit2);
+  // De startkosten liggen tussen de afgeronde en de echte grens.
+  const close = { key: "a", npv_eur: 1, initial_investment_eur: 3984, break_even_investment_eur: 3989 };
+  assert.match(Results.quoteLead(quoteRun(close), close), /liggen rond de grens van €\s3\.980\./);
+  const free = { key: "a", npv_eur: -900, initial_investment_eur: 3000, break_even_investment_eur: -10 };
+  assert.match(Results.quoteLead(quoteRun(free), free), /^Zelfs gratis niet lonend/);
+});
+
+test("het advies zegt of de accu binnen het capaciteitsbereik van de keuzehulp valt", () => {
+  const run = capacity => ({ input: { request: {
+    parameters: { objective: "net_present_value" },
+    sizing_range: { label: "het zinvolle bereik", low_kwh: 3, high_kwh: 3.5 },
+    candidates: [{ key: "a", battery: { usable_capacity_kwh: capacity } }] } } });
+  assert.match(Results.sizeNote(run(3.2), { key: "a" }), /3,2 kWh bruikbaar\) valt binnen het zinvolle bereik van 3 tot 3,5 kWh\.$/);
+  assert.match(Results.sizeNote(run(5.2), { key: "a" }), /is groter dan .+ per kWh goedkoop/);
+  assert.match(Results.sizeNote(run(2), { key: "a" }), /is kleiner dan .+ kosten meer dan ze extra opleveren\.$/);
+  const payback = run(2);
+  payback.input.request.parameters.objective = "payback";
+  assert.match(Results.sizeNote(payback, { key: "a" }), /toch het beste uit\.$/);
+  const old = run(3.2);
+  delete old.input.request.sizing_range;
+  assert.equal(Results.sizeNote(old, { key: "a" }), null);
 });

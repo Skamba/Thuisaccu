@@ -277,6 +277,13 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
       .map(c => run.result.candidates.find(r => r.key === c.key).warranty_stress?.break_even_investment_eur != null);
   }, Number(runHash.match(/\d+/)[0]));
   assert.ok(stressed.length > 0 && stressed.every(Boolean));
+  // Het capaciteitsbereik uit stap 1 gaat met de run mee; wint een accu, dan zegt het advies of hij erbinnen valt.
+  const sizing = await page.evaluate(async id => (await Data.run(id)).input.request.sizing_range, Number(runHash.match(/\d+/)[0]));
+  // Hierboven is het bereik met de schuifjes op het volle bereik gezet.
+  assert.equal(sizing.label, "je eigen bereik");
+  assert.ok(sizing.low_kwh === 0 && sizing.high_kwh > 0);
+  if (await page.locator(".verdict .stats").count())
+    assert.match(await page.textContent(".verdict"), /bruikbaar\) valt binnen je eigen bereik van 0 tot [\d,]+ kWh\./);
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
@@ -828,7 +835,8 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(option, /Stekker · 10 kWh bruikbaar · 5 kW ontladen, 5 kW laden/);
   assert.match(view, /Voor Eigen optie 1 is gerekend met [\d,]+ kW ontladen: meer dan 800 W.*en met [\d,]+ kW laden: ook dat is meer dan 800 W/);
   const euros = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
-  const [, limit, investment, npv] = option.match(/Lonend tot(€.+?|Zelfs gratis niet)Startinvestering nu(.+?)Netto voordeel \(NPV\)(.+?)Terugverdiend/);
+  // Met het netto voordeel als doel staat dat vooraan op de kaart, anders na de besparing.
+  const [, npv, limit, investment] = option.match(/Netto voordeel \(NPV\)(.+?)Lonend tot(€.+?|Zelfs gratis niet)Startinvestering nu(.+?)Besparing in jaar 1/);
   const expected = euros(investment) + euros(npv);
   // De grens is naar beneden afgerond op € 10.
   if (limit.startsWith("€")) assert.ok(euros(limit) <= expected + 1 && euros(limit) > expected - 11, `${limit} ≠ ${expected}`);
@@ -853,10 +861,12 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.click(`[role=tab]:has-text("Kasstromen")`);
   await page.getByLabel("Jaartabel van").selectOption({ label: "Eigen optie 1" });
   const bills = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
-    .evaluate(t => [...t.tBodies[0].rows[1].cells].slice(2, 4).map(c => c.textContent));
+    .evaluate(t => { const at = name => [...t.tHead.rows[0].cells].findIndex(c => c.textContent === name);
+      return ["Rekening zonder accu", "Rekening met accu"].map(name => t.tBodies[0].rows[1].cells[at(name)].textContent); });
   assert.ok(Math.abs(amount(bills[0]) - amount(bills[1]) - heatTotal) <= 1, `${bills} ≠ ${heatTotal}`);
   const yearly = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
-    .evaluate(t => [...t.tBodies[0].rows].map(r => Number(r.cells[1].textContent.replace(/\D/g, ""))));
+    .evaluate(t => { const at = [...t.tHead.rows[0].cells].findIndex(c => c.textContent === "Bruto verbruik");
+      return [...t.tBodies[0].rows].map(r => Number(r.cells[at].textContent.replace(/\D/g, ""))); });
   assert.ok(Math.abs(yearly[1] - yearly[0] - 2500) < 50, JSON.stringify(yearly.slice(0, 2)));
   // Zonder lening zijn rente en aflossing elk jaar € 0: één zin in plaats van twee lege kolommen.
   // Bedragen staan rechts uitgelijnd, zodat ze onder elkaar te vergelijken zijn.

@@ -43,11 +43,11 @@
   }
   const CUMULATIVE_NOTE = "De waarden in de eerste rijen lopen steeds verder op: dit lijken meterstanden. Daarom staat " +
     "‘Soort waarden’ op ‘Cumulatieve meterstanden’. Zijn het toch waarden per meetperiode, kies dan ‘Per meetperiode’.";
-  // ‘2025-01’ wordt ‘jan’; loopt de reeks over twee kalenderjaren, dan met het jaar erbij (‘jul 2025’).
+  // ‘2025-01’ wordt ‘jan’; loopt de reeks over twee kalenderjaren, dan met het jaar erbij (‘jul ’25’).
   function monthLabel(label, months) {
     if (!/^\d{4}-\d{2}$/.test(label)) return label;
     const month = new Date(`${label}-01T12:00:00`).toLocaleDateString("nl-NL", { month: "short" }).replace(".", "");
-    return new Set(months.map(m => m.label.slice(0, 4))).size > 1 ? `${month} ${label.slice(0, 4)}` : month;
+    return new Set(months.map(m => m.label.slice(0, 4))).size > 1 ? `${month} ’${label.slice(2, 4)}` : month;
   }
   // Meetperiode uit de tijdstippen van de voorbeeldrijen (ISO of dag-maand-jaar met tijd). Alleen als alle
   // stappen gelijk zijn en een bekende periode vormen; de server controleert het bestand daarna volledig.

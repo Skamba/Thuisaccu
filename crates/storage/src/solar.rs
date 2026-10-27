@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 use crate::{Catalog, Result, StorageError};
@@ -65,7 +65,31 @@ pub(crate) fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
     serde_json::from_str(text).map_err(|e| StorageError::Corrupt(e.to_string()))
 }
 
+/// Een bewaard of al bestaand profiel na [`Catalog::import_solar`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSolar {
+    pub id: i64,
+    /// `true` als hetzelfde profiel al bewaard was; dan is niets gewijzigd.
+    pub existing: bool,
+    /// De naam van het bewaarde profiel; bij een bestaand profiel de naam van toen.
+    pub filename: String,
+}
+
+/// Namen die eerdere versies in de instellingen bewaarden. Ze tellen niet mee bij de vraag of een
+/// profiel al bestaat: dezelfde bestanden onder een andere naam zijn hetzelfde profiel.
+const NAME_KEYS: [&str; 2] = ["meter_filename", "source_filename"];
+
+fn without_names(mut options: serde_json::Value) -> serde_json::Value {
+    if let Some(map) = options.as_object_mut() {
+        for key in NAME_KEYS {
+            map.remove(key);
+        }
+    }
+    options
+}
+
 impl Catalog {
+    /// Bewaart een profiel en geeft het ID; zie [`Catalog::import_solar`].
     pub async fn save_solar(
         &self,
         filename: &str,
@@ -75,6 +99,25 @@ impl Catalog {
         intervals: &[SolarInterval],
         now: i64,
     ) -> Result<i64> {
+        Ok(self
+            .import_solar(filename, sha256, options, summary, intervals, now)
+            .await?
+            .id)
+    }
+
+    /// Bewaart een profiel, tenzij er al een is met dezelfde hash en dezelfde instellingen (namen
+    /// uit eerdere versies niet meegeteld). Opzoeken en bewaren gebeuren in één transactie, zodat
+    /// twee gelijktijdige uploads niet allebei een nieuw profiel melden. Een bestaand profiel blijft
+    /// ongewijzigd, zodat bewaarde berekeningen op dezelfde intervallen (en profiel-hash) blijven passen.
+    pub async fn import_solar(
+        &self,
+        filename: &str,
+        sha256: &str,
+        options: &str,
+        summary: &str,
+        intervals: &[SolarInterval],
+        now: i64,
+    ) -> Result<StoredSolar> {
         if intervals.is_empty() || intervals.len() > 250_000 {
             return Err(StorageError::InvalidInput(
                 "Een profiel moet 1 tot 250.000 meetperioden bevatten.".into(),
@@ -116,21 +159,35 @@ impl Catalog {
                 ));
             }
         }
+        let wanted = without_names(
+            serde_json::from_str(options).map_err(|e| StorageError::InvalidInput(e.to_string()))?,
+        );
         let mut connection = self.connection();
         let tx = connection.transaction()?;
-        let inserted: Option<i64> = tx.query_row("INSERT INTO solar_imports (filename, sha256, imported_at_unix_s, options_json, summary_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(sha256, options_json) DO NOTHING RETURNING id",
-            params![filename, sha256, now, options, summary], |row| row.get(0)).optional()?;
-        let Some(id) = inserted else {
-            let id: i64 = tx.query_row(
-                "SELECT id FROM solar_imports WHERE sha256 = ? AND options_json = ?",
-                params![sha256, options],
-                |row| row.get(0),
-            )?;
-            // Hetzelfde bestand met dezelfde instellingen: het bestaande profiel blijft ongewijzigd,
-            // zodat bewaarde berekeningen op dezelfde intervallen (en profiel-hash) blijven passen.
-            tx.commit()?;
-            return Ok(id);
-        };
+        let candidates = tx
+            .prepare(
+                "SELECT id, filename, options_json FROM solar_imports WHERE sha256 = ? ORDER BY id",
+            )?
+            .query_map([sha256], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (id, existing_name, existing_options) in candidates {
+            if without_names(json(&existing_options)?) == wanted {
+                tx.commit()?;
+                return Ok(StoredSolar {
+                    id,
+                    existing: true,
+                    filename: existing_name,
+                });
+            }
+        }
+        let id: i64 = tx.query_row("INSERT INTO solar_imports (filename, sha256, imported_at_unix_s, options_json, summary_json) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            params![filename, sha256, now, options, summary], |row| row.get(0))?;
         {
             let mut insert = tx.prepare("INSERT INTO solar_intervals (import_id, start_unix_s, end_unix_s, production_wh, consumption_wh, steady_consumption_wh, measured_import_wh, measured_export_wh) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")?;
             for item in intervals {
@@ -147,19 +204,11 @@ impl Catalog {
             }
         }
         tx.commit()?;
-        Ok(id)
-    }
-
-    /// Het al bewaarde profiel met dezelfde bestanden en instellingen: ID en naam, of `None`.
-    pub async fn find_solar(&self, sha256: &str, options: &str) -> Result<Option<(i64, String)>> {
-        Ok(self
-            .connection()
-            .query_row(
-                "SELECT id, filename FROM solar_imports WHERE sha256 = ? AND options_json = ?",
-                params![sha256, options],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?)
+        Ok(StoredSolar {
+            id,
+            existing: false,
+            filename: filename.to_owned(),
+        })
     }
 
     pub async fn list_solar(&self) -> Result<Vec<SavedSolar>> {
