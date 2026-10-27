@@ -506,12 +506,26 @@ window.Scenario = (() => {
   // De soort accu kiest de posten: een stekkerbatterij op een eigen groep (`circuit`) krijgt de stekkerposten plus een
   // extra groep, zoals in de keuzehulp.
   // Bij een onbekende soort de posten van de catalogus, of anders die van een vaste installatie; de soort zelf blijft onbekend.
+  const hasQuoteTotal = option => option.costs.battery?.status === "priced" && option.costs.battery.source === Data.QUOTE_TOTAL;
+  const filledText = (option, filled) => !filled ? "Er waren geen open posten om te vullen." : hasQuoteTotal(option)
+    ? `${filled} posten ingevuld. Naast de totaalprijs tellen ze als inbegrepen; controleer dat in de offerte.`
+    : `${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.`;
+  // Staat er al een totaalprijs uit een offerte op de accupost, dan tellen eenmalige posten met een indicatie als
+  // inbegrepen (met een notitie om dat na te gaan) in plaats van erbovenop, en komt er geen reserve voor meerwerk bij.
   function fillEstimates(option, costCatalog, described) {
     let filled = 0;
+    const quoted = hasQuoteTotal(option);
+    const timing = new Map(costCatalog.categories.map(c => [c.key, c.timing]));
     for (const [category, line] of estimates(option.kind, costCatalog, described)) {
       const current = option.costs[category];
       if (current && current.status !== "unknown") continue;
-      option.costs[category] = line;
+      const inQuote = quoted && line.status === "priced" && timing.get(category) === "upfront" && !Data.CREDITS.includes(category);
+      option.costs[category] = !inQuote ? line : category === "contingency"
+        ? { status: "not_applicable", amount: "", year: "", source: "Aanname bij een totaalprijs",
+          notes: "Geen reserve voor meerwerk bovenop de totaalprijs. Is de prijs onder voorbehoud van schouw, vul dan een bedrag in." }
+        : { status: "included", amount: "", year: "", source: "Aanname: in de totaalprijs van de offerte",
+          notes: `Aanname: zit in de totaalprijs (indicatie los ${money(parse(line.amount, { money: true }), { decimals: 0 })}). ` +
+            "Controleer dat in de offerte; staat het er niet in, vul dan het bedrag in." };
       filled++;
     }
     return filled;
@@ -627,7 +641,7 @@ window.Scenario = (() => {
       const config = cmp.configurations.find(c => c.id === option.configuration_id);
       const filled = fillEstimates(option, costCatalog, config ? Data.describe(cmp, config) : null);
       persist();
-        toast(filled ? `${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.` : "Er waren geen open posten om te vullen.");
+        toast(filledText(option, filled));
         redraw({ index, what: "cost" });
     }, "secondary");
     const loan = (label, key, props) => field(label,
@@ -686,7 +700,7 @@ window.Scenario = (() => {
         included.length ? `Als inbegrepen gemarkeerd: ${included.join(", ")}.` : null,
         separate.length ? `Apart gehouden: ${separate.map(key => label(key).toLowerCase()).join(", ")}.` : null,
         changed.some(l => l.category === "contingency") ? "De reserve voor meerwerk vervalt: de offerte heeft een vaste prijs." : null,
-        open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend; zet ze op Inbegrepen of Niet van toepassing als de offerte ze dekt.` : null]
+        open ? `${open === 1 ? "Eén post is" : `${open} posten zijn`} nog onbekend. Zet ze op Inbegrepen of Niet van toepassing, of kies ‘Vul open posten met indicaties’: naast de totaalprijs tellen die als inbegrepen, met een notitie om dat na te gaan.` : null]
         .filter(Boolean).join(" "));
       persist(); redraw();
     }, "secondary");
@@ -770,7 +784,7 @@ window.Scenario = (() => {
           const cmp = await Data.catalog(), config = cmp.configurations.find(c => c.id === option.configuration_id);
           const filled = fillEstimates(option, costCatalog, config ? Data.describe(cmp, config) : null);
           persist();
-          toast(`${filled} posten gevuld met indicaties. Vervang ze door offertebedragen waar je die hebt.`);
+          toast(filledText(option, filled));
           redraw();
         }), "secondary") : null;
         const go = button("Ga naar deze optie", () => { focusOption = { index, what: "cost" }; flow.show(2); }, "ghost");

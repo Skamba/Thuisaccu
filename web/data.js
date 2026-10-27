@@ -231,6 +231,8 @@ window.Data = (() => {
   // Zet een offerteprijs in de kostenposten: de totaalprijs op de accupost en de apart geschatte startposten
   // als inbegrepen, behalve wat je apart houdt (`separate`, categorieën). De reserve voor meerwerk vervalt
   // alleen bij een vaste prijs. Het abonnement wordt een jaarbedrag. Bedragen in hele eurocenten.
+  // Bron op de accupost als die de totaalprijs uit een offerte draagt; Zelf doorrekenen telt dan geen losse indicaties op.
+  const QUOTE_TOTAL = "Offerte (totaalprijs inclusief btw)";
   function applyQuotePrice(candidate, field, value, { separate = [], fixedPrice = false } = {}) {
     const set = (line, status, amount, source, notes) => Object.assign(line, { status, amount_minor: amount, source, notes });
     if (field === "subscription_eur") {
@@ -240,7 +242,7 @@ window.Data = (() => {
       return;
     }
     for (const line of candidate.costs.filter(l => l.timing === "upfront" && !CREDITS.includes(l.category))) {
-      if (line.category === "battery") set(line, "priced", Math.round(value * 100), "Offerte (totaalprijs inclusief btw)",
+      if (line.category === "battery") set(line, "priced", Math.round(value * 100), QUOTE_TOTAL,
         "Totaalprijs uit de offerte, inclusief btw.");
       else if (line.category === "contingency") {
         if (fixedPrice && line.status === "priced") set(line, "not_applicable", 0, "Offerte",
@@ -784,7 +786,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
+    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice, QUOTE_TOTAL,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, upfrontCosts, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults

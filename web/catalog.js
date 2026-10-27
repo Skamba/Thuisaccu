@@ -352,7 +352,7 @@
             nominal = ofConfig(cmp.numbers, c).find(v => v.metric_key === "nominal_energy_wh");
           const capacity = usable.length === 1 ? `${Data.qualifiers[usable[0].qualifier] || ""}${n(usable[0].value / 1000)} kWh · ${Data.boundaries[usable[0].boundary]}` : usable.length > 1 ? "Meerdere claims" : nominal ? `Onbekend (nominaal ${n(nominal.value / 1000)} kWh)` : "Onbekend";
           const offer = ofConfig(cmp.offers, c).sort(Data.newestOffer)[0];
-          return [box, h("div", {}, h("strong", {}, `${c.manufacturer_name} ${c.product_name}`), h("small", {}, `${c.name} · ${c.product_kind === "battery_module" ? "accumodule" : "accusysteem"}`)),
+          return [h("label", { class: "pick-label", title: "Kies om te vergelijken" }, box), h("div", {}, h("strong", {}, `${c.manufacturer_name} ${c.product_name}`), h("small", {}, `${c.name} · ${c.product_kind === "battery_module" ? "accumodule" : "accusysteem"}`)),
             capacity, offer ? priceText(offer) : h("span", { class: "unknown" }, "Geen prijs"),
               String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size),
             ...(anyReviewed ? [isReviewed(c) ? badge("Bronnen nagekeken", "success") : badge("Bronnen niet nagekeken", "warning")] : [])];

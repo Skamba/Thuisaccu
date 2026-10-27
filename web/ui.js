@@ -307,8 +307,8 @@ window.UI = (() => {
     h("div", { class: "actions" }, actions));
 
   // Tabbladen met pijltjestoetsen, Home en End.
-  function tabs(entries, initial = 0) {
-    const id = uid("tabs"), list = h("div", { class: "tabs", role: "tablist" }), panels = [];
+  function tabs(entries, initial = 0, label) {
+    const id = uid("tabs"), list = h("div", { class: "tabs", role: "tablist", "aria-label": label }), panels = [];
     const show = index => entries.forEach((_, i) => {
       list.children[i].setAttribute("aria-selected", String(i === index));
       list.children[i].tabIndex = i === index ? 0 : -1;
@@ -453,6 +453,29 @@ window.UI = (() => {
     }
     return `${name.slice(0, max - 1)}…`;
   }
+  // Lijnen verschillen ook in streep en punt, niet alleen in kleur: voor kleurenblinden en op een zwart-witafdruk.
+  const DASHES = ["none", "8 4", "2 3", "10 3 2 3", "1 4", "5 2"];
+  // Een punt van serie `si` rond (x, y) als [tag, attributen].
+  const marker = (si, x, y, fill) => {
+    const r = 4, at = points => points.map(([dx, dy]) => `${x + dx},${y + dy}`).join(" ");
+    return [
+      ["circle", { cx: x, cy: y, r, fill }],
+      ["rect", { x: x - r, y: y - r, width: 2 * r, height: 2 * r, fill }],
+      ["polygon", { points: at([[0, -r - 1], [r + 1, r], [-r - 1, r]]), fill }],
+      ["polygon", { points: at([[0, -r - 1], [r + 1, 0], [0, r + 1], [-r - 1, 0]]), fill }],
+      ["circle", { cx: x, cy: y, r: r - 1, style: "fill: var(--surface)", stroke: fill, "stroke-width": 2 }]
+    ][si % 5];
+  };
+  // Het legendavoorbeeld van een lijn: dezelfde kleur, streep en punt als in de grafiek.
+  function lineSample(si, stroke) {
+    const node = document.createElementNS(SVG, "svg");
+    node.setAttribute("viewBox", "0 0 30 12"); node.setAttribute("class", "line-sample"); node.setAttribute("aria-hidden", "true");
+    const add = (tag, attrs) => { const el = document.createElementNS(SVG, tag);
+      for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value); node.append(el); };
+    add("line", { x1: 1, x2: 29, y1: 6, y2: 6, stroke, "stroke-width": 2.5, "stroke-dasharray": DASHES[si % DASHES.length] });
+    add(...marker(si, 15, 6, stroke));
+    return node;
+  }
   function chart(type, { title, rows, series, unit = "", xLabel = "", format = v => number(v, 0), marks = [] }) {
     // Op een smal scherm een smallere tekening met grotere letters (styles.css), zodat de tekst na het schalen
     // leesbaar blijft; de namen van liggende balken staan dan op een eigen regel boven de balk, voluit.
@@ -511,10 +534,9 @@ window.UI = (() => {
           i) => finite(r.values[si]) ? `${px(i)},${y(r.values[si])}` : null).filter(Boolean).join(" ");
         draw("polyline",
           { points, fill: "none", stroke: colour(si, s), "stroke-width": 2.5,
-            "stroke-dasharray": si > 4 ? "7 3" : "none" });
+            "stroke-dasharray": DASHES[si % DASHES.length] });
         rows.forEach((r,
-          i) => { if (finite(r.values[si])) draw("circle",
-            { cx: px(i), cy: y(r.values[si]), r: 4, fill: colour(si, s) },
+          i) => { if (finite(r.values[si])) draw(...marker(si, px(i), y(r.values[si]), colour(si, s)),
             `${s.label}, ${r.label}: ${format(r.values[si])} ${unit}`); });
       });
       if (numeric) {
@@ -589,7 +611,8 @@ window.UI = (() => {
     else { text(8, 14, unit); if (xLabel) text(left + plotW / 2, height - 6, xLabel, "middle"); }
     const legend = h("ul", { class: "legend" }, series.map((s, i) => h("li", {},
       type === "range" ? h("span", { class: `swatch ${["swatch-low", "swatch-base", "swatch-high"][i]}` })
-        : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));
+        : type === "line" ? lineSample(i, colour(i, s))
+          : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));
     const data = h("details", {}, h("summary", {}, "Toon als tabel"),
       table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")]),
         { numeric: series.map((_, i) => i + 1) }));

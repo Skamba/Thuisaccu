@@ -512,7 +512,7 @@ test("keuzehulp met totaal verbruik en een capaciteitscurve op schaal", async ()
   const spread = await page.$eval(".wizard-body figure.chart", figure => {
     const sizes = [...figure.querySelectorAll("tbody td:first-child")]
       .map(cell => Number(cell.textContent.replace(/[^\d,]/g, "").replace(",", "."))).filter(Number.isFinite);
-    const xs = [...figure.querySelectorAll("circle")].map(c => Number(c.getAttribute("cx")));
+    const xs = [...figure.querySelectorAll("svg:not(.line-sample) circle")].map(c => Number(c.getAttribute("cx")));
     const scale = (xs.at(-1) - xs[0]) / (sizes.at(-1) - sizes[0]);
     return Math.max(...xs.map((x, i) => Math.abs(x - xs[0] - (sizes[i] - sizes[0]) * scale)));
   });
@@ -1298,6 +1298,20 @@ test("optie-editor: kosten in groepen, één totaalprijs uit een offerte en een 
   assert.equal(option.costs.battery.status, "priced");
   assert.equal(option.costs.battery.amount, "8000,00");
   assert.equal(Object.values(option.costs).filter(l => l.source === "In de totaalprijs van de offerte").length, kept - 1);
+  // Daarna indicaties vullen telt niets bovenop de totaalprijs: open startposten worden ‘inbegrepen’, de reserve vervalt.
+  const upfront = await page.evaluate(async () => (await Data.costs()).categories
+    .filter(c => c.timing === "upfront" && !Data.CREDITS.includes(c.key)).map(c => c.key));
+  const pricedUpfront = o => upfront.filter(key => o.costs[key]?.status === "priced").length;
+  // Neem over vulde al alles met een indicatie; zet de installatie terug op onbekend, zoals bij een offerte zonder posten.
+  await card.locator(".cost-group > summary").first().evaluate(s => { s.parentElement.open = true; });
+  await card.locator(".cost-row", { hasText: "Installatie, arbeid" }).getByLabel("Status").selectOption("unknown");
+  await card.locator(".actions button:has-text('Vul open posten met indicaties')").click();
+  await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem("thuisaccu-scenario")).options[0].costs)
+    .some(l => l.source === "Aanname: in de totaalprijs van de offerte"));
+  const filledOption = await page.evaluate(() => JSON.parse(localStorage.getItem("thuisaccu-scenario")).options[0]);
+  assert.equal(filledOption.costs.battery.amount, "8000,00");
+  assert.notEqual(filledOption.costs.contingency?.status, "priced");
+  assert.ok(pricedUpfront(filledOption) <= pricedUpfront(option), "geen bedragen bovenop de totaalprijs");
 
   // Een subsidie boven de startkosten weigert de rekenkern; de controlestap zegt dat al vóór het berekenen.
   await card.locator(".cost-group > summary", { hasText: "Teruggaven" }).evaluate(s => { s.parentElement.open = true; });

@@ -225,10 +225,11 @@ window.Results = (() => {
     if (!finite(limit)) return `Lonend tot is niet berekend; vergelijk het netto voordeel met de andere opties.`;
     if (limit <= 0) return "Zelfs gratis niet lonend binnen deze aannames: de jaarkosten, verliezen en het sluimerverbruik wegen " +
       "zwaarder dan de besparing.";
-    const under = floorLimit(limit) - start;
+    // Grens en verschil onafgerond: dan klopt de aftreksom met de startkosten en sluit het verschil aan bij de NPV.
+    const under = limit - start;
     return start <= limit
-      ? `Lonend: ${startText} liggen ${Math.round(under) >= 1 ? `${eur0(under)} onder` : "rond"} de grens van ${roundedLimit(limit)}.`
-      : `Niet lonend: ${startText} liggen ${eur0(start - floorLimit(limit))} boven de grens van ${roundedLimit(limit)}. ` +
+      ? `Lonend: ${startText} liggen ${Math.round(under) >= 1 ? `${eur0(under)} onder` : "rond"} de grens van ${eur0(limit)}.`
+      : `Niet lonend: ${startText} liggen ${eur0(start - limit)} boven de grens van ${eur0(limit)}. ` +
         "Onder die grens wordt deze offerte lonend.";
   }
 
@@ -655,7 +656,8 @@ window.Results = (() => {
     const top = shown(all);
     // Het startpunt is wat je op tijdstip nul zelf betaalt: met een lening alleen het eigen deel. Afgeleid uit het
     // eerste jaar, zodat de lijn aansluit bij het cumulatieve verloop (ook bij oudere runs).
-    const start = c => c.years[0] ? c.years[0].cumulative_eur - c.years[0].net_cashflow_eur : -c.initial_investment_eur;
+    // `+ 0` maakt van −0 (geen accu) een gewone nul, zodat de tabel geen ‘−0’ toont.
+    const start = c => (c.key === "no_battery" ? 0 : c.years[0] ? c.years[0].cumulative_eur - c.years[0].net_cashflow_eur : -c.initial_investment_eur) + 0;
     const rows = [{ label: "Start", values: top.map(start) },
       ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: top.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
     const marks = [];
@@ -670,7 +672,10 @@ window.Results = (() => {
     }
     out.append(chart("line", { title: `Cumulatief resultaat ten opzichte van geen accu${more(all) ? ` (beste ${TOP})` : ""}`, unit: "€", rows, series: top.map(c => ({ label: c.short, color: c.color })), marks }),
       h("p", { class: "help" }, "✓ markeert het jaar waarin een optie blijvend is terugverdiend; ↧ een ingevoerde vervanging."));
-    const pick = UI.select(all.map(c => [c.key, c.short]), run.result.recommended_key), target = h("div");
+    // Een jaartabel van geen accu is overal nul: begin bij de offerte, anders bij het advies of de beste accu.
+    const first = quoted(run)?.key ?? (run.result.recommended_key !== "no_battery" ? run.result.recommended_key
+      : all.find(c => c.key !== "no_battery")?.key ?? run.result.recommended_key);
+    const pick = UI.select(all.map(c => [c.key, c.short]), first), target = h("div");
     const render = () => {
       const c = all.find(o => o.key === pick.value);
       // Zonder accu is de rekening met accu die zonder accu, en zijn er geen extra kosten of financiering.
@@ -1072,8 +1077,11 @@ window.Results = (() => {
       candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${[...changes.map(changeText), ...notes].join("; ")}.`.slice(0, 2000);
       delete copy.quote_basis;
       // De titel noemt accu en prijs, zodat twee offertes in Mijn berekeningen uit elkaar te houden zijn.
-      const named = `offerte ${c.short}${price ? ` ${eur0(price.total_eur)}` : ""}`;
-      Scenario.load(copy, { title: `${request.title.replace(/ · offerte .*$/, "")} · ${named}`.slice(0, 200), step: 3,
+      // Heet de berekening al naar de accu (één eigen optie), dan niet nog eens de naam erachter.
+      const base = request.title.replace(/ · offerte .*$/, ""),
+        named = ["offerte", base.toLocaleLowerCase().includes(c.short.toLocaleLowerCase()) ? null : c.short,
+          price ? eur0(price.total_eur) : null].filter(Boolean).join(" ");
+      Scenario.load(copy, { title: `${base} · ${named}`.slice(0, 200), step: 3,
         basis: { run_id: run.id, title: request.title, candidate_key: c.key,
           break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes,
           ...(price && changes.some(ch => ch.field === "upfront_eur") ? { price } : {}) } });
@@ -1346,7 +1354,7 @@ window.Results = (() => {
     // Tabbladen in de volgorde waarin je ze gebruikt: na het overzicht de waarschuwingen (met hun aantal, zodat ze
     // ook bij een afgebroken rij tabbladen in beeld blijven), de offertecheck en de kosten.
     // Op een telefoon komt het antwoord zo eerder in beeld; waar en waarmee gerekend is, staat eronder.
-    view.append(verdict(run, kinds), ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), tabs([
+    const parts = tabs([
       { label: "Overzicht", content: overview(run, all, kinds) },
       { label: `Waarschuwingen (${warnings.length})`, class: warnings.length ? "has-warnings" : undefined,
         content: h("ul", { class: "warnings print-keep" }, warnings) },
@@ -1354,7 +1362,12 @@ window.Results = (() => {
       { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
       { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
       { label: "Invoer en aannames", content: inputs(run, categories, all) }
-    ]));
+    ], 0, "Onderdelen van de uitkomst");
+    // Op een telefoon staan de tabbladen een paar schermen lager; deze knop springt erheen (alleen op een smal scherm).
+    const jump = h("button", { type: "button", class: "ghost jump-tabs", onclick: () => {
+      parts.scrollIntoView({ block: "start" }); parts.querySelector('[role="tab"][aria-selected="true"]')?.focus();
+    } }, `Naar de onderdelen: ${warnings.length} ${warnings.length === 1 ? "waarschuwing" : "waarschuwingen"}, offertecheck, kosten`);
+    view.append(verdict(run, kinds), jump, ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), parts);
   }
 
   // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de beste vijf op het doel, de beste

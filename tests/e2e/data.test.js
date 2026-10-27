@@ -421,7 +421,7 @@ test("de garantiezin telt op: verschil plus afgeronde grens is de startinvesteri
   assert.equal(start, 4000);
 });
 
-test("de offertezin telt op en zegt ‘rond de grens’ tussen de afgeronde en de echte grens", () => {
+test("de offertezin telt op met de onafgeronde grens en zegt ‘rond de grens’ binnen een euro", () => {
   const under = { key: "a", npv_eur: 120, initial_investment_eur: 3500, break_even_investment_eur: 3989 };
   const [start, gap, limit] = euros(Results.quoteLead(quoteRun(under), under));
   assert.equal(start + gap, limit);
@@ -430,9 +430,11 @@ test("de offertezin telt op en zegt ‘rond de grens’ tussen de afgeronde en d
   assert.match(text, /^Niet lonend/);
   const [start2, gap2, limit2] = euros(text);
   assert.equal(start2 - gap2, limit2);
-  // De startkosten liggen tussen de afgeronde en de echte grens.
-  const close = { key: "a", npv_eur: 1, initial_investment_eur: 3984, break_even_investment_eur: 3989 };
-  assert.match(Results.quoteLead(quoteRun(close), close), /liggen rond de grens van €\s3\.980\./);
+  // Het verschil sluit aan bij het netto voordeel (grens min startkosten), ook vlak onder de grens.
+  const close = { key: "a", npv_eur: 5, initial_investment_eur: 3984, break_even_investment_eur: 3989 };
+  assert.match(Results.quoteLead(quoteRun(close), close), /liggen €\s5 onder de grens van €\s3\.989\./);
+  const edge = { key: "a", npv_eur: 0.4, initial_investment_eur: 3988.6, break_even_investment_eur: 3989 };
+  assert.match(Results.quoteLead(quoteRun(edge), edge), /liggen rond de grens van €\s3\.989\./);
   const free = { key: "a", npv_eur: -900, initial_investment_eur: 3000, break_even_investment_eur: -10 };
   assert.match(Results.quoteLead(quoteRun(free), free), /^Zelfs gratis niet lonend/);
 });

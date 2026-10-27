@@ -87,7 +87,9 @@
           h("span", {}, h("a", { href: `#/berekeningen/${run.id}`, "aria-label": `${run.title} van ${when}` }, run.title),
             Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null, h("small", { class: "help run-facts" }, facts)), when,
           Data.objectives[run.input.request.parameters.objective],
-            quote ? h("span", {}, badge("Je offerte", "success"), " ", quote.name)
+            quote ? h("span", {}, badge("Je offerte", "success"), " ", quote.name, quote.key !== run.result.recommended_key
+              ? h("small", { class: "help run-facts" }, run.result.recommended_key === "no_battery" ? "Geen accu komt beter uit"
+                : "Een andere optie komt beter uit") : null)
               : rec ? h("span", {}, rec.name, closest ? h("small", { class: "help run-facts" }, "Geen accu komt beter uit; dit komt het dichtst in de buurt") : null)
               : "Geen accu doorgerekend",
           rec ? money(rec.npv_eur, { decimals: 0 }) : "—", h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost",

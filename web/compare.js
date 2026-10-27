@@ -77,6 +77,16 @@ window.Compare = (() => {
     if (quote) lines.unshift(`offerte: ${quote.changes.map(Data.quoteChange).join("; ")}` + (quote.price
       ? `; ${{ fixed: "vaste prijs", subject_to_survey: "onder voorbehoud van schouw", unknown: "niet bekend of de prijs vast is" }[quote.price.terms]}`
       : ""));
+    // Staat de oorspronkelijke berekening ernaast, dan splitst dit het verschil in netto voordeel in prijs en techniek:
+    // het netto voordeel is ‘Lonend tot’ min de startkosten.
+    const origin = quote && all.find(r => r.id === quote.run_id)?.result.candidates.find(c => c.key === quote.candidate_key),
+      now = quote && Results.quoted(run);
+    if (origin && now && [origin.break_even_investment_eur, now.break_even_investment_eur].every(Number.isFinite)) {
+      const signed = value => `${value > 0 ? "+" : value < 0 ? "−" : ""}${eur0(Math.abs(value))}`;
+      lines.unshift(`tegenover ${origin.name} in de oorspronkelijke berekening: startkosten ${signed(now.initial_investment_eur - origin.initial_investment_eur)}, ` +
+        `‘Lonend tot’ ${signed(now.break_even_investment_eur - origin.break_even_investment_eur)} door techniek en jaarkosten; ` +
+        `netto voordeel ${signed(now.npv_eur - origin.npv_eur)}`);
+    }
     return lines.length ? h("ul", { class: "compact" }, lines.map(line => h("li", {}, line))) : "Dezelfde invoer als de andere";
   }
   // Verschillen die de uitkomsten zelf onvergelijkbaar maken; die staan boven de tabel.

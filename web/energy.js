@@ -350,7 +350,8 @@
             /verbruik|consum|afname|import|export|teruglever|levering|grid/i);
         const consumption = guess(/consumption|consumed|verbruik|verbrauch/i),
           exports = tariffColumns(result.headers, /teruglever|export|feed.?in|injectie|returned/i),
-          imports = tariffColumns(result.headers, /netafname|afname|import|delivered|from.?grid|bezogen/i, /teruglever|export|returned/i),
+          // ‘Levering’ is afname vanuit de leverancier gezien, zoals bij het meterbestand hieronder.
+          imports = tariffColumns(result.headers, /netafname|afname|import|delivered|from.?grid|bezogen|levering/i, /teruglever|export|returned/i),
           exported = exports[0] ?? -1, imported = imports[0] ?? -1;
         const separate = guess(/^(time|tijd|uhrzeit)(\s|$)/i);
         // Zonder herkenbare opwekkolom de eerste kolom die nergens anders voor dient; een P1-export heeft er geen.
