@@ -326,8 +326,16 @@
     window.addEventListener("hashchange", route);
     // Ingeklapte uitleg (.fold) hoort op papier; een gesloten <details> toont in de print alleen de kop.
     // Behalve .print-closed: lange herhalende lijsten (zoals de garantiestresstest per accu) blijven dicht.
-    window.addEventListener("beforeprint", () => document.querySelectorAll("details.fold:not([open]):not(.print-closed)")
-      .forEach(fold => { fold.open = true; fold.dataset.printOpened = ""; }));
+    // Gewoon afdrukken van een uitkomst laat de uitleg in ‘Wat betekent dit voor jou?’ dicht (styles.css); een open venster
+    // gaat dicht, anders ligt het op papier over de pagina heen.
+    window.addEventListener("beforeprint", () => {
+      document.querySelectorAll("dialog.popup[open]").forEach(dialog => dialog.close());
+      const all = document.body.classList.contains("print-all");
+      document.querySelectorAll("details.fold:not([open]):not(.print-closed)").forEach(fold => {
+        if (!all && fold.closest(".summary")) return;
+        fold.open = true; fold.dataset.printOpened = "";
+      });
+    });
     window.addEventListener("afterprint", () => document.querySelectorAll("details[data-print-opened]")
       .forEach(fold => { fold.open = false; delete fold.dataset.printOpened; }));
     const service = $("service");

@@ -756,16 +756,17 @@ test("answer(): de kop zegt of een accu loont en hoe zeker, over de doorgerekend
       price_uncertainty_pct: uncertain ? 10 : 0, cost_uncertainty_pct: uncertain ? 10 : 0 } } },
     result: { recommended_key, candidates: [option] } });
   const sure = { key: "a", npv_eur: 900, pessimistic: { npv_eur: 200 }, optimistic: { npv_eur: 1600 } };
-  assert.match(spaced(Results.answer(run("a", sure), sure)), /iets op, ook in de ongunstige varianten: tussen € 200 en € 1\.600 over 15 jaar/);
+  assert.equal(Results.answer(run("a", sure), sure), "Een accu loont, ook als het tegenzit");
   const shaky = { ...sure, pessimistic: { npv_eur: -400 } };
-  assert.match(spaced(Results.answer(run("a", shaky), shaky)), /€ 900 op over 15 jaar, maar dat is niet zeker: tussen -€ 400 en € 1\.600/);
-  assert.match(spaced(Results.answer(run("a", sure, false), sure)), /^Een accu levert in deze berekening € 900 op over 15 jaar/);
+  assert.equal(Results.answer(run("a", shaky), shaky), "Een accu loont met deze aannames, maar het is niet zeker");
+  assert.equal(Results.answer(run("a", sure, false), sure), "Een accu levert in deze berekening iets op");
   const none = { key: "a", npv_eur: -500, pessimistic: { npv_eur: -900 }, optimistic: { npv_eur: 150 } };
-  assert.match(spaced(Results.answer(run("no_battery", none), none)), /loont in deze berekening niet\. Alleen in de gunstigste variant .* hooguit € 150/);
+  assert.equal(Results.answer(run("no_battery", none), none), "Een accu loont hier niet, alleen in de gunstigste variant");
   const never = { ...none, optimistic: { npv_eur: -50 } };
-  assert.match(spaced(Results.answer(run("no_battery", never), never)), /Ook in de gunstigste variant niet\.$/);
+  assert.equal(Results.answer(run("no_battery", never), never), "Een accu loont hier niet, ook niet als het meezit");
+  assert.equal(Results.answer(run("no_battery", never, false), never), "Een accu loont in deze berekening niet");
   // Een ander doel kan een accu aanraden die geld kost.
-  assert.match(spaced(Results.answer(run("a", none), none)), /kost in deze berekening geld: netto € 500 over 15 jaar/);
+  assert.equal(Results.answer(run("a", none), none), "Een accu komt met dit doel het beste uit, maar kost geld");
 });
 
 test("messagesOf leest de vaste codes, en herkent ze in oudere runs aan de tekst", () => {

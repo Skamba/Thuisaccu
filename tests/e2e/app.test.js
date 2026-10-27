@@ -17,7 +17,7 @@ const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 // Hoeveel zichtbare woorden het antwoord boven de tabbladen hooguit telt (kaart, blad en uitleg samen).
-const WORD_BUDGET = 650;
+const WORD_BUDGET = 650, PRINT_BUDGET = 1150;
 const BINARY = process.env.THUISACCU_BIN
   || path.join(ROOT, "target", "debug", process.platform === "win32" ? "thuisaccu-server.exe" : "thuisaccu-server");
 
@@ -330,8 +330,24 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
   assert.match(await page.textContent(".rates"), /^Gerekend met stroom €\s[\d,]+ per kWh · terugleververgoeding €\s[\d,]+ per kWh/);
   assert.match(summary, /Wat betekenen deze woorden\?.*Zelfvoorziening/s);
-  // Wat het einde van salderen kost, en hoeveel de besproken accu daarvan terugwint.
-  assert.match(summary, /Het einde van salderen kost je in jaar 1 zonder accu ongeveer €\s[\d.]+.*Wegvallend voordeel[\d.]+ kWh teruglevering × \(€\s[\d,]+ − €\s[\d,]+\) per kWh = €\s[\d.]+ per jaar/s);
+  // Wat het einde van salderen kost en hoeveel de besproken accu daarvan terugwint staat op de kaart; de som in de uitleg.
+  assert.match(await page.textContent(".verdict .answer-salderen"), /^Het einde van salderen kost je in jaar 1 zonder accu ongeveer €\s[\d.]+[;.]/);
+  assert.match(summary, /Wat het einde van salderen kost, zonder accu in jaar 1:Wegvallend voordeel[\d.]+ kWh teruglevering × \(€\s[\d,]+ − €\s[\d,]+\) per kWh = €\s[\d.]+ per jaar/);
+  // De bandbreedte staat als tekst aan de uiteinden van de balk.
+  assert.match(await page.textContent(".verdict .answer-range"), /^Als het tegenzit€\s[\d.]+ (voordeel|verlies)Als het meezit€\s[\d.]+ (voordeel|verlies)$/);
+  // Geen accu heeft in het blad een streepje waar een waarde niet van toepassing is; schermlezers horen het woord.
+  assert.match(await page.textContent(".comparison table.lanes tr:has(th:text-is('Terugverdiend na')) td:first-of-type"), /^—Niet van toepassing$/);
+  // De volgende stappen: bij een geschat profiel eerst meetwaarden, en een knop naar de offertecheck.
+  const steps = page.locator(".next-steps");
+  assert.match(await steps.textContent(), /^Wat kun je nu doen\?1?Maak de uitkomst zekerder\./);
+  await steps.locator("button:has-text('Naar de offertecheck')").click();
+  assert.equal(await page.textContent("[role=tab][aria-selected=true]"), "Offertecheck");
+  await page.click("[role=tab]:has-text('Overzicht')");
+  // Eén h1 en geen kop die een niveau overslaat (vensters tellen niet mee).
+  const outline = await page.$$eval("h1, #view h2, #view h3, #view h4", hs => hs.filter(x => !x.closest("dialog") && x.offsetParent)
+    .map(x => Number(x.tagName[1])));
+  assert.equal(outline.filter(level => level === 1).length, 1, JSON.stringify(outline));
+  assert.ok(outline.every((level, i) => i === 0 || level <= outline[i - 1] + 1), JSON.stringify(outline));
   // De garantiestresstest is één waarschuwing met een tabel per accu, niet een zin per accu.
   const warningTexts = await page.locator(".warnings > li").allTextContents();
   assert.equal(warningTexts.filter(w => w.startsWith("Garantiestresstest bij")).length, stressed.length === 1 ? 1 : 0);
@@ -424,8 +440,16 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await page.emulateMedia({ media: "print" });
   assert.deepEqual(await printed(), [true, true, false, false, false, false, false, false]);
   assert.equal(await page.locator(".all-options").first().isVisible(), false);
+  // Gewoon afdrukken is kort: de kaart, de stappen en het blad, zonder vensters en zonder de ingeklapte uitleg.
+  const shown = selector => page.$$eval(selector, els => els.filter(el => getComputedStyle(el).display !== "none").length);
+  assert.equal(await shown("#view dialog.popup"), 0);
+  assert.equal(await shown(".summary details.fold"), 0);
+  assert.ok(await page.isVisible(".verdict") && await page.isVisible(".next-steps") && await page.isVisible(".comparison"));
+  const printWords = (await page.evaluate(() => document.querySelector("#view").innerText)).split(/\s+/).length;
+  assert.ok(printWords < PRINT_BUDGET, `${printWords} woorden afgedrukt`);
   await page.evaluate(() => document.body.classList.add("print-all"));
   assert.ok((await printed()).every(Boolean));
+  assert.ok(await shown("#view dialog.popup:not(.print-closed)") > 0);
   await page.evaluate(() => document.body.classList.remove("print-all"));
   await page.emulateMedia({ media: "screen" });
   // De offertecheck noemt per vraag de waarde waarmee is gerekend; de keuzehulp neemt levensduur en

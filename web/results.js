@@ -214,8 +214,6 @@ window.Results = (() => {
     return panel ? UI.opens(panel, label, variant, name ? { "aria-label": `${label} (bij ${name})` } : {}) : null;
   };
 
-  // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
-  // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
   // De startposten naast de accuprijs (na teruggaven); null zonder geprijsde accupost of als er niets naast staat.
   function otherStartCosts(run, option) {
     const input = run.input.request.candidates.find(c => c.key === option.key);
@@ -224,6 +222,8 @@ window.Results = (() => {
     const rest = option.initial_investment_eur - battery.amount_minor / 100;
     return Math.abs(rest) < 1 ? null : rest;
   }
+  // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
+  // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
   function batteryLimit(run, option, limit) {
     const rest = otherStartCosts(run, option);
     if (rest == null) return "";
@@ -323,7 +323,7 @@ window.Results = (() => {
     // Op de pagina één zin met de goedkoopste; de groep zelf, met waarop je kiest, staat in een venster.
     return h("div", { class: "verdict-close" }, h("p", {}, h("strong", {}, `Bijna even goed: nog ${close.length} accu’s. `),
       `Binnen de onzekerheid komen ze op hetzelfde neer; de goedkoopste is ${plainName(run, cheapest, kinds)} voor ${eur0(cheapest.initial_investment_eur)}. `,
-      UI.popup(`Bekijk alle ${list.length}`, `Bijna even goed: ${list.length} accu’s`, [h("p", {},
+      UI.popup("Bekijk ze naast de aanbevolen", `De aanbevolen accu en ${close.length} bijna even goede`, [h("p", {},
         `Hun netto voordeel verschilt minder van dat van de aanbevolen accu dan wat die in de ongunstige variant verliest ` +
         `(${eur0(option.npv_eur - option.pessimistic.npv_eur)}). Kies tussen hen op prijs, garantie, veiligheid en aansluiting` +
         (routes.size > 1 ? ". Er zitten stekkerbatterijen en accu’s met een installateur tussen." : ".")),
@@ -405,8 +405,8 @@ window.Results = (() => {
   }
 
   // Kantelpunten van de rekenkern (sinds 27 oktober 2026): bij welke stroomprijs, terugleververgoeding of besparing de
-  // NPV van een optie nul wordt, met al het andere gelijk. Per punt een korte tekst voor het blad, een zin en hoeveel er
-  // relatief moet veranderen (`change`); leeg bij oudere runs.
+  // NPV van een optie nul wordt, met al het andere gelijk. Per punt een zin en hoeveel er relatief moet veranderen
+  // (`change`); leeg bij oudere runs.
   function tipping(run, c) {
     const t = c?.tipping_points, tariff = run.input.request.parameters.tariff;
     if (!t || !finite(c.npv_eur)) return [];
@@ -415,10 +415,8 @@ window.Results = (() => {
       if (!finite(at) || !finite(now)) return;
       const side = at < now ? "onder" : "boven";
       // Een all-in stroomprijs onder nul komt in dit model niet voor; dan kantelt het niet bij een gewone prijs.
-      if (key === "import" && at <= 0 && at < now) return out.push({ key, change: Infinity,
-        short: "Stroomprijs: bij elke prijs boven € 0", text: `${pays ? "Lonend" : "Niet lonend"} bij elke stroomprijs boven € 0` });
+      if (key === "import" && at <= 0 && at < now) return out.push({ key, change: Infinity, text: `${pays ? "Lonend" : "Niet lonend"} bij elke stroomprijs boven € 0` });
       out.push({ key, now, at, change: Math.abs(at - now) / Math.max(Math.abs(now), 0.01),
-        short: `${label} ${side} ${price(at)} (nu ${price(now)})`,
         text: `${pays ? "Niet meer lonend" : "Lonend"} als de ${label.toLowerCase()} ${side} ${price(at)} per kWh komt (nu ${price(now)})` });
     };
     add("import", "Stroomprijs", tariff.import_eur_per_kwh, t.import_eur_per_kwh);
@@ -426,34 +424,32 @@ window.Results = (() => {
     const share = t.saving_share;
     if (finite(share) && share > 0) {
       const by = `${n(Math.abs(1 - share) * 100, 0)}%`;
-      out.push({ key: "saving", change: Math.abs(1 - share), short: `Besparing ${by} ${pays ? "lager" : "hoger"}`,
+      out.push({ key: "saving", change: Math.abs(1 - share),
         text: `${pays ? "Niet meer lonend" : "Lonend"} als de besparing meer dan ${by} ${pays ? "lager" : "hoger"} uitvalt` });
     }
     return out.sort((a, b) => a.change - b.change);
   }
-  // Het antwoord als zin: levert een accu iets op en hoe zeker is dat, over de varianten die de rekenkern doorrekende.
+  // Het antwoord als korte kop: levert een accu iets op en hoe zeker is dat, over de varianten die de rekenkern
+  // doorrekende. De bedragen staan op de kaart eronder (`verdict`), zodat de kop in één oogopslag leest.
   function answer(run, option) {
-    const result = run.result, years = run.input.request.parameters.horizon_years;
+    const result = run.result;
     if (!option) return result.recommendation;
     const values = variants(run, [{ option }]).map(([key]) => laneOutcome(run, option, key)?.npv_eur).filter(finite);
     const lo = Math.min(...values), hi = Math.max(...values), span = values.length > 1;
-    if (result.recommended_key === "no_battery") return "Een accu loont in deze berekening niet." + (!option || !span ? ""
-      : hi > 0 ? ` Alleen in de gunstigste variant levert de beste accu iets op: hooguit ${eur0(hi)} over ${years} jaar.`
-        : " Ook in de gunstigste variant niet.");
-    const npv = option.npv_eur, range = `tussen ${eur0(lo)} en ${eur0(hi)}`;
-    if (npv < 0) return `Een accu komt met dit doel het beste uit, maar kost in deze berekening geld: netto ${eur0(-npv)} over ${years} jaar` +
-      (span ? `, ${range} in de varianten.` : ".");
-    if (!span) return `Een accu levert in deze berekening ${eur0(npv)} op over ${years} jaar, in geld van nu.`;
-    return lo >= 0 ? `Een accu levert in deze berekening iets op, ook in de ongunstige varianten: ${range} over ${years} jaar, in geld van nu.`
-      : `Een accu levert in deze berekening ${eur0(npv)} op over ${years} jaar, maar dat is niet zeker: ${range} in de varianten, in geld van nu.`;
+    if (result.recommended_key === "no_battery") return !span ? "Een accu loont in deze berekening niet"
+      : hi > 0 ? "Een accu loont hier niet, alleen in de gunstigste variant" : "Een accu loont hier niet, ook niet als het meezit";
+    if (option.npv_eur < 0) return "Een accu komt met dit doel het beste uit, maar kost geld";
+    if (!span) return "Een accu levert in deze berekening iets op";
+    return lo >= 0 ? "Een accu loont, ook als het tegenzit" : "Een accu loont met deze aannames, maar het is niet zeker";
   }
 
   // Wanneer kantelt het antwoord: de kantelpunten van de besproken accu en de grensprijs, bovenaan wat het minst hoeft te
   // veranderen. Bij elk punt wat je kunt doen om het zekerder te maken; een knop sluit eerst het venster waar hij in
   // staat. Leeg bij oudere runs zonder kantelpunten.
+  // Een knop in een venster die ergens anders heen gaat, sluit eerst dat venster.
+  const leave = work => event => { UI.closePopup(event.target); work(); };
   function turns(run, option, { onDuplicate, shared, openTab } = {}) {
     if (!option?.tipping_points) return [];
-    const leave = work => event => { UI.closePopup(event.target); work(); };
     const again = shared || !onDuplicate ? null : () => button("Pas aan en reken opnieuw", leave(() => onDuplicate(run)), "ghost");
     const items = tipping(run, option).map(t => ({ change: t.change, text: `${t.text}.`,
       more: t.key === "import" ? "Je stroomprijs staat in je contract; met een vast tarief ligt hij voor de looptijd van het contract vast."
@@ -514,7 +510,8 @@ window.Results = (() => {
   // voor deze optie niet is doorgerekend (bijvoorbeeld zonder bekende garantie).
   const laneOutcome = (run, c, variant) => !c ? { npv_eur: 0 } : variant === "base" ? c
     : variant === "stress" ? warranty(run, c)?.result ?? null : variant === "export" ? c.export_variant ?? null : c[variant] ?? null;
-  const NOT_SEPARATE = "Niet apart berekend", NA = "Niet van toepassing";
+  // Bij geen accu een streepje; schermlezers horen wat het betekent.
+  const NOT_SEPARATE = "Niet apart berekend", NA = () => [h("span", { "aria-hidden": "true" }, "—"), h("span", { class: "visually-hidden" }, "Niet van toepassing")];
   function sheetTable(run, kinds, shownLanes, variant, leadKey) {
     const result = run.result, p = run.input.request.parameters, inputs = new Map(run.input.request.candidates.map(c => [c.key, c]));
     const base = variant === "base", sameCosts = base || variant === "export" || variant === "stress";
@@ -531,13 +528,13 @@ window.Results = (() => {
         ? [eur0(o.npv_eur), h("small", { class: "stat-range" }, `ongunstig ${eur0(c.pessimistic.npv_eur)} · gunstig ${eur0(c.optimistic.npv_eur)}`)]
         : eur0(o.npv_eur), eur0(0)],
       ["Lonend tot", "hoogste startinvestering die nog uitkomt", (c, o) => !o ? missing()
-        : base || variant === "export" || variant === "stress" ? breakEven(o.break_even_investment_eur) ?? "Niet berekend" : NOT_SEPARATE, NA],
+        : base || variant === "export" || variant === "stress" ? breakEven(o.break_even_investment_eur) ?? "Niet berekend" : NOT_SEPARATE, NA()],
       ["Startinvestering nu", null, c => sameCosts ? eur0(c.initial_investment_eur) : NOT_SEPARATE, eur0(0)],
       ["Besparing in jaar 1", null, c => !base ? NOT_SEPARATE : c.years?.[0] ? eur0(c.years[0].energy_saving_eur) : "Onbekend", eur0(0)],
-      ["Terugverdiend na", null, (c, o) => !o ? missing() : base || variant === "export" || variant === "stress" ? payback(o.payback_years) : NOT_SEPARATE, NA],
+      ["Terugverdiend na", null, (c, o) => !o ? missing() : base || variant === "export" || variant === "stress" ? payback(o.payback_years) : NOT_SEPARATE, NA()],
       ["Aansluiting", null, c => kinds.get(c.key) === "plug"
-        ? [`${connectionText(c, kinds)}: Milieu Centraal raadt dit af. `, toAdvice(run, "Lees waarom", c.name)] : connectionText(c, kinds), NA],
-      p.budget_eur != null ? ["Budget", null, c => c.within_budget === false ? `Boven je budget van ${eur0(p.budget_eur)}` : "Binnen je budget", NA] : null
+        ? [`${connectionText(c, kinds)}: Milieu Centraal raadt dit af. `, toAdvice(run, "Lees waarom", c.name)] : connectionText(c, kinds), NA()],
+      p.budget_eur != null ? ["Budget", null, c => c.within_budget === false ? `Boven je budget van ${eur0(p.budget_eur)}` : "Binnen je budget", NA()] : null
     ].filter(Boolean);
     const lead = lane => (lane.option?.key ?? null) === leadKey ? "lane-lead" : null;
     return h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": "Beslisblad" },
@@ -614,8 +611,35 @@ window.Results = (() => {
         "berekening kosten meer dan ze extra opleveren." : ".");
   }
 
-  // Het korte antwoord als kaart: de besproken accu in gewone woorden, het netto voordeel groot, de bandbreedte in één
-  // zin en de kerngetallen. Wat niet iedereen nodig heeft (varianten en kantelpunten, waarom deze accu, het geschatte
+  // De bandbreedte op de kaart: als het tegenzit en als het meezit als tekst aan de uiteinden, ertussen een balk op één
+  // schaal met geen accu (€ 0) als streep en de basisaannames als punt. De balk is versiering; de tekst is het antwoord.
+  function rangeBar(low, mid, high, outcome) {
+    const min = Math.min(0, low), max = Math.max(0, high), at = v => max === min ? 50 : (v - min) / (max - min) * 100;
+    const pos = v => `${at(v).toFixed(2)}%`;
+    return h("div", { class: "answer-range" },
+      h("p", { class: "range-end" }, h("small", {}, "Als het tegenzit"), outcome(low)),
+      h("div", { class: "range-track", "aria-hidden": "true" },
+        h("span", { class: "range-fill", style: `left:${pos(low)};width:${(at(high) - at(low)).toFixed(2)}%` }),
+        h("span", { class: "range-zero", style: `left:${pos(0)}` }),
+        h("span", { class: `range-dot ${mid >= 0 ? "gain" : "loss"}`, style: `left:${pos(mid)}` })),
+      h("p", { class: "range-end" }, h("small", {}, "Als het meezit"), outcome(high)));
+  }
+  // Eén regel over het einde van salderen: wat het zonder accu kost en wat de besproken accu daarvan terughaalt. De som
+  // staat in de uitleg onder ‘Zo is de besparing berekend’. Wint geen accu, dan alleen als de beste accu ook echt verlies
+  // geeft (niet als hij alleen buiten budget of doel valt).
+  function salderenLine(run, option, wins) {
+    const gap = salderenGap(run), saving = option?.years?.[0]?.energy_saving_eur;
+    if (!gap) return null;
+    const lead = `Het einde van salderen kost je in jaar 1 zonder accu ongeveer ${eur0(gap.eur)}`;
+    if (!finite(saving) || saving <= 0 || (!wins && !(option.npv_eur < 0))) return h("p", { class: "answer-salderen" }, `${lead}.`);
+    return h("p", { class: "answer-salderen" }, lead + (!wins
+      ? `; de beste accu haalt daarvan ${eur0(Math.min(saving, gap.eur))} terug, maar dat weegt over de looptijd niet op tegen zijn kosten.`
+      : saving >= gap.eur ? `; deze accu bespaart in jaar 1 ${eur0(saving)}, meer dan dat.`
+        : `; deze accu haalt daarvan ${eur0(saving)} terug (${n(saving / gap.eur * 100, 0)}%).`));
+  }
+
+  // Het korte antwoord als kaart: de besproken accu in gewone woorden, het netto voordeel groot, de bandbreedte als
+  // balk en de kerngetallen. Wat niet iedereen nodig heeft (varianten en kantelpunten, waarom deze accu, het geschatte
   // profiel, de waarschuwingen) staat achter een knop; de kaart eindigt bij die knoppen. Het beslisblad staat eronder in
   // een eigen blok (`comparison`).
   function verdict(run, kinds, ctx) {
@@ -638,28 +662,27 @@ window.Results = (() => {
     const span = `over ${p.horizon_years} jaar, in geld van nu`;
     const name = option ? plainName(run, option, kinds) : null;
     const range = option && finite(option.pessimistic?.npv_eur) && finite(option.optimistic?.npv_eur)
-      ? `Als het tegenzit ${outcome(option.pessimistic.npv_eur)}, als het meezit ${outcome(option.optimistic.npv_eur)}.` : null;
+      ? rangeBar(option.pessimistic.npv_eur, option.npv_eur, option.optimistic.npv_eur, outcome) : null;
     const items = turns(run, option, ctx);
     const why = [h("p", {}, result.recommendation),
       quote && rec ? h("p", {}, "Ook zonder offerte komt deze accu in deze berekening het beste uit.") : null,
       rec && !quote && sizeNote(run, option) ? h("p", { class: "verdict-for" }, sizeNote(run, option)) : null];
     const profile = ofKind(result, "warning").filter(m => PROFILE_CODES.includes(m.code)), off = billGap(run);
-    const sheetOpts = { variant: "pill" }, count = ctx?.warnings?.length ?? 0;
-    const leave = work => event => { UI.closePopup(event.target); work(); };
+    const sheetOpts = { variant: "pill" }, narrow = { ...sheetOpts, className: "narrow" }, count = ctx?.warnings?.length ?? 0;
     const actions = [
       option && (items.length || range) ? UI.popup("Hoe zeker is dit?", "Hoe zeker is dit?", certainty(run, option, items), sheetOpts) : null,
-      UI.popup(wins ? "Waarom deze accu?" : "Waarom geen accu?", wins ? `Waarom ${name}?` : "Waarom geen accu?", why, sheetOpts),
+      UI.popup(wins ? "Waarom deze accu?" : "Waarom geen accu?", wins ? `Waarom ${name}?` : "Waarom geen accu?", why, narrow),
       isEstimated(run) && profile.length ? UI.popup("Geschat profiel", "Geschat profiel", [profile.map(m => h("p", {}, m.text)),
         h("p", {}, "Met gemeten uur- of kwartierwaarden van je slimme meter wordt de uitkomst nauwkeuriger."),
         off ? h("p", {}, `Volgens je jaarafrekening leverde je ${kwh(off.bill)} terug; het geschatte profiel gaat zonder accu uit van ` +
           `${kwh(off.model)}. ` + (off.more ? "Je levert dus meer terug dan het standaardprofiel: de besparing met een accu kan hoger uitvallen dan berekend."
             : "Je gebruikt overdag dus meer zelf dan het standaardprofiel: er blijft minder over om op te slaan, dus de besparing valt waarschijnlijk lager uit dan berekend.")) : null,
-        link("Importeer meetwaarden", "#/energie/import", "button secondary")], { variant: "pill notice" }) : null,
+        link("Importeer meetwaarden", "#/energie/import", "button secondary")], { variant: "pill notice", className: "narrow" }) : null,
       // De lijst pas bij openen, en niet op papier: het tabblad Waarschuwingen gaat daar al mee.
       count ? UI.popup(`${count} ${count === 1 ? "waarschuwing" : "waarschuwingen"}`, "Waarschuwingen", () => [
         h("ul", { class: "compact warning-brief" }, warningItems(run, ofKind(result, "warning"))),
         ctx.openTab ? button("Naar het tabblad Waarschuwingen", leave(() => ctx.openTab("Waarschuwingen")), "secondary") : null],
-      { variant: "pill notice", print: false }) : null
+      { variant: "pill notice", print: false, className: "narrow" }) : null
     ];
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
       h("h2", {}, wins ? name : "Geen accu"),
@@ -667,11 +690,12 @@ window.Results = (() => {
       wins ? h("p", { class: "answer-figure" }, h("strong", {}, eur0(Math.abs(option.npv_eur))),
         ` netto ${option.npv_eur >= 0 ? "voordeel" : "verlies"} ${span}`)
         : option ? h("p", { class: "answer-figure small" }, `De beste accu, ${name} (${option.name}), komt uit op ${outcome(option.npv_eur)} ${span}.`) : null,
-      range ? h("p", { class: "answer-range" }, range) : null,
+      range,
       quote ? h("p", { class: "verdict-lead" }, quoteLead(run, option)) : null,
       other ? h("p", { class: "verdict-for" }, other) : null,
       wins ? stats(figures(run, option).filter(([label]) => label !== "Netto voordeel (NPV)")) : null,
       items.length ? h("p", { class: "answer-tip" }, h("strong", {}, "Eerste kantelpunt: "), items[0].text) : null,
+      salderenLine(run, option, wins),
       stress ? h("p", { class: "verdict-warn" }, h("strong", {}, "Let op de garantie. "), stress) : null,
       isPlug ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op de veiligheid: "),
         "Milieu Centraal raadt stekkerbatterijen op dit moment af, onder meer om brandrisico. " +
@@ -684,6 +708,34 @@ window.Results = (() => {
           : "Er zit geen vaste installatie in deze berekening.")) : null,
       h("div", { class: "answer-actions" }, actions));
   }
+  // Wat je nu kunt doen, als genummerde stappen met elk één knop: zekerder maken met meetwaarden, een offerte vragen
+  // met de grensprijs als bovengrens, die naast de offertecheck leggen en bij een stekkerbatterij aanmelden en de
+  // verzekering nakijken. Wint geen accu, dan wanneer je opnieuw rekent. Ook op papier.
+  function nextSteps(run, kinds, { onDuplicate, shared, openTab } = {}) {
+    const quote = quoted(run), option = quote ?? judged(run), result = run.result;
+    const wins = Boolean(option && (quote || option.key === result.recommended_key)), plug = wins && kinds.get(option.key) === "plug";
+    const limit = option?.break_even_investment_eur, steps = [];
+    const step = (title, text, action) => steps.push(h("li", {}, h("p", {}, h("strong", {}, `${title}. `), text), action ?? null));
+    if (isEstimated(run)) step("Maak de uitkomst zekerder", "Je verbruik en opwek zijn geschat uit jaartotalen. Met de uur- of " +
+      "kwartierwaarden van je slimme meter rekent de keuzehulp met je eigen profiel.", link("Importeer meetwaarden", "#/energie/import", "button secondary"));
+    const toCheck = openTab ? button("Naar de offertecheck", () => openTab("Offertecheck"), "secondary") : null;
+    if (quote) step("Loop je offerte na", "De offertecheck zet op een rij wat je in de offerte controleert, met de waarden waarmee hier is gerekend.", toCheck);
+    else if (wins) {
+      const most = finite(limit) && limit > 0 ? ` Betaal niet meer dan ${roundedLimit(limit)} aan startinvestering (alles bij elkaar, na ` +
+        "teruggaven); daarboven loont hij met deze aannames niet." : "";
+      if (!plug) step("Vraag een offerte", "Een installateur bekijkt dan ook of je meterkast, aansluiting en omvormer geschikt zijn." + most);
+      else if (most) step("Let op de prijs", `Een stekkerbatterij koop je meestal zelf.${most}`);
+      step(plug ? "Controleer de gegevens" : "Leg de offerte naast de offertecheck", `De offertecheck zet op een rij wat je in ${plug
+        ? "de productgegevens" : "een offerte"} controleert, met de waarden waarmee hier is gerekend.`, toCheck);
+    }
+    if (plug) step("Kies je toch een stekkerbatterij", "Meld hem aan op energieleveren.nl en vraag je verzekeraar of hij gedekt is.",
+      toAdvice(run, "Lees het advies", undefined, "secondary"));
+    if (!wins) step("Reken opnieuw als er iets verandert", "Deze berekening blijft bewaard onder Mijn berekeningen. Verandert je " +
+      "contract, de prijs van accu’s of je verbruik, reken dan opnieuw.", shared || !onDuplicate ? null
+        : button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary"));
+    return steps.length ? h("section", { class: "panel next-steps" }, h("h2", {}, "Wat kun je nu doen?"), h("ol", {}, steps)) : null;
+  }
+
   // Het beslisblad met wat binnen de onzekerheid even goed is en, in Zelf doorrekenen, je offertes naast elkaar.
   function comparison(run, kinds) {
     const quote = quoted(run), option = quote ?? judged(run);
@@ -756,14 +808,12 @@ window.Results = (() => {
         ? "Let op: financieel kost deze keuze je over de looptijd geld. Hij wint omdat je eigen gebruik belangrijker vond."
         : "Let op: in geld van nu kost deze keuze je over de looptijd geld. Hij wint op ROI, die toekomstige bedragen niet omrekent naar nu."));
     }
-    const gap = salderenGap(run);
+    // Wat het einde van salderen kost: de zin staat op de kaart (`salderenLine`), de som hier in de uitleg.
+    const gap = salderenGap(run), sums = h("ul");
     if (gap) {
       const saving = best?.years?.[0]?.energy_saving_eur;
-      // Eén korte zin met de kern; de som eronder, zodat de zin niet de hele lijst overneemt.
       const back = finite(saving) && saving > 0 ? Math.min(saving, gap.eur) : null;
-      list.append(h("li", {}, `Het einde van salderen kost je in jaar 1 zonder accu ongeveer ${eur0(gap.eur)}` +
-        (back == null ? "." : saving >= gap.eur ? `; de accu hierboven bespaart in jaar 1 ${eur0(saving)}, meer dan dat.`
-          : `; de accu hierboven haalt daarvan ${eur0(saving)} terug (${n(saving / gap.eur * 100, 0)}%).`),
+      sums.append(h("li", {}, "Wat het einde van salderen kost, zonder accu in jaar 1:",
         h("dl", { class: "sum-lines" },
           h("dt", {}, "Wegvallend voordeel"), h("dd", {}, `${kwh(gap.kwh)} teruglevering × (${money(gap.import)} − ` +
             `${money(gap.export)}) per kWh = ${eur0(gap.eur)} per jaar`),
@@ -855,7 +905,6 @@ window.Results = (() => {
     };
     const lines = (r, second) => h("ul", { class: "receipt" }, h("li", {}, r.line), h("li", {}, second.text),
       h("li", {}, `= ${eur0(r.gain + second.value)} per jaar`));
-    const sums = h("ul");
     const receipts = first && p.start_year > Data.LAST_NETTING_YEAR && !tariff.export_fee_bands?.length;
     if (receipts) {
       const r = receipt(base.grid_import_kwh - first.energy.grid_import_kwh, base.grid_export_kwh - first.energy.grid_export_kwh, 1);
@@ -920,10 +969,6 @@ window.Results = (() => {
       quote.price && quotedInput && quote.changes.some(c => c.field === "upfront_eur") ? priceSum() : null));
     const recalculated = recalculatedFrom(run);
     if (recalculated) origin.append(h("li", {}, recalculated));
-    const toCheck = button("Naar de offertecheck", event => {
-      const tab = [...event.target.closest("#view").querySelectorAll("[role=tab]")].find(t => t.textContent === "Offertecheck");
-      tab?.click(); tab?.focus();
-    }, "secondary");
     return h("section", { class: "panel plain summary" }, h("h2", {}, "Wat betekent dit voor jou?"), list,
       advice ?? null,
       change.children.length ? fold(changes.length ? "Wat zou de uitkomst veranderen?" : "Tot welke prijs is het lonend, en wat als het tegenzit?", limits, change) : null,
@@ -933,9 +978,7 @@ window.Results = (() => {
         : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin), { open: Boolean(quotedOption) }) : null,
       // De woordenlijst klapt bij afdrukken niet open: hij maakt het blad een paar pagina's langer.
       Object.assign(fold("Wat betekenen deze woorden?", h("dl", { class: "glossary" },
-        Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))), { className: "fold print-closed" }),
-      h("p", { class: "next-step" }, "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en " +
-        "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
+        Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))), { className: "fold print-closed" }));
   }
 
   // Wat het einde van salderen kost bij je verbruik en opwek zonder accu in jaar 1, met het tarief van de run. Met
@@ -1973,11 +2016,12 @@ window.Results = (() => {
     };
     // Waarmee gerekend is in één regel onder het antwoord; adres, profiel, datum en alle tarieven in een venster.
     const short = v => money(v, { decimals: 2 });
-    const metaLine = h("p", { class: "help meta-line" }, `${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ` +
+    const metaLine = h("div", { class: "help meta-line" }, `${Data.objectives[p.objective]} · ${p.horizon_years} jaar vanaf ${p.start_year} · ` +
       `stroom ${short(t.import_eur_per_kwh)} · teruglevering ${short(t.export_eur_per_kwh)} per kWh `,
       UI.popup("Waarmee is gerekend?", "Waarmee is gerekend?", [...meta,
-        button("Alle invoer en aannames", event => { UI.closePopup(event.target); openTab("Invoer"); }, "secondary")], { variant: "ghost inline" }));
-    view.append(verdict(run, kinds, { onDuplicate, shared, openTab, warnings }), metaLine, comparison(run, kinds), jump,
+        button("Alle invoer en aannames", event => { UI.closePopup(event.target); openTab("Invoer"); }, "secondary")], { variant: "ghost inline", className: "narrow" }));
+    const ctx = { onDuplicate, shared, openTab, warnings };
+    view.append(verdict(run, kinds, ctx), metaLine, comparison(run, kinds), nextSteps(run, kinds, ctx), jump,
       summary(run, kinds, circuit, categories), parts,
       h("div", { class: "option-details" }, [...DETAILS.get(run).values()].map(panel => panel.element)));
   }

@@ -305,9 +305,6 @@ dialog.option-detail .stats { grid-template-columns: repeat(auto-fit, minmax(min
 .product-group { margin-top: var(--gap); }
 .product-group > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--gap); }
 .verdict { background: var(--accent-soft); border-color: transparent; }
-.firmer ol { margin: .5rem 0 0; padding-left: 1.4rem; display: grid; gap: .6rem; }
-.firmer li p { margin: 0; font-weight: 600; }
-.firmer li .actions { margin-top: .3rem; }
 .verdict h2 { margin-bottom: .25rem; }
 .verdict-for { margin: .5rem 0 0; color: var(--muted); }
 .verdict-lead { margin: 0; font-weight: 600; }
@@ -337,7 +334,10 @@ dialog.option-detail .stats { grid-template-columns: repeat(auto-fit, minmax(min
 .fold { border-top: 1px solid var(--line); padding: .35rem 0; }
 .fold > summary { padding: .3rem 0; }
 .fold[open] > summary { margin-bottom: .25rem; }
-.next-step { margin: .75rem 0 0; }
+.next-steps ol { margin: .5rem 0 0; padding-left: 1.4rem; display: grid; gap: .8rem; max-width: 70ch; }
+.next-steps li p { margin: 0 0 .35rem; }
+/* Alleen voor schermlezers, zoals het streepje bij geen accu in het beslisblad. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; font-weight: 700; color: var(--muted); margin: 0; }
 .plain { border-left: 4px solid var(--accent); }
 .plain li { margin: .35rem 0; }
@@ -406,7 +406,7 @@ dialog.option-detail .stats { grid-template-columns: repeat(auto-fit, minmax(min
   details.print-closed:not([open]) > summary::after { content: " (in de app)"; }
   .chart svg:not(.line-sample) { max-height: 9cm; }
   /* Kleurvlakjes in de legenda zijn achtergronden; zonder dit laat de browser ze op papier weg. */
-  .swatch { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .swatch, .range-fill, .range-dot { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   /* Het lange uitlegpaneel mag over een pagina doorlopen; anders blijft de eerste pagina half leeg. */
   .panel.plain { break-inside: auto; }
   /* Een dichte ‘Toon als tabel’ doet op papier niets. */
@@ -470,7 +470,20 @@ dialog.option-detail .stats { grid-template-columns: repeat(auto-fit, minmax(min
 .answer-figure { margin: .6rem 0 0; font-size: 1.05rem; }
 .answer-figure strong { font-size: clamp(2rem, 5vw, 2.6rem); line-height: 1.1; margin-right: .3rem; font-variant-numeric: tabular-nums; }
 .answer-figure.small { font-size: 1rem; }
-.answer-range, .answer-tip { margin: .3rem 0 0; }
+.answer-tip, .answer-salderen { margin: .3rem 0 0; }
+.answer-salderen { font-size: .95rem; }
+/* Bandbreedte: tekst aan de uiteinden, ertussen een balk met geen accu als streep en de basisaannames als punt. */
+.answer-range { display: grid; grid-template-columns: 1fr 1fr; gap: .2rem 1rem; margin: .6rem 0 0; max-width: 30rem; }
+.answer-range .range-track { grid-column: 1 / -1; grid-row: 1; }
+.range-end { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.range-end small { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; }
+.range-end:last-child { text-align: right; }
+.range-track { position: relative; height: 1rem; }
+.range-track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--line); }
+.range-fill { position: absolute; top: calc(50% - 3px); height: 6px; border-radius: 3px; background: var(--accent-soft); border: 1px solid var(--accent); }
+.range-zero { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--ink); }
+.range-dot { position: absolute; top: calc(50% - 6px); width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
+.range-dot.loss { background: var(--danger); }
 .answer-tip { font-size: .95rem; }
 .answer-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0 0; }
 .popup-host { display: contents; }
@@ -483,6 +496,8 @@ button.ghost.inline { padding: 0 .15rem; text-decoration: underline; font-weight
 .summary > ul, .summary > p, .summary .fold, .comparison > p, dialog.popup .popup-body > p { max-width: 70ch; }
 .meta-line { margin: .6rem 0 1rem; }
 dialog.popup h2 { font-size: 1.25rem; margin: 0; }
+/* Een kort venster is niet breder dan zijn tekst. */
+dialog.popup.narrow { width: min(36rem, calc(100vw - 2rem)); }
 dialog.popup h3 { margin: 1.1rem 0 .3rem; font-size: 1rem; }
 .popup-body > :first-child { margin-top: .5rem; }
 ul.variant-strips { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .35rem; }
@@ -499,6 +514,8 @@ ol.turns li .ghost { padding-left: 0; }
 @media print {
   dialog.popup { display: block; position: static; inset: auto; border: 0; padding: 0; margin: .5rem 0; width: auto; max-width: none; max-height: none; background: none; color: inherit; }
   dialog.popup.print-closed { display: none; }
+  /* Gewoon afdrukken geeft een kort blad: zonder de vensters en de ingeklapte uitleg; ‘Alles afdrukken’ neemt ze mee. */
+  body:not(.print-all) dialog.popup, body:not(.print-all) .summary details.fold:not([open]) { display: none; }
   .popup-host > button, dialog.popup .dialog-head button { display: none; }
   .answer-actions { display: block; }
 }
