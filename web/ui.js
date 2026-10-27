@@ -573,7 +573,7 @@ window.UI = (() => {
               if (!finite(v)) return;
               draw("rect",
                 { x: x(start), y: cy - 13, width: Math.max(0, x(start + v) - x(start)), height: 26,
-                  fill: colour(si, series[si]) },
+                  fill: colour(si, series[si]), class: "chart-segment" },
                 `${r.label}, ${series[si].label}: ${format(v)} ${unit}`);
               start += v;
             });

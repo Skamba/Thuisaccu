@@ -117,9 +117,12 @@ window.Scenario = (() => {
     const option = state.basis && candidates.find(o => o.key === state.basis.candidate_key);
     const changes = option ? state.basis.changes.map(c => ({ ...c, after: Data.quoteValue(option, c.field) }))
       .filter(c => Number.isFinite(c.after) && c.after !== c.before) : [];
-    // De prijsopbouw hoort bij de totaalprijs; zonder die wijziging vervalt hij.
+    // De prijsopbouw hoort bij de totaalprijs; zonder die wijziging vervalt hij. Is het bedrag op de accupost daarna
+    // aangepast, dan telt de opbouw vanaf dat bedrag; is het geen totaalprijs uit de offerte meer, dan vervalt hij.
     const { price, ...rest } = state.basis || {};
-    return changes.length ? { ...rest, changes, ...(price && changes.some(c => c.field === "upfront_eur") ? { price } : {}) } : null;
+    const total = option?.costs.find(l => l.category === "battery" && l.status === "priced" && l.source === Data.QUOTE_TOTAL);
+    const current = price && total && changes.some(c => c.field === "upfront_eur") ? { ...price, total_eur: total.amount_minor / 100 } : null;
+    return changes.length ? { ...rest, changes, ...(current ? { price: current } : {}) } : null;
   }
 
   function bands() {
@@ -545,8 +548,12 @@ window.Scenario = (() => {
   }
 
   function optionCard(option, index, categories, catalogData) {
-    const remove = button("Verwijder", () => { state.options.splice(index, 1); persist();
-      redraw(state.options.length ? { index: Math.max(0, index - 1), what: "summary" } : { add: true }); }, "ghost");
+    // Een optie bevat vaak een hele offerte; verwijderen vraagt daarom om bevestiging, zoals elders in de app.
+    const name = () => option.name || `Optie ${index + 1}`;
+    const remove = button("Verwijder deze optie", () => UI.confirm("Optie verwijderen?", [
+      `‘${name()}’ wordt met de techniek en alle kostenposten uit dit concept verwijderd. Dit kan niet ongedaan worden gemaakt.`
+    ], "Verwijder optie", () => { state.options.splice(index, 1); persist();
+      redraw(state.options.length ? { index: Math.max(0, index - 1), what: "summary" } : { add: true }); }), "ghost remove");
     const tech = h("div", { class: "grid" },
       field("Naam",
         bindValue(input({ required: true, maxlength: "200" }), () => option.name, v => { option.name = v; })),
@@ -603,19 +610,26 @@ window.Scenario = (() => {
       bindValue(amount, () => line.amount, v => { line.amount = v; refreshProgress(); });
       if (year) bindValue(year, () => line.year, v => { line.year = v; });
       bindValue(source, () => line.source, v => { line.source = v; line.notes = "Invoer in Zelf doorrekenen"; });
+      // Een onbekende post blokkeert de berekening: een rand en het woord ‘Nog open’, niet alleen kleur.
+      const badge = h("span", { class: "badge warning open-badge" }, "Nog open");
+      const mark = () => { const open = line.status === "unknown"; row.classList.toggle("is-open", open); badge.hidden = !open; };
       status.addEventListener("change",
         () => { line.status = status.value; amount.disabled = line.status !== "priced";
           if (year) year.disabled = amount.disabled;
-          if (amount.disabled) { amount.value = ""; line.amount = ""; } persist(); refreshProgress(); });
+          if (amount.disabled) { amount.value = ""; line.amount = ""; } mark(); persist(); refreshProgress(); });
       const sourceField = field("Bron of aanname", source, line.notes && line.notes !== "Invoer in Zelf doorrekenen" ? line.notes : undefined);
       sourceField.classList.add("cost-source");
       const statusField = field("Status", status);
       statusField.classList.add("cost-status");
-      return [c, h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), h("small", {}, c.note)),
-        h("div", { class: "cost-controls" }, statusField, field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount),
+      const amountField = field(c.timing === "annual" ? "Bedrag per jaar (€)" : "Bedrag (€)", amount);
+      amountField.classList.add("cost-amount");
+      const row = h("div", { class: "cost-row" }, h("div", {}, h("strong", {}, c.label), " ", badge, h("small", {}, c.note)),
+        h("div", { class: "cost-controls" }, statusField, amountField,
           year ? field("Einde van jaar", year) : null,
           // De toelichting bij een indicatie (bijvoorbeeld wat niet is meegeteld) staat onder de bron.
-          sourceField))];
+          sourceField));
+      mark();
+      return [c, row];
     });
     const firstOpen = categories.find(c => (option.costs[c.key]?.status || "unknown") === "unknown");
     const opened = openGroups.get(option) || {};
@@ -648,7 +662,7 @@ window.Scenario = (() => {
       bindValue(numberInput({ min: "0", ...props }), () => option.loan[key], v => { option.loan[key] = v; }));
     refreshProgress();
     return h("details", { class: "panel option-editor", open: true }, h("summary", {}, option.name || `Optie ${index + 1}`),
-      h("div", { class: "actions" }, remove), tech, assumptions,
+      tech, assumptions,
       h("h3", {}, "Kosten"), progress, total,
         h("div", { class: "actions" }, field("Soort aansluiting", kind, "Bepaalt welke posten ‘Vul open posten’ invult en hoe " +
           "de uitkomst de aansluiting noemt. Al ingevulde posten blijven staan; een stekkerbatterij op een eigen groep krijgt " +
@@ -657,7 +671,8 @@ window.Scenario = (() => {
         "Bedragen inclusief niet-teruggevraagde btw. Een pakketprijs staat één keer bij de accu; inbegrepen onderdelen tellen niet dubbel."),
       quoteTotal(option, categories), costGroups,
       h("details", {}, h("summary", {}, "Financiering (optioneel)"), h("p", { class: "help" }, "Een annuïtaire lening voegt alleen de rente toe; de aanschaf telt al als investering. Looptijd binnen de analysehorizon."),
-        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))));
+        h("div", { class: "grid" }, loan("Leningbedrag (€)", "amount", { step: "0.01", money: true }), loan("Rente per jaar (%)", "interest", { max: "30", step: "0.01" }), loan("Looptijd (jaren)", "years", { max: "30", step: "1" }))),
+      h("div", { class: "actions option-end" }, remove));
   }
 
   // Eén totaalprijs uit een offerte in de kostenposten, zoals de offertecheck bij een uitkomst (`Data.applyQuotePrice`): het

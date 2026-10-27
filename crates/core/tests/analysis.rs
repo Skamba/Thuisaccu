@@ -1048,3 +1048,15 @@ fn npv_is_linear_in_the_net_export_value_from_2027_as_the_interface_assumes() {
     close(higher.candidates[0].npv_eur - r.npv_eur, predicted);
     assert!(predicted < 0.0);
 }
+
+#[test]
+fn whole_numbers_use_dutch_grouping_and_a_real_minus_sign() {
+    use thuisaccu_core::analysis::whole;
+    assert_eq!(whole(5500.0), "5.500");
+    assert_eq!(whole(999.4), "999");
+    assert_eq!(whole(1_234_567.0), "1.234.567");
+    assert_eq!(whole(-123.0), "−123");
+    assert_eq!(whole(-1234.0), "−1.234");
+    // Afgerond nul is geen negatief getal.
+    assert_eq!(whole(-0.4), "0");
+}

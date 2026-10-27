@@ -450,6 +450,32 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await close();
 });
 
+test("keuzehulp met panelen die nog komen: afname is het hele verbruik, opwek uit de offerte", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/keuzehulp`);
+  // Ja met opwek maar zonder teruglevering wijst naar ‘Nog niet, ze komen eraan’: anders telt de opwek dubbel.
+  await page.click("label:has-text('Ja') >> nth=0");
+  await page.getByLabel("Stroom van het net per jaar (kWh)").fill("3000");
+  await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").fill("0");
+  await page.getByLabel("Opwek van je panelen per jaar (kWh)").fill("3500");
+  await next(page);
+  assert.match(await page.textContent(".wizard-body"), /Komen de panelen nog\? Kies dan .*‘Nog niet, ze komen eraan’/);
+  await page.click("label:has-text('Nog niet, ze komen eraan')");
+  assert.match(await page.textContent(".wizard-body .callout"), /alsof de panelen er al een heel jaar liggen/);
+  assert.equal(await page.getByLabel("Teruggeleverd aan het net per jaar (kWh)").count(), 0);
+  await page.getByLabel("Verwachte opwek per jaar (kWh)").fill("");
+  await page.getByLabel("Of: vermogen van je panelen (kWp)").fill("");
+  await next(page);
+  assert.match(await page.textContent(".wizard-body"), /Vul de opwek van je panelen in/);
+  await page.getByLabel("Verwachte opwek per jaar (kWh)").fill("3500");
+  // Wat je nu van het net haalt, is je hele verbruik: de opwek telt er niet bij op.
+  assert.match(await page.textContent(".derived"), /in totaal ongeveer 3\.000 kWh per jaar\./);
+  await next(page);
+  await page.waitForSelector("h2:has-text('Je woning')");
+  assert.deepEqual(problems, []);
+  await close();
+});
+
 test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste accu’s door", async () => {
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/keuzehulp`);
@@ -472,10 +498,11 @@ test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste ac
   await page.click("button:has-text('Bereken mijn advies')");
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 60000 });
   assert.match(await page.textContent(".verdict"), /[Gg]een accu/);
-  // Wat er zou moeten veranderen, met een getal uit deze berekening per regel.
+  // Zonder panelen helpen prijs- en tariefregels niet: de uitleg wijst naar ‘Nog niet, ze komen eraan’.
   const noBattery = await page.textContent(".plain");
-  assert.match(noBattery, /Dat verandert als:.*(minder kost dan ongeveer €\s*[\d.]+ \(nu €\s*[\d.]+\)|zelfs gratis niet lonend)/);
-  assert.match(noBattery, /Deze berekening blijft bewaard onder Mijn berekeningen.* ‘Lonend’ betekent hier/);
+  assert.match(noBattery, /Zonder zonnepanelen is er geen zonnestroom om op te slaan.*‘Nog niet, ze komen eraan’/);
+  assert.doesNotMatch(noBattery, /Dat verandert als:/);
+  assert.match(noBattery, /ook als hij gratis zou zijn|lonend zolang de startinvestering/);
   assert.doesNotMatch(noBattery, /warmtepomp vanaf/);
   // Ook als geen accu wint, tonen kostenopbouw en offertecheck de accu die het dichtst in de buurt komt.
   await page.click(`[role=tab]:has-text("Kostenopbouw")`);
@@ -802,9 +829,12 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.locator(".problem-group button:has-text('Ga naar deze optie')").click();
   await page.waitForFunction(() => document.activeElement?.matches(".cost-row select"));
   assert.equal(await page.evaluate(() => document.activeElement.value), "unknown");
+  // Een open post staat er als ‘Nog open’, niet alleen met een kleur; met een status verdwijnt dat.
+  assert.equal(await page.evaluate(() => document.activeElement.closest(".cost-row").querySelector(".open-badge").hidden), false);
   await card.locator("button:has-text('Vul open posten met indicaties')").click();
   const row = title => card.locator(".cost-row", { hasText: title });
   await row("Accu of complete pakketprijs").getByLabel("Status").selectOption("priced");
+  assert.equal(await row("Accu of complete pakketprijs").locator(".open-badge").isHidden(), true);
   // In een bedrag is ‘9.000’ negenduizend; het lopende totaal telt het meteen mee.
   const total = async () => Number((await card.locator(".cost-total").textContent())
     .match(/Startkosten volgens deze posten: €\s*([\d.]+)/)[1].replace(/\./g, ""));
@@ -861,6 +891,10 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   assert.match(own, /Accu of complete pakketprijs €\s*9\.000/);
   // In de jaartabel springt het verbruik in 2028 met de warmtepomp omhoog, met de uitleg eronder.
   await page.click(`[role=tab]:has-text("Kasstromen")`);
+  // De lijnvoorbeelden in de legenda blijven klein; `.chart svg` mag ze niet schermbreed maken.
+  const samples = await page.locator("[role=tabpanel]:not([hidden]) .legend .line-sample")
+    .evaluateAll(list => list.map(s => s.getBoundingClientRect().height));
+  assert.ok(samples.length && samples.every(height => height > 0 && height < 20), JSON.stringify(samples));
   await page.getByLabel("Jaartabel van").selectOption({ label: "Eigen optie 1" });
   const bills = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
     .evaluate(t => { const at = name => [...t.tHead.rows[0].cells].findIndex(c => c.textContent === name);
@@ -1298,6 +1332,10 @@ test("optie-editor: kosten in groepen, één totaalprijs uit een offerte en een 
   assert.equal(option.costs.battery.status, "priced");
   assert.equal(option.costs.battery.amount, "8000,00");
   assert.equal(Object.values(option.costs).filter(l => l.source === "In de totaalprijs van de offerte").length, kept - 1);
+  // Verwijderen vraagt eerst bevestiging; Annuleren laat de optie staan.
+  await card.locator("button:has-text('Verwijder deze optie')").click();
+  await page.locator("dialog[open] button:has-text('Annuleren')").click();
+  assert.equal(await page.locator(".option-editor").count(), 1);
   // Daarna indicaties vullen telt niets bovenop de totaalprijs: open startposten worden ‘inbegrepen’, de reserve vervalt.
   const upfront = await page.evaluate(async () => (await Data.costs()).categories
     .filter(c => c.timing === "upfront" && !Data.CREDITS.includes(c.key)).map(c => c.key));

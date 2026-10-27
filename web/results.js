@@ -140,11 +140,12 @@ window.Results = (() => {
   }
   // Knop naar het advies (op de kaart van een stekkerbatterij en bovenaan): klapt het open en springt ernaartoe;
   // een hash-link zou de router laten navigeren.
-  const toAdvice = (label = "Milieu Centraal raadt stekkerbatterijen af: lees waarom") => button(label, () => {
+  // Met een optienaam zegt de toegankelijke naam bij welke kaart de knop hoort.
+  const toAdvice = (label = "Milieu Centraal raadt stekkerbatterijen af: lees waarom", name) => button(label, () => {
     const advice = document.getElementById(PLUG_ADVICE);
     advice.closest("details").open = true;
     advice.scrollIntoView({ block: "center" }); advice.focus({ preventScroll: true });
-  }, "ghost");
+  }, "ghost", name ? { "aria-label": `${label} (bij ${name})` } : {});
 
   // De grens voor de post ‘Accu of complete pakketprijs’ alleen: de winkelprijs die je in de gaten houdt,
   // met de overige startposten (na teruggaven) gelijk. Leeg als er geen aparte overige posten zijn.
@@ -164,23 +165,28 @@ window.Results = (() => {
         `als de overige startposten samen ${eur0(rest)} blijven.`
       : ` De overige startposten (${eur0(rest)} samen) liggen al boven die grens.`;
   }
-  // De besproken optie: de aanbevolen accu, anders die met de hoogste NPV.
+  // De besproken optie: de aanbevolen accu, anders de eerste in de volgorde van het doel (`rank`), zoals de kaarten in
+  // het overzicht; een accu boven het budget komt dan pas na de accu's die erbinnen blijven.
   function judged(run) {
     const result = run.result;
-    return result.candidates.find(c => c.key === result.recommended_key) ||
-      [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    return result.candidates.find(c => c.key === result.recommended_key) || rank(run)[0];
   }
 
   // Als geen accu wint: wat er zou moeten veranderen, uitsluitend met getallen uit deze berekening.
   function whatIf(run, best) {
     const request = run.input.request, p = request.parameters, result = run.result, lines = [];
     const limit = best.break_even_investment_eur;
-    if (best.npv_eur > 0 && best.within_budget === false) lines.push(`je budget ruimer is: ${best.name} kost ` +
-      `${eur0(best.initial_investment_eur)}, meer dan je budget van ${eur0(p.budget_eur)}, en levert netto ${eur0(best.npv_eur)} op in geld van nu.`);
+    // Een lonende accu boven het budget: de besproken accu zelf, of anders de beste daarvan.
+    const richer = best.npv_eur > 0 && best.within_budget === false ? best
+      : result.candidates.filter(c => c.within_budget === false && c.npv_eur > 0).sort((a, b) => b.npv_eur - a.npv_eur)[0];
+    const budgetLine = c => `je budget ruimer is: ${c.name} kost ${eur0(c.initial_investment_eur)}, meer dan je budget van ` +
+      `${eur0(p.budget_eur)}, en levert netto ${eur0(c.npv_eur)} op in geld van nu.`;
+    if (richer === best) lines.push(budgetLine(best));
     else if (finite(limit)) lines.push(limit > 0
       ? `${best.name} minder kost dan ongeveer ${roundedLimit(limit)} (nu ${eur0(best.initial_investment_eur)}).${batteryLimit(run, best, limit)}`
       : `de besparing groter wordt: ${best.name} is zelfs gratis niet lonend, omdat de jaarkosten, verliezen en het ` +
         "sluimerverbruik zwaarder wegen dan de besparing. Een lagere prijs alleen is dus niet genoeg.");
+    if (richer && richer !== best) lines.push(budgetLine(richer));
     const v = p.export_variant;
     if (v && result.export_variant_recommended_key != null) {
       const alt = result.candidates.find(c => c.key === result.export_variant_recommended_key);
@@ -395,7 +401,12 @@ window.Results = (() => {
     const meaning = p.discount_pct > 0
       ? `‘Lonend’ betekent hier: de besparing verdient de investering binnen ${p.horizon_years} jaar terug en levert daarbovenop ${pct(p.discount_pct)} per jaar op, wat je geld anders zou kunnen opbrengen (de discontovoet).`
       : `‘Lonend’ betekent hier: binnen ${p.horizon_years} jaar verdien je de investering terug.`;
-    const changes = !rec && best && p.objective !== "self_consumption" ? whatIf(run, best) : [];
+    // Zonder zonnepanelen is er geen zonnestroom om op te slaan: dan helpen prijs- en tariefregels weinig.
+    const noSolar = !(base.production_kwh > 0);
+    if (noSolar && !rec) change.append(h("li", {}, "Zonder zonnepanelen is er geen zonnestroom om op te slaan; de accu kost dan " +
+      "vooral sluimerverbruik en laadverlies. Komen er panelen? Reken dan in de ", h("a", { href: "#/keuzehulp" }, "keuzehulp"),
+      " met ‘Nog niet, ze komen eraan’ en zet beide berekeningen naast elkaar onder Mijn berekeningen."));
+    const changes = !rec && !noSolar && best && p.objective !== "self_consumption" ? whatIf(run, best) : [];
     if (changes.length) change.append(h("li", {}, "Dat verandert als:", h("ul", { class: "what-if" }, changes.map(t => h("li", {}, t))),
       `Deze berekening blijft bewaard onder Mijn berekeningen; reken opnieuw als je contract, de prijs of je verbruik verandert. ${meaning}`));
     if (!changes.length && best && finite(best.break_even_investment_eur)) {
@@ -464,8 +475,8 @@ window.Results = (() => {
       const now = r.exported(tariff.export_eur_per_kwh, tariff.export_fee_eur_per_kwh), v = p.export_variant;
       const later = v ? r.exported(v.export_eur_per_kwh, v.export_fee_eur_per_kwh) : null;
       sums.append(h("li", {}, `Zo reken je de besparing van ${best.name} in het eerste jaar na:`, lines(r, now),
-        `Dat de teruglevering meer daalt dan de netafname, komt door ${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en ` +
-          `omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.` +
+        (base.grid_export_kwh > 0 ? `Dat de teruglevering meer daalt dan de netafname, komt door ${kwh(first.energy.conversion_and_fade_loss_kwh)} laad- en ` +
+          `omzetverlies en ${kwh(first.energy.standby_kwh)} sluimerverbruik van de accu.` : "") +
           (later ? ` In de variant ‘${v.label}’ wordt de tweede regel vanaf ${v.from_calendar_year}: ${later.text}, samen ${eur0(r.gain + later.value)} per jaar ` +
             "(met de hoeveelheden en prijzen van jaar 1)." : "")));
     }
@@ -500,6 +511,10 @@ window.Results = (() => {
       const kept = quote.price.separate.filter(key => amount(key) != null), reserve = amount("contingency");
       const terms = { fixed: "vaste prijs", subject_to_survey: "onder voorbehoud van schouw", unknown: "niet bekend of de prijs vast is" };
       const total = quote.price.total_eur + kept.reduce((sum, key) => sum + amount(key), 0) + (reserve ?? 0);
+      // Een opbouw die niet uitkomt op de ingevoerde startkosten (een oudere run met een later aangepaste accupost) toont niets.
+      const gross = quotedInput.costs.filter(l => l.timing === "upfront" && l.status === "priced" && !Data.CREDITS.includes(l.category))
+        .reduce((sum, l) => sum + l.amount_minor / 100, 0);
+      if (Math.abs(gross - total) >= 0.01) return null;
       return h("ul", { class: "receipt" }, h("li", {}, `${eur0(quote.price.total_eur)} totaalprijs uit de offerte`),
         kept.map(key => h("li", {}, `+ ${eur0(amount(key))} apart gehouden: ${label(key)} (geschat, niet in de offerte)`)),
         reserve != null ? h("li", {}, `+ ${eur0(reserve)} reserve voor meerwerk (${terms[quote.price.terms]})`) : null,
@@ -513,7 +528,7 @@ window.Results = (() => {
           : `${quotedOption.name} is nu lonend tot ${limitText(quotedOption.break_even_investment_eur)}; ` +
             `met de oorspronkelijke waarden was dat ${limitText(quote.break_even_investment_eur)}.`)
         : "") +
-      (quote.changes.some(c => c.field === "upfront_eur") ? (quote.price && quotedInput ? " De startkosten zijn nu:" : "")
+      (quote.changes.some(c => c.field === "upfront_eur") ? (quote.price && quotedInput && priceSum() ? " De startkosten zijn nu:" : "")
         : " De startinvestering is nog de schatting uit de oorspronkelijke berekening; vergelijk de grens zelf met de prijs in je offerte."),
       quote.price && quotedInput && quote.changes.some(c => c.field === "upfront_eur") ? priceSum() : null));
     const recalculated = recalculatedFrom(run);
@@ -541,7 +556,8 @@ window.Results = (() => {
   // uit de bewaarde teruglevering per jaar zonder opnieuw te rekenen. Runs van vóór 26 oktober 2026 missen die.
   function perCent(run, c) {
     const p = run.input.request.parameters, t = p.tariff;
-    if (!c?.years?.length || p.start_year < 2027 || t.export_fee_bands?.length || !c.years.every(y => finite(y.baseline_grid_export_kwh))) return null;
+    if (!c?.years?.length || p.start_year < 2027 || t.export_fee_bands?.length || !c.years.every(y => finite(y.baseline_grid_export_kwh))
+      || c.years.every(y => y.baseline_grid_export_kwh === 0)) return null;
     const weight = y => (1 + t.annual_price_change_pct / 100) ** (y.year - 1) / (1 + p.discount_pct / 100) ** y.year;
     return { bill: c.years[0].baseline_grid_export_kwh * 0.01,
       npv: -c.years.reduce((sum, y) => sum + (y.baseline_grid_export_kwh - y.energy.grid_export_kwh) * 0.01 * weight(y), 0) };
@@ -611,7 +627,7 @@ window.Results = (() => {
       c.quoted ? badge("Je offerte", "success") : null,
       c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
       stats(figures(run, c)), sibling(c),
-      h("details", { class: "fold more-figures" }, h("summary", {}, "Meer cijfers"), stats([
+      h("details", { class: "fold more-figures" }, h("summary", { "aria-label": `Meer cijfers: ${c.name}` }, "Meer cijfers"), stats([
         ["Nettowinst over looptijd", eur0(c.net_profit_eur)], ["ROI over looptijd", pct(c.roi_pct)],
         ["Eigen gebruik jaar 1", pct(c.first_year?.self_consumption_pct)],
         c.export_variant && run.input.request.parameters.export_variant
@@ -623,7 +639,7 @@ window.Results = (() => {
     out.append(h("div", { class: "option-grid" }, shown(all).map(c => h("article", { class: `panel option${c.key === "no_battery" ? " baseline" : ""}`, style: `border-top-color:${c.color}` },
       card(c),
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
-      kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
+      kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice(undefined, c.name)) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
       `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s` +
       (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; onder de grafiek staan ze allemaal."));
@@ -662,7 +678,7 @@ window.Results = (() => {
       ...horizon.map((year, i) => ({ label: String(year.calendar_year), values: top.map(c => c.key === "no_battery" ? 0 : c.years[i]?.cumulative_eur) }))];
     const marks = [];
     for (const c of top.slice(1)) {
-      if (c.payback_years != null) marks.push({ at: String(p.start_year + c.payback_years - 1), symbol: "✓",
+      if (c.payback_years != null) marks.push({ at: String(p.start_year + Math.max(c.payback_years, 1) - 1), symbol: "✓",
         label: `${c.short}: blijvend terugverdiend na jaar ${c.payback_years}` });
       for (const cost of request.candidates.find(v => v.key === c.key)?.costs || []) {
         if (cost.status === "priced" && ["battery_replacement",
@@ -752,7 +768,9 @@ window.Results = (() => {
         const part = lines.filter(l => l.timing === timing);
         return part.length ? [...part.map(row), ...(total ? [[h("strong", {}, total[0]), "", h("strong", {}, money(total[1])), ""]] : [])] : [];
       };
-      const sum = key => c.years.reduce((total, y) => total + (y[key] || 0), 0);
+      // Ontbreekt een jaarwaarde (een oudere run), dan is de som onbekend, geen nul.
+      const sum = key => c.years.every(y => finite(y[key])) ? c.years.reduce((total, y) => total + y[key], 0) : null;
+      const sumText = key => { const value = sum(key); return value == null ? "Onbekend" : money(value); };
       const annual = lines.filter(l => l.timing === "annual").reduce((total, l) => total + amount(l), 0);
       const fromBattery = c.years.reduce((total, y) => total + (y.energy?.battery_to_load_kwh || 0), 0);
       const usable = request.candidates.find(v => v.key === c.key)?.battery?.usable_capacity_kwh;
@@ -767,8 +785,8 @@ window.Results = (() => {
         stats([
           ["Startinvestering", money(c.initial_investment_eur)],
           ["Startinvestering per kWh bruikbaar", finite(usable) && usable > 0 ? `${money(c.initial_investment_eur / usable)} per kWh` : "Onbekend"],
-          ["Jaarkosten en latere posten over de looptijd", money(sum("extra_costs_eur"))],
-          ["Leningrente over de looptijd", money(sum("financing_interest_eur"))],
+          ["Jaarkosten en latere posten over de looptijd", sumText("extra_costs_eur")],
+          ["Leningrente over de looptijd", sumText("financing_interest_eur")],
           ["Alle kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
           ["Kosten per kWh uit de accu", fromBattery > 0 ? `${money(c.lifetime_extra_costs_eur / fromBattery)} per kWh` : "Niet bepaald"]
         ]));

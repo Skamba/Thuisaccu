@@ -44,11 +44,14 @@
     if (total()) return yearKwh(answers.consumption);
     const imported = yearKwh(answers.gridImport);
     if (imported == null) return null;
-    if (answers.panels === "no") return imported;
+    // Zonder panelen (ook als ze nog komen) is wat je nu van het net haalt je hele verbruik.
+    if (answers.panels !== "yes") return imported;
     const exported = yearKwh(answers.gridExport), produced = production();
     return exported == null || produced == null ? null : imported + produced - exported;
   }
   const total = () => answers.panels === "yes" && answers.usage === "total";
+  // Met panelen, nu of verwacht: dan rekenen we met opwek.
+  const solarPanels = () => answers.panels !== "no";
   function production() {
     const own = yearKwh(answers.production), kwp = parse(answers.kwp);
     if (own != null) return own;
@@ -76,12 +79,17 @@
       h("p", { class: "lead" },
         "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
       h("p", { class: "help" }, "Handig om erbij te pakken: je laatste jaarafrekening (verbruik en teruglevering in kWh) en de app of website van je omvormer (opwek per jaar)."),
-      pick("panels", "Heb je zonnepanelen?", [["yes", "Ja"], ["no", "Nee"]]),
+      pick("panels", "Heb je zonnepanelen?", [["yes", "Ja"],
+        ["planned", "Nog niet, ze komen eraan", "Je vult je verbruik nu in en het vermogen van de panelen uit de offerte."],
+        ["no", "Nee"]]),
       // Meteen zeggen wat dat betekent, niet pas na vier stappen bij de uitkomst.
       ...(answers.panels === "no" ? [h("p", { class: "callout", role: "note" },
         "Zonder zonnepanelen levert een accu in deze berekening niets op: hij slaat alleen je eigen zonnestroom op, en we " +
         "rekenen met vaste stroomprijzen. Goedkoop laden van het net met een dynamisch contract rekenen we nog niet. Je kunt " +
-        "doorgaan om dat met je eigen cijfers te zien. Komen er panelen? Kies dan ‘Ja’ en vul het verwachte vermogen (kWp) in.")] : []),
+        "doorgaan om dat met je eigen cijfers te zien. Komen er panelen? Kies dan ‘Nog niet, ze komen eraan’.")] : []),
+      ...(answers.panels === "planned" ? [h("p", { class: "callout", role: "note" },
+        "We rekenen alsof de panelen er al een heel jaar liggen. Wat je nu van het net haalt, is dan je totale verbruik; " +
+        "teruglevering heb je nog niet. Bewaar daarna gerust ook een berekening zonder panelen en zet ze naast elkaar.")] : []),
       pick("data", "Welke gegevens heb je?", [
         ["totals", "Jaartotalen",
           "Van je jaarafrekening en de app van je omvormer. We maken er een geschat uurprofiel van."],
@@ -106,7 +114,7 @@
     }
     const derived = h("p", { class: "derived", "aria-live": "polite" });
     const update = () => {
-      const value = gross(), estimated = answers.panels === "yes" && yearKwh(answers.production) == null;
+      const value = gross(), estimated = solarPanels() && yearKwh(answers.production) == null;
       derived.textContent = value == null ? "Vul de getallen in om je totale verbruik te zien."
         : value <= 0 ? "Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname."
         : `Je huis gebruikt in totaal ongeveer ${kwh(value)} per jaar${answers.panels === "yes" && !total() ? " (afname + opwek − teruglevering)" : ""}${estimated ? "; de opwek is geschat uit kWp" : ""}.`;
@@ -121,12 +129,15 @@
         "Van het net én direct van je panelen, inclusief warmtepomp en auto.", update)
       : amount("Stroom van het net per jaar (kWh)", "gridImport", { whole: true, min: "0", max: "100000", required: true },
         "Op je jaarafrekening: ‘levering’ (normaal plus dal bij een dag/nacht-meter), niet het verbruik na aftrek van teruglevering.", update));
-    if (answers.panels === "yes") {
-      if (!total()) grid.append(amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport",
+    if (solarPanels()) {
+      if (answers.panels === "yes" && !total()) grid.append(amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport",
         { whole: true, min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’. Bij een dag/nacht-meter tel je normaal en dal op.", update));
       grid.append(
-        amount("Opwek van je panelen per jaar (kWh)", "production", { whole: true, min: "0", max: "100000" },
-          "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
+        answers.panels === "planned"
+          ? amount("Verwachte opwek per jaar (kWh)", "production", { whole: true, min: "0", max: "100000" },
+            "Staat vaak in de offerte van de panelen. Weet je het niet? Vul dan het vermogen in.", update)
+          : amount("Opwek van je panelen per jaar (kWh)", "production", { whole: true, min: "0", max: "100000" },
+            "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
         amount("Of: vermogen van je panelen (kWp)", "kwp", { min: "0.1", max: "100" },
           "Aantal panelen × wattpiek per paneel ÷ 1000, bijvoorbeeld 10 × 400 Wp = 4 kWp.", update),
         field("Ligging van de panelen", select([["south", "Zuid"], ["south_east", "Zuidoost"], ["south_west", "Zuidwest"], ["east_west", "Oost en west"], ["east", "Oost"], ["west", "West"]],
@@ -187,7 +198,11 @@
       h("p", { class: "lead" }, "Vanaf 1 januari 2027 stopt de salderingsregeling. Stroom die je teruglevert, " +
         "levert dan minder op dan stroom die je koopt. Dat verschil bepaalt wat een accu bespaart."),
       pick("contract", "Wat voor contract heb je?", [
-        ["fixed", "Vast"], ["variable", "Variabel"], ["dynamic", "Dynamisch (prijs per uur)"], ["unknown", "Weet ik niet"]]));
+        ["fixed", "Vast", "De prijs per kWh ligt vast tot het einde van je contract."],
+        ["variable", "Variabel", "De leverancier past de prijs een paar keer per jaar aan."],
+        ["dynamic", "Dynamisch (prijs per uur)", "De prijs volgt de groothandelsmarkt per uur of kwartier."],
+        ["unknown", "Weet ik niet", "Staat op je jaarafrekening of in de app van je leverancier."]],
+        "We rekenen bij elk contract met één gemiddelde stroomprijs, die je hieronder invult; het soort contract verandert de berekening niet."));
     if (answers.contract === "dynamic") {
       body.append(h("p", { class: "callout" }, "Met een dynamisch contract kan een accu ook verdienen door goedkoop te laden " +
         "en duur te gebruiken. Dat rekent de keuzehulp nog niet: we rekenen met een gemiddelde prijs, dus de uitkomst kan " +
@@ -281,9 +296,10 @@
       return Number(answers.importId);
     }
     const consumption = gross();
-    if (!(consumption > 0)) throw new Error(`Vul in stap 1 je ${total() ? "totale verbruik" : "afname, teruglevering"} en opwek (of kWp) in.`);
+    if (!(consumption > 0)) throw new Error(`Vul in stap 1 je ${total() ? "totale verbruik" : answers.panels === "yes" ? "afname, teruglevering" : "afname"}` +
+      `${solarPanels() ? " en opwek (of kWp)" : ""} in.`);
     const own = yearKwh(answers.production);
-    const solar = answers.panels === "yes" ? { orientation: answers.orientation, annual_production_kwh: own,
+    const solar = solarPanels() ? { orientation: answers.orientation, annual_production_kwh: own,
       peak_power_kwp: own == null ? parse(answers.kwp) : null } : null;
     const heatPump = yearKwh(answers.heatPump), ev = yearKwh(answers.ev);
     const json = {
@@ -352,9 +368,10 @@
       warranty_stress: p.warrantyStress ?? undefined, connection: Data.connectionOf(p) ?? undefined,
       assumptions: [Data.KEUZEHULP_PREFIX, check?.text, ...p.notes].filter(Boolean).join(" ") }));
     // De titel zegt waarmee is gerekend; de datum staat al bij elke berekening.
-    const usage = answers.data === "file" ? null : gross(), solar = answers.panels === "yes" ? production() : null;
+    const usage = answers.data === "file" ? null : gross(), solar = solarPanels() ? production() : null;
     const about = answers.data === "file" ? ["eigen meetbestand"] : [usage == null ? null : `${n(usage, 0)} kWh verbruik`,
-      answers.panels === "no" ? "geen zonnepanelen" : solar == null ? null : `${n(solar, 0)} kWh opwek`];
+      answers.panels === "no" ? "geen zonnepanelen" : solar == null ? null
+        : `${n(solar, 0)} kWh ${answers.panels === "planned" ? "verwachte opwek" : "opwek"}`];
     // De gekozen aansluiting onderscheidt anders gelijke berekeningen in Mijn berekeningen.
     about.push({ plug: "stekker", fixed: "met installateur", any: "alle aansluitingen" }[answers.install]);
     return {
@@ -395,7 +412,7 @@
     const groups = [
       ["Je energie", fileName ? [`Uit ${fileName}`] : [
         `Verbruik ${use == null ? "onbekend" : `${kwh(use)} per jaar`}`,
-        answers.panels === "no" ? "Geen zonnepanelen" : `Opwek ${made == null ? "onbekend" : `${kwh(made)} per jaar`}` +
+        answers.panels === "no" ? "Geen zonnepanelen" : `${answers.panels === "planned" ? "Verwachte opwek" : "Opwek"} ${made == null ? "onbekend" : `${kwh(made)} per jaar`}` +
           (yearKwh(answers.production) == null && made != null ? " (geschat uit kWp)" : ""),
         extra.length ? `Waarvan ${extra.join(" en ")}` : null]],
       ["Je woning", [`Aansluiten: ${words.install[answers.install]}`, `Meterkast ${words.phases[answers.phases]}`,
@@ -633,8 +650,13 @@
       true);
       return false; }
     if (index === 0 && answers.data === "totals") {
-      if (answers.panels === "yes" && yearKwh(answers.production) == null && parse(answers.kwp) == null) {
+      if (solarPanels() && yearKwh(answers.production) == null && parse(answers.kwp) == null) {
         return reject("production", "Vul de opwek van je panelen in, of hieronder het vermogen in kWp.");
+      }
+      // Panelen die een jaar lang niets terugleveren bestaan bijna niet; meestal komen ze nog, en dan telt de opwek dubbel.
+      if (answers.panels === "yes" && !total() && yearKwh(answers.gridExport) === 0 && production() > 0) {
+        return reject("gridExport", "Met zonnepanelen lever je bijna altijd iets terug. Komen de panelen nog? Kies dan bij " +
+          "‘Heb je zonnepanelen?’ voor ‘Nog niet, ze komen eraan’; anders telt de opwek dubbel in je verbruik.");
       }
       const value = gross();
       if (value != null && !(value > 0)) {

@@ -10,6 +10,7 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Europe::Amsterdam;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use thuisaccu_core::analysis::whole;
 use thuisaccu_storage::solar::{SolarInterval, SolarPeriod, SolarSummary};
 
 pub const GENERATOR: &str = "typical-nl-v1";
@@ -148,22 +149,6 @@ fn pv_shape(orientation: &str) -> Option<Vec<f64>> {
         return Some(east.iter().zip(west).map(|(e, w)| (e + w) / 2.0).collect());
     }
     as_f64(orientation)
-}
-
-/// Hele kWh in Nederlandse notatie met een punt per duizendtal, zoals de interface: 5500 wordt ‘5.500’.
-fn whole(kwh: f64) -> String {
-    let digits = format!("{:.0}", kwh.abs());
-    let mut grouped = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            grouped.push('.');
-        }
-        grouped.push(digit);
-    }
-    if kwh.round() < 0.0 {
-        grouped.insert(0, '−');
-    }
-    grouped
 }
 
 fn label_orientation(orientation: &str) -> &'static str {

@@ -472,6 +472,10 @@ test("rank() volgt de regels van de rekenkern: verlies telt niet mee, bij gelijk
   // Buiten het budget achteraan, ook met een hogere NPV.
   const budget = [option("duur", 900, { within_budget: false }), option("past", 100)];
   assert.deepEqual(keys(run("net_present_value", budget, "past")), ["past", "duur"]);
+  // Zonder aanbevolen accu bespreken oordeel, lijst en vergelijking dezelfde accu als de eerste kaart: binnen het budget.
+  const none = run("net_present_value", [option("duur", 900, { within_budget: false }), option("past", -100)], "no_battery");
+  assert.equal(Results.judged(none).key, "past");
+  assert.equal(Results.judged(none).key, Results.rank(none)[0].key);
 });
 
 test("trimmed(): een kopie van een grote berekening houdt de beste vijf en de beste vaste accu", () => {

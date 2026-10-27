@@ -82,10 +82,24 @@ pub struct SummaryResult {
     pub model_version: String,
     #[serde(default)]
     pub recommended_key: String,
-    #[serde(default)]
+    /// Alleen de waarschuwingen die het overzicht nodig heeft (fictief of geschat profiel); een keuzehulprun heeft er
+    /// tientallen en die maken de lijst anders megabytes groot.
+    #[serde(default, deserialize_with = "profile_warnings")]
     pub warnings: Vec<String>,
     #[serde(default)]
     pub candidates: Vec<SummaryCandidate>,
+}
+
+/// Houdt van de waarschuwingen alleen die met `FICTIEF` of `GESCHAT PROFIEL`, zoals `isFictitious` en `isEstimated` in
+/// `web/results.js` ze zoeken.
+fn profile_warnings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error> {
+    let all = Vec::<String>::deserialize(deserializer)?;
+    Ok(all
+        .into_iter()
+        .filter(|w| w.to_uppercase().contains("FICTIEF") || w.contains("GESCHAT PROFIEL"))
+        .collect())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

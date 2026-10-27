@@ -253,17 +253,21 @@ fn euro(value: f64) -> String {
     format!("{value:.4}").replace('.', ",")
 }
 
-/// Afgerond niet-negatief geheel getal met een punt als duizendtalscheiding, zoals in de interface.
-fn whole(value: f64) -> String {
-    let digits = format!("{value:.0}");
-    let mut out = String::new();
+/// Afgerond geheel getal in Nederlandse notatie met een punt per duizendtal, zoals de interface: 5500 wordt ‘5.500’,
+/// −1234 wordt ‘−1.234’ (met een echt minteken).
+pub fn whole(value: f64) -> String {
+    let digits = format!("{:.0}", value.abs());
+    let mut grouped = String::new();
     for (index, digit) in digits.chars().enumerate() {
         if index > 0 && (digits.len() - index) % 3 == 0 {
-            out.push('.');
+            grouped.push('.');
         }
-        out.push(digit);
+        grouped.push(digit);
     }
-    out
+    if value.round() < 0.0 {
+        grouped.insert(0, '−');
+    }
+    grouped
 }
 
 fn bounded(value: f64, low: f64, high: f64) -> bool {

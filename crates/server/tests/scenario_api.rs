@@ -968,6 +968,14 @@ async fn the_run_list_is_a_summary_and_any_run_opens_by_id_even_beyond_the_last_
             .iter()
             .any(|w| w.as_str().unwrap().contains("FICTIEF"))
     );
+    // Alleen de profielwaarschuwingen gaan mee in de lijst; de rest staat in de volledige run.
+    let all = saved.result["warnings"].as_array().unwrap().len();
+    let listed = newest["result"]["warnings"].as_array().unwrap();
+    assert!(listed.len() < all, "{} van {all}", listed.len());
+    assert!(listed.iter().all(|w| {
+        let w = w.as_str().unwrap();
+        w.contains("FICTIEF") || w.contains("GESCHAT PROFIEL")
+    }));
     assert_eq!(runs[99]["result"]["candidates"], json!([]));
 
     let (status, run) = get(format!("/api/v1/analysis/runs/{first}")).await;
