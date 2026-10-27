@@ -200,10 +200,10 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     if !ev.is_finite() || !(0.0..=20_000.0).contains(&ev) {
         return Err("Vul voor de elektrische auto 0 tot 20.000 kWh per jaar in.".into());
     }
-    let ev_start = request
+    let ev_charging = request
         .ev
         .as_ref()
-        .map(|ev| charging_start(&ev.charging))
+        .map(|ev| charging(&ev.charging))
         .transpose()?;
     let household = consumption - heat_pump - ev;
     if household < 100.0 {
@@ -221,16 +221,11 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             TAP_WATER_SHARE * 100.0
         ));
     }
-    if let (Some(start), Some(request_ev)) = (ev_start, &request.ev) {
+    if let Some((start, moment)) = ev_charging {
         warnings.push(format!(
-            "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {} kW vanaf {start:02}.00 uur ({}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
+            "Elektrische auto: {} kWh per jaar, elke dag dezelfde hoeveelheid, geladen met {} kW vanaf {start:02}.00 uur ({moment}). Echte laadmomenten wisselen per dag; met een hoger laadvermogen kan een accu een kleiner deel van het laden leveren.",
             whole(ev),
             EV_CHARGE_KW.to_string().replace('.', ","),
-            match request_ev.charging.as_str() {
-                "evening" => "’s avonds",
-                "night" => "’s nachts",
-                _ => "overdag",
-            }
         ));
     }
     if heat_pump == 0.0 && ev == 0.0 {
@@ -266,7 +261,7 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     };
     let load_sum: f64 = r.load.values.iter().map(|&v| v as f64).sum();
     let degree_sum: f64 = r.heating.degree_hours.iter().map(|&v| v as f64).sum();
-    let charging = ev_start.map_or_else(|| vec![0.0; hours], |start| ev_load(r, ev, start));
+    let charging = ev_charging.map_or_else(|| vec![0.0; hours], |(start, _)| ev_load(r, ev, start));
     let intervals: Vec<SolarInterval> = (0..hours)
         .map(|i| {
             let start = r.start_unix_s + i as i64 * r.interval_s;
@@ -344,12 +339,9 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
             )
         });
     // Het laadmoment staat in de naam: profielen die alleen daarin verschillen, zijn anders niet uit elkaar te houden.
-    let ev_label = match request.ev.as_ref().map(|ev| ev.charging.as_str()) {
-        Some("evening") => "auto, ’s avonds laden",
-        Some("night") => "auto, ’s nachts laden",
-        _ => "auto, overdag laden",
-    };
-    let extras: String = [(heat_pump, "warmtepomp"), (ev, ev_label)]
+    let ev_label =
+        ev_charging.map_or_else(String::new, |(_, moment)| format!("auto, {moment} laden"));
+    let extras: String = [(heat_pump, "warmtepomp"), (ev, ev_label.as_str())]
         .iter()
         .filter(|(kwh, _)| *kwh > 0.0)
         .map(|(kwh, label)| format!(" ({} kWh {label})", whole(*kwh)))
@@ -375,23 +367,25 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
     })
 }
 
-fn charging_start(charging: &str) -> Result<u32, String> {
-    match charging {
-        "evening" => Ok(18),
-        "night" => Ok(1),
-        "daytime" => Ok(11),
+/// Begin van het laadblok (lokaal uur) en het laadmoment in woorden; één plek voor simulatie, naam en waarschuwingen.
+fn charging(value: &str) -> Result<(u32, &'static str), String> {
+    match value {
+        "evening" => Ok((18, "’s avonds")),
+        "night" => Ok((1, "’s nachts")),
+        "daytime" => Ok((11, "overdag")),
         _ => Err("Kies voor het laden van de auto ’s avonds, ’s nachts of overdag.".into()),
     }
 }
 
 /// Omschrijving van een verandering in verbruik, voor de waarschuwingen bij het resultaat.
 pub fn load_change_label(change: &LoadChange) -> String {
-    match (change.kind.as_str(), change.charging.as_deref()) {
-        ("heat_pump", _) => "Warmtepomp".into(),
-        (_, Some("night")) => "Elektrische auto, ’s nachts laden".into(),
-        (_, Some("daytime")) => "Elektrische auto, overdag laden".into(),
-        _ => "Elektrische auto, ’s avonds laden".into(),
+    if change.kind == "heat_pump" {
+        return "Warmtepomp".into();
     }
+    charging(change.charging.as_deref().unwrap_or("")).map_or_else(
+        |_| "Elektrische auto".into(),
+        |(_, moment)| format!("Elektrische auto, {moment} laden"),
+    )
 }
 
 /// Extra verbruik per meetperiode (`[begin, einde)` in Unix-seconden) voor een verandering in
@@ -422,7 +416,7 @@ pub fn load_change(change: &LoadChange, periods: &[(i64, i64)]) -> Result<Vec<f6
             if !annual.is_finite() || !(1.0..=20_000.0).contains(&annual) {
                 return Err("Vul voor de elektrische auto 1 tot 20.000 kWh per jaar in.".into());
             }
-            let start = charging_start(change.charging.as_deref().unwrap_or(""))?;
+            let (start, _) = charging(change.charging.as_deref().unwrap_or(""))?;
             ev_load(r, annual, start)
         }
         _ => {

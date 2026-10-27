@@ -279,9 +279,8 @@ window.Results = (() => {
     const isPlug = option && kinds.get(option.key) === "plug", isCircuit = option && kinds.get(option.key) === "circuit";
     // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
     // installateur die hem vast wil aansluiten.
-    const installed = isCircuit ? result.candidates.filter(c => kinds.get(c.key) === "fixed").sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
-    const fixed = isPlug ? result.candidates.filter(c => kinds.get(c.key) && kinds.get(c.key) !== "plug")
-      .sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
+    const installedOptions = bestInstalled(run, kinds);
+    const installed = isCircuit ? installedOptions.fixed : null, fixed = isPlug ? installedOptions.nonPlug : null;
     // De aanbevolen accu als kop, de zin van de rekenkern eronder: zo staat het antwoord ook op een telefoon in één oogopslag.
     const lead = quote ? null : rec && result.recommendation.startsWith(`${option.name} `)
       ? result.recommendation.slice(option.name.length + 1) : null;
@@ -1155,23 +1154,32 @@ window.Results = (() => {
     return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
   };
   const fromBase64Url = data => Uint8Array.from(atob(data.replaceAll("-", "+").replaceAll("_", "/")), c => c.charCodeAt(0));
-  // De beste vaste thuisaccu op netto contante waarde, als de run de soort aansluiting kent. Een link of kopie houdt hem,
-  // zodat de afweging stekker tegen vaste installatie (het oordeel noemt hem) niet stilletjes verdwijnt.
-  function bestFixedKey(run) {
-    const fixed = new Set(run.input.request.candidates.filter(c => c.connection === "fixed").map(c => c.key));
-    return run.result.candidates.filter(c => fixed.has(c.key)).sort((a, b) => b.npv_eur - a.npv_eur)[0]?.key;
+  // De soort aansluiting per optie zoals `render` hem bepaalde (ook uit de catalogus bij oudere runs); voor een run die
+  // nog niet getoond is alleen wat in de run staat.
+  const KINDS = new WeakMap();
+  const kindsOf = run => KINDS.get(run) ?? new Map(run.input.request.candidates.map(c =>
+    [c.key, Data.CONNECTIONS.includes(c.connection) ? c.connection : null]));
+  // De opties met een installateur die het oordeel noemt, op netto contante waarde: de beste vaste (bij een stekker op
+  // een eigen groep) en de beste die geen stekker is (bij een stekkerbatterij).
+  function bestInstalled(run, kinds = kindsOf(run)) {
+    const best = keep => run.result.candidates.filter(c => keep(kinds.get(c.key))).sort((a, b) => b.npv_eur - a.npv_eur)[0] ?? null;
+    return { fixed: best(kind => kind === "fixed"), nonPlug: best(kind => kind && kind !== "plug") };
   }
+  // Een link of kopie houdt ze, zodat de afweging stekker tegen installateur niet stilletjes verandert.
+  const installedKeys = run => Object.values(bestInstalled(run)).map(c => c?.key);
   // Om de link kort te houden gaan alleen de opties mee die de uitkomst bepalen: de aanbevolen accu, de beste
   // vijf op het gekozen doel, de beste op netto contante waarde en in de terugleveringsvariant, en de beste vaste accu.
   function shareable(run) {
     const input = run.input, request = input.request, result = run.result, source = input.profile?.options || {};
     const byScore = rank(run);
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
-    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, bestFixedKey(run),
+    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, ...installedKeys(run),
       ...byScore.slice(0, TOP).map(c => c.key)]);
     const candidates = result.candidates.filter(c => keep.has(c.key));
     // Alleen wat de weergave nodig heeft; importinstellingen kunnen ook de naam van een meterbestand bevatten.
-    const kind = { is_demo: source.is_demo, generator: source.generator, data_kind: source.data_kind };
+    // De auto uit het geschatte profiel (jaartotaal en laadmoment, ook in de profielnaam) houdt de offertevraag over laden.
+    const kind = { is_demo: source.is_demo, generator: source.generator, data_kind: source.data_kind,
+      ...(source.inputs?.ev ? { inputs: { ev: source.inputs.ev } } : {}) };
     // Een geschat of fictief profiel heeft een beschrijvende naam; een eigen bestandsnaam kan persoonlijk zijn.
     const filename = kind.generator || Data.isDemo(input.profile) ? input.profile.filename : "bestandsnaam niet gedeeld";
     return { v: SHARE_VERSION, title: run.title, created_at_unix_s: run.created_at_unix_s,
@@ -1301,6 +1309,7 @@ window.Results = (() => {
     // Een onbekende waarde (een link uit een nieuwere versie of met de hand aangepast) telt als onbekend.
     const kinds = new Map(request.candidates.map(c => [c.key, Data.CONNECTIONS.includes(c.connection) ? c.connection
       : c.connection == null ? Data.connectionOf(described.get(c.key)) : null]));
+    KINDS.set(run, kinds);
     shortNames(run, all, kinds);
     // Eén hoofdactie in beeld; delen, exporteren en afdrukken staan onder ‘Meer’, zodat het antwoord op een telefoon
     // niet onder een rij knoppen verdwijnt.
@@ -1354,11 +1363,11 @@ window.Results = (() => {
   function trimmed(run, request, extra = []) {
     if (request.candidates.length <= Scenario.MAX_OPTIONS) return request;
     const top = rank(run).slice(0, 5).map(c => c.key);
-    const keep = new Set([...top, run.result.export_variant_recommended_key, bestFixedKey(run),
+    const keep = new Set([...top, run.result.export_variant_recommended_key, ...installedKeys(run),
       request.quote_basis?.candidate_key, ...extra].filter(Boolean));
     return { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) };
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable };
 })();

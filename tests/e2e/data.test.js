@@ -204,6 +204,12 @@ test("describe(): de garantiestresstest volgt de productgarantie, hoogstens de a
 });
 
 test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () => {
+  // ‘3,500’ is bij een bedrag of jaartotaal Engelse notatie voor 3500 of een tikfout; niet stil 3,5.
+  assert.equal(context.UI.parse("3,500", { money: true }), null);
+  assert.equal(context.UI.parse("3,500", { whole: true }), null);
+  assert.match(context.UI.parseProblem("3,500", { money: true }), /^Bedoel je 3500 of 3,5\?/);
+  assert.equal(context.UI.parse("3,500"), 3.5);
+  assert.equal(context.UI.parse("0,250", { money: true }), 0.25);
   const { UI } = context;
   const cases = [["3,5", 3.5], ["6.500,00", 6500], ["1.250.000", 1250000], ["0.250", 0.25], ["0.2552", 0.2552],
     ["12.5", 12.5], ["-0,5", -0.5], ["3 500", 3500], ["", null], ["abc", null], ["1,250.50", null],
@@ -474,4 +480,39 @@ test("trimmed(): een kopie van een grote berekening houdt de beste vijf en de be
     candidates: candidates.map((c, i) => ({ key: c.key, connection: i === 13 ? "fixed" : "plug" })) };
   const run = { input: { request }, result: { recommended_key: "p0", candidates } };
   assert.deepEqual(Array.from(Results.trimmed(run, request).candidates, c => c.key), ["p0", "p1", "p2", "p3", "p4", "p13"]);
+  // Een stekker op een eigen groep is de beste ‘met een installateur’ die het oordeel bij een stekkeraccu noemt; die
+  // blijft ook, naast de beste vaste.
+  const mixed = { ...request, candidates: request.candidates.map((c, i) => ({ ...c, connection: i === 12 ? "circuit" : c.connection })) };
+  const both = { input: { request: mixed }, result: run.result };
+  assert.deepEqual(Array.from(Results.trimmed(both, mixed).candidates, c => c.key), ["p0", "p1", "p2", "p3", "p4", "p12", "p13"]);
+});
+
+test("shareable(): de link houdt de installateursopties en de auto uit het geschatte profiel, niet de importinstellingen", () => {
+  const candidates = Array.from({ length: 9 }, (_, i) => ({ key: `p${i}`, name: `FICTIEF ${i}`, npv_eur: 900 - i, within_budget: true }));
+  const run = { title: "FICTIEF", created_at_unix_s: 0,
+    input: { profile: { filename: "Geschat profiel", options: { generator: "typical", data_kind: "modelled",
+      inputs: { ev: { annual_kwh: 2000, charging: "night" }, annual_consumption_kwh: 5000 } } },
+      request: { parameters: { objective: "net_present_value" }, site: { address: "Synthetisch 1" },
+        candidates: candidates.map((c, i) => ({ key: c.key, connection: i === 7 ? "circuit" : i === 8 ? "fixed" : "plug" })) } },
+    result: { recommended_key: "p0", candidates } };
+  const shared = Results.shareable(run);
+  assert.deepEqual(Array.from(shared.result.candidates, c => c.key), ["p0", "p1", "p2", "p3", "p4", "p7", "p8"]);
+  assert.equal(JSON.stringify(shared.input.profile.options.inputs), JSON.stringify({ ev: { annual_kwh: 2000, charging: "night" } }));
+  assert.equal(shared.input.request.site.address, "Adres niet gedeeld");
+});
+
+test("modelwijziging v7 raakt alleen een run met een gelijke terugverdientijd die nu anders uitvalt", () => {
+  const option = (key, npv_eur, payback_years, extra = {}) => ({ key, npv_eur, payback_years, within_budget: true, ...extra });
+  const affects = (candidates, recommended_key, extra = {}) => Data.modelChanges("nl-self-consumption-v6", {
+    input: { request: { parameters: { objective: "payback" }, candidates: [] } },
+    result: { recommended_key, candidates, ...extra } }).find(c => /gelijk aantal jaren/.test(c.text)).affects;
+  assert.equal(affects([option("a", 100, 7), option("b", 300, 7)], "a"), true);
+  assert.equal(affects([option("a", 300, 7), option("b", 100, 7)], "a"), false);
+  assert.equal(affects([option("a", 100, 6), option("b", 300, 7)], "a"), false);
+  // Buiten het budget of met verlies telt niet mee.
+  assert.equal(affects([option("a", 100, 7), option("b", 300, 7, { within_budget: false })], "a"), false);
+  // In de terugleveringsvariant.
+  const variant = (npv_eur, payback_years) => ({ export_variant: { npv_eur, payback_years } });
+  assert.equal(affects([option("a", 100, 6, variant(50, 8)), option("b", 90, 7, variant(80, 8))], "a",
+    { export_variant_recommended_key: "a" }), true);
 });

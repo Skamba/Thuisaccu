@@ -52,13 +52,16 @@ window.UI = (() => {
   // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na. Bij een
   // bedrag in euro (`money`) is het 3500, want centen hebben twee decimalen, en bij een jaartotaal in hele kWh
   // (`whole`) ook: zo staat het op de jaarafrekening, en 3,5 kWh per jaar is geen jaartotaal. ‘6500,-’ is 6500; ‘0x10’ en
-  // ‘1e3’ zijn geen getal.
+  // ‘1e3’ zijn geen getal. Omgekeerd is ‘3,500’ bij een bedrag of jaartotaal dubbelzinnig (Engelse notatie voor 3500,
+  // en een bedrag heeft geen drie decimalen): dat geeft null.
   const tidy = raw => String(raw ?? "").trim().replace(/^€/, "").replace(/\s/g, "").replace(/,-{1,2}$/, "");
   const ambiguous = raw => /^[+-]?[1-9]\d{0,2}\.\d{3}$/.test(tidy(raw));
+  const commaThousands = raw => /^[+-]?[1-9]\d{0,2},\d{3}$/.test(tidy(raw));
   const parse = (raw, { money = false, whole = false } = {}) => {
     let text = tidy(raw);
     if (/^[+-]?\d{1,3}(\.\d{3})+,\d*$/.test(text) || /^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(text)) text = text.replace(/\./g, "");
     else if (ambiguous(text)) { if (!money && !whole) return null; text = text.replace(".", ""); }
+    else if ((money || whole) && commaThousands(text)) return null;
     text = text.replace(",", ".");
     return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(text) && Number.isFinite(Number(text)) ? Number(text) : null;
   };
@@ -67,6 +70,7 @@ window.UI = (() => {
     const text = tidy(raw);
     if (text === "" || parse(text, options) != null) return "";
     if (ambiguous(text)) return `Bedoel je ${text.replace(".", "")} of ${text.replace(".", ",")}? Schrijf duizendtallen zonder punt en decimalen met een komma.`;
+    if (commaThousands(text)) return `Bedoel je ${text.replace(",", "")} of ${text.replace(/0+$/, "").replace(/,$/, "")}? Schrijf duizendtallen zonder komma.`;
     return "Vul een getal in, bijvoorbeeld 3500 of 0,25.";
   };
   // Een getal als beginwaarde van een invoerveld, met een decimale komma zoals de velden vragen.

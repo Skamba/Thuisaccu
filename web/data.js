@@ -89,8 +89,20 @@ window.Data = (() => {
       run => run.input.request.candidates.some(c => c.financing?.loan_amount_eur > 0 ||
         c.costs.some(l => ["grant", "vat_refund"].includes(l.category) && l.status === "priced" && l.amount_minor > 0))],
     ["nl-self-consumption-v7", "Bij het doel terugverdientijd wint bij een gelijk aantal jaren de accu met het hoogste netto voordeel, niet de kleinste.",
-      run => run.input.request.parameters.objective === "payback"]
+      run => run.input.request.parameters.objective === "payback" && (paybackTie(run.result.candidates, run.result.recommended_key, c => c) ||
+        (run.result.export_variant_recommended_key != null &&
+          paybackTie(run.result.candidates, run.result.export_variant_recommended_key, c => c.export_variant)))]
   ];
+  // Of een run van vóór v7 bij het doel terugverdientijd een gelijkspel had dat nu anders uitvalt: een andere optie met
+  // dezelfde (kortste) terugverdientijd en een hoger netto voordeel dan de gekozen. Dezelfde regels als `choose` in
+  // analysis.rs; `outcome` geeft de uitkomst (basis of terugleveringsvariant).
+  function paybackTie(candidates, chosen, outcome) {
+    const eligible = candidates.filter(c => c.within_budget !== false && outcome(c) && outcome(c).npv_eur >= 0 &&
+      outcome(c).payback_years != null);
+    const pick = eligible.find(c => c.key === chosen);
+    if (!pick) return false;
+    return eligible.some(c => outcome(c).payback_years === outcome(pick).payback_years && outcome(c).npv_eur > outcome(pick).npv_eur + 1e-8);
+  }
   // De veranderingen na `version`, als [{ text, affects }]; leeg bij een onbekende versie.
   function modelChanges(version, run) {
     const known = ["nl-self-consumption-v1", ...MODEL_CHANGES.map(([v]) => v)];
@@ -772,7 +784,7 @@ window.Data = (() => {
   };
 
   return {
-    RULES, described, CREDITS, modelChanges, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
+    RULES, described, CREDITS, modelChanges, paybackTie, unaffectedByModel, ASSUMED, KEUZEHULP_PREFIX, isAssumed, fromKeuzehulp, MODEL_VERSION, GLOSSARY, QUOTE_FIELDS, isPriceField, quoteValue, quoteUnit, quoteChange, applyQuotePrice,
     catalog, costs, typicalSources, imports, runs, run, invalidateCatalog, objectives, costStatus, boundaries,
       qualifiers, review,
     RESEARCHED_ON, RESEARCHED_SPAN, INDICATION, importPriceCheck, exportCheck, upfrontCosts, energyTaxBandExcess, ASSUMPTION_HELP, monthsBetween, priceAge, suitability, unusableText, implausible, isDemo, FALLBACK, describe, estimateCosts, costLinesFor, warrantyStress, warrantyNote, WARRANTY_LOSS, plugLimit, circuitVariant, CONNECTIONS, connectionOf, shortLabels, newestOffer, isAssumption, DEFAULTS, defaults
