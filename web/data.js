@@ -74,7 +74,7 @@ window.Data = (() => {
   const costs = async () => (costsCache ||= await api("/api/v1/analysis/costs"));
   // Gelijk aan `analysis::MODEL_VERSION` in de rekenkern (de HTTP-test controleert dat). Runs met een
   // andere versie zijn met andere rekenregels gemaakt.
-  const MODEL_VERSION = "nl-self-consumption-v6";
+  const MODEL_VERSION = "nl-self-consumption-v7";
   // Wat elke modelversie veranderde, in gewone taal (docs/roi-model.md), met een toets of het een
   // bewaarde run raakt: true, false, of null als dat uit de run niet te zien is.
   const MODEL_CHANGES = [
@@ -87,7 +87,9 @@ window.Data = (() => {
     ["nl-self-consumption-v6", "Met een lening telt de terugverdientijd de hele investering; een geleende accu leek eerder ‘direct terugverdiend’. " +
       "Subsidie of teruggave maakt de investering in de gunstige variant niet meer negatief.",
       run => run.input.request.candidates.some(c => c.financing?.loan_amount_eur > 0 ||
-        c.costs.some(l => ["grant", "vat_refund"].includes(l.category) && l.status === "priced" && l.amount_minor > 0))]
+        c.costs.some(l => ["grant", "vat_refund"].includes(l.category) && l.status === "priced" && l.amount_minor > 0))],
+    ["nl-self-consumption-v7", "Bij het doel terugverdientijd wint bij een gelijk aantal jaren de accu met het hoogste netto voordeel, niet de kleinste.",
+      run => run.input.request.parameters.objective === "payback"]
   ];
   // De veranderingen na `version`, als [{ text, affects }]; leeg bij een onbekende versie.
   function modelChanges(version, run) {

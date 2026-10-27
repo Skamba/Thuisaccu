@@ -5,6 +5,8 @@
 (() => {
   const { h, field, numberInput, select, choice, checkbox, button, link, external, table, chart, money, kwh,
     number: n, parse, store } = UI;
+  // Jaartotalen in hele kWh: ‘3.200’ is 3200, zoals op de jaarafrekening (zie `whole` in UI.parse).
+  const yearKwh = raw => parse(raw, { whole: true });
   const STORE = "thuisaccu-keuzehulp";
 
   const INDICATION = Data.INDICATION;
@@ -39,16 +41,16 @@
 
   // Bruto verbruik: rechtstreeks opgegeven, of netafname + opwek − teruglevering (klopt alleen zonder bestaande accu).
   function gross() {
-    if (total()) return parse(answers.consumption);
-    const imported = parse(answers.gridImport);
+    if (total()) return yearKwh(answers.consumption);
+    const imported = yearKwh(answers.gridImport);
     if (imported == null) return null;
     if (answers.panels === "no") return imported;
-    const exported = parse(answers.gridExport), produced = production();
+    const exported = yearKwh(answers.gridExport), produced = production();
     return exported == null || produced == null ? null : imported + produced - exported;
   }
   const total = () => answers.panels === "yes" && answers.usage === "total";
   function production() {
-    const own = parse(answers.production), kwp = parse(answers.kwp);
+    const own = yearKwh(answers.production), kwp = parse(answers.kwp);
     if (own != null) return own;
     return kwp != null && yields ? kwp * yields[answers.orientation] : null;
   }
@@ -104,7 +106,7 @@
     }
     const derived = h("p", { class: "derived", "aria-live": "polite" });
     const update = () => {
-      const value = gross(), estimated = answers.panels === "yes" && parse(answers.production) == null;
+      const value = gross(), estimated = answers.panels === "yes" && yearKwh(answers.production) == null;
       derived.textContent = value == null ? "Vul de getallen in om je totale verbruik te zien."
         : value <= 0 ? "Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname."
         : `Je huis gebruikt in totaal ongeveer ${kwh(value)} per jaar${answers.panels === "yes" && !total() ? " (afname + opwek − teruglevering)" : ""}${estimated ? "; de opwek is geschat uit kWp" : ""}.`;
@@ -115,15 +117,15 @@
         "Alles wat het huis gebruikt, ook de zonnestroom die je direct zelf gebruikt. Bijvoorbeeld uit een energiemonitor."]
     ]));
     const grid = h("div", { class: "grid" }, total()
-      ? amount("Totaal verbruik per jaar (kWh)", "consumption", { min: "1", max: "100000", required: true },
+      ? amount("Totaal verbruik per jaar (kWh)", "consumption", { whole: true, min: "1", max: "100000", required: true },
         "Van het net én direct van je panelen, inclusief warmtepomp en auto.", update)
-      : amount("Stroom van het net per jaar (kWh)", "gridImport", { min: "0", max: "100000", required: true },
+      : amount("Stroom van het net per jaar (kWh)", "gridImport", { whole: true, min: "0", max: "100000", required: true },
         "Op je jaarafrekening: ‘levering’ (normaal plus dal bij een dag/nacht-meter), niet het verbruik na aftrek van teruglevering.", update));
     if (answers.panels === "yes") {
       if (!total()) grid.append(amount("Teruggeleverd aan het net per jaar (kWh)", "gridExport",
-        { min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’. Bij een dag/nacht-meter tel je normaal en dal op.", update));
+        { whole: true, min: "0", max: "100000", required: true }, "Op je jaarafrekening: ‘teruglevering’. Bij een dag/nacht-meter tel je normaal en dal op.", update));
       grid.append(
-        amount("Opwek van je panelen per jaar (kWh)", "production", { min: "0", max: "100000" },
+        amount("Opwek van je panelen per jaar (kWh)", "production", { whole: true, min: "0", max: "100000" },
           "In de app van je omvormer. Weet je het niet? Vul dan het vermogen in.", update),
         amount("Of: vermogen van je panelen (kWp)", "kwp", { min: "0.1", max: "100" },
           "Aantal panelen × wattpiek per paneel ÷ 1000, bijvoorbeeld 10 × 400 Wp = 4 kWp.", update),
@@ -136,16 +138,16 @@
         `Plan je er een? Tel het verwachte verbruik dan op bij je ${total() ? "totale verbruik" : "afname"}. ` +
         "Komt hij pas over een paar jaar? Tel hem dan hier niet op, maar kies na de uitkomst ‘Pas aan en reken opnieuw’ en vul bij ‘Verandering in verbruik’ in vanaf welk jaar."),
       h("div", { class: "grid" },
-        amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { min: "0", max: "30000" },
+        amount("Waarvan warmtepomp (kWh per jaar)", "heatPump", { whole: true, min: "0", max: "30000" },
           "Staat vaak in de app of op het display van de warmtepomp. Ter indicatie: CE Delft rekent bij label B en 2 personen " +
           "met ongeveer 1.960 kWh voor verwarming en 1.000 kWh voor warm water.", rerenderEv),
-        amount("Waarvan elektrische auto, thuis geladen (kWh per jaar)", "ev", { min: "0", max: "20000" },
+        amount("Waarvan elektrische auto, thuis geladen (kWh per jaar)", "ev", { whole: true, min: "0", max: "20000" },
           "Staat vaak in de app van je laadpaal of auto.", rerenderEv)));
     const evChoice = h("div");
     function rerenderEv() {
       update();
       evChoice.replaceChildren();
-      if (parse(answers.ev) > 0) {
+      if (yearKwh(answers.ev) > 0) {
         evChoice.append(UI.choice("Wanneer laadt de auto meestal?", "kh-evCharging", [
           ["evening", "’s Avonds na thuiskomst", "Vanaf 18.00 uur met 3,7 kW."],
           ["night", "’s Nachts", "Vanaf 01.00 uur, bijvoorbeeld met een laadtimer."],
@@ -280,10 +282,10 @@
     }
     const consumption = gross();
     if (!(consumption > 0)) throw new Error(`Vul in stap 1 je ${total() ? "totale verbruik" : "afname, teruglevering"} en opwek (of kWp) in.`);
-    const own = parse(answers.production);
+    const own = yearKwh(answers.production);
     const solar = answers.panels === "yes" ? { orientation: answers.orientation, annual_production_kwh: own,
       peak_power_kwp: own == null ? parse(answers.kwp) : null } : null;
-    const heatPump = parse(answers.heatPump), ev = parse(answers.ev);
+    const heatPump = yearKwh(answers.heatPump), ev = yearKwh(answers.ev);
     const json = {
       annual_consumption_kwh: consumption, solar,
       heat_pump_kwh: heatPump > 0 ? heatPump : undefined,
@@ -296,7 +298,7 @@
   // uurprofiel; een afwijking wordt daarom getoond en bij de berekening vastgelegd, niet weggewerkt.
   function profileCheck(points) {
     if (answers.data !== "totals" || answers.panels !== "yes" || total()) return null;
-    const produced = production(), imported = parse(answers.gridImport), exported = parse(answers.gridExport);
+    const produced = production(), imported = yearKwh(answers.gridImport), exported = yearKwh(answers.gridExport);
     if (!(produced > 0) || imported == null || exported == null) return null;
     const reported = (produced - exported) / produced * 100, modelled = points[0].self_consumption_pct;
     // Zonder bestaande accu kan een accu hooguit vervangen wat je terugleverde én wat je afnam.
@@ -386,14 +388,14 @@
       contract: { fixed: "vast", variable: "variabel", dynamic: "dynamisch", unknown: "onbekend" },
       objective: { net_present_value: "het meeste over de looptijd", payback: "snel terugverdienen", self_consumption: "zo veel mogelijk eigen zonnestroom" } };
     const fileName = answers.data === "file" ? "een bewaard energieprofiel" : null, made = production(), use = gross();
-    const extra = [parse(answers.heatPump) > 0 ? `warmtepomp ${kwh(parse(answers.heatPump))}` : null,
-      parse(answers.ev) > 0 ? `auto ${kwh(parse(answers.ev))}` : null].filter(Boolean);
+    const extra = [yearKwh(answers.heatPump) > 0 ? `warmtepomp ${kwh(yearKwh(answers.heatPump))}` : null,
+      yearKwh(answers.ev) > 0 ? `auto ${kwh(yearKwh(answers.ev))}` : null].filter(Boolean);
     const { export: paid, fee } = feedIn();
     const groups = [
       ["Je energie", fileName ? [`Uit ${fileName}`] : [
         `Verbruik ${use == null ? "onbekend" : `${kwh(use)} per jaar`}`,
         answers.panels === "no" ? "Geen zonnepanelen" : `Opwek ${made == null ? "onbekend" : `${kwh(made)} per jaar`}` +
-          (parse(answers.production) == null && made != null ? " (geschat uit kWp)" : ""),
+          (yearKwh(answers.production) == null && made != null ? " (geschat uit kWp)" : ""),
         extra.length ? `Waarvan ${extra.join(" en ")}` : null]],
       ["Je woning", [`Aansluiten: ${words.install[answers.install]}`, `Meterkast ${words.phases[answers.phases]}`,
         `Plek: ${words.place[answers.place]}`, answers.backup === "yes" ? "Noodstroom gewenst" : "Noodstroom niet nodig"]],
@@ -630,16 +632,16 @@
       true);
       return false; }
     if (index === 0 && answers.data === "totals") {
-      if (answers.panels === "yes" && parse(answers.production) == null && parse(answers.kwp) == null) {
+      if (answers.panels === "yes" && yearKwh(answers.production) == null && parse(answers.kwp) == null) {
         return reject("production", "Vul de opwek van je panelen in, of hieronder het vermogen in kWp.");
       }
       const value = gross();
       if (value != null && !(value > 0)) {
         return reject("gridExport", "Deze getallen kloppen niet: teruglevering is groter dan opwek plus afname.");
       }
-      const extra = (parse(answers.heatPump) || 0) + (parse(answers.ev) || 0);
+      const extra = (yearKwh(answers.heatPump) || 0) + (yearKwh(answers.ev) || 0);
       if (value != null && extra > 0 && value - extra < 100) {
-        return reject(parse(answers.heatPump) ? "heatPump" : "ev",
+        return reject(yearKwh(answers.heatPump) ? "heatPump" : "ev",
           "Warmtepomp en auto zijn een deel van je totale verbruik en kunnen daar niet boven uitkomen.");
       }
     }

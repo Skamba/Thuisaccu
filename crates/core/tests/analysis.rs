@@ -855,6 +855,25 @@ fn payback_counts_the_whole_investment_also_when_it_is_borrowed() {
     );
 }
 
+#[test]
+fn payback_ties_in_whole_years_go_to_the_higher_npv_not_the_first_option() {
+    // Beide accu's verdienen zich binnen het ene jaar terug (de kleine levert € 963,60 op
+    // tegen € 500, de grote meer tegen € 800); de grote houdt meer over. De kandidaten staan op
+    // capaciteit, de kleinste eerst; die volgorde mag de keuze niet bepalen.
+    let mut p = parameters();
+    p.objective = Objective::Payback;
+    let small = candidate("klein", 1.0, 50_000);
+    let large = candidate("groot", 2.0, 80_000);
+    for order in [[small.clone(), large.clone()], [large, small]] {
+        let r = analysis::analyze(&profile(), &p, &order).unwrap();
+        let by = |key: &str| r.candidates.iter().find(|c| c.key == key).unwrap();
+        assert_eq!(by("klein").payback_years, Some(1));
+        assert_eq!(by("groot").payback_years, Some(1));
+        assert!(by("groot").npv_eur > by("klein").npv_eur + 1.0);
+        assert_eq!(r.recommended_key, "groot");
+    }
+}
+
 fn with_grant(key: &str, price_minor: i64, grant_minor: i64) -> Candidate {
     let mut c = candidate(key, 1.0, price_minor);
     let grant = c.costs.iter_mut().find(|l| l.category == "grant").unwrap();

@@ -172,7 +172,7 @@ window.Scenario = (() => {
       };
     }
     const load_changes = (state.changes || []).map(change => {
-      const kind = CHANGES[change.kind], year = parse(change.year), kwh = parse(change.kwh);
+      const kind = CHANGES[change.kind], year = parse(change.year), kwh = parse(change.kwh, { whole: true });
       if (year == null || last == null || year < start || year > last) {
         problems.push(`${kind.label}: kies een beginjaar binnen de looptijd${last == null ? "" : ` (${start} tot en met ${last})`}.`);
       }
@@ -242,17 +242,21 @@ window.Scenario = (() => {
   }
 
   function stepProfile(body) {
-    const results = h("div"),
+    // Wat de zoekknop vond, wordt voorgelezen; bij een treffer gaat de focus naar de keuzelijst.
+    const results = h("div", { "aria-live": "polite" }),
       address = bindValue(input({ maxlength: "500",
         placeholder: "Postcode + huisnummer of straat en plaats" }),
         () => state.address, v => { state.address = v; });
     const lookup = button("Zoek adres via PDOK", () => UI.busy(lookup, async () => {
       const found = (await UI.api("/api/v1/locations/search",
         { method: "POST", json: { query: state.address } })).results;
-      results.replaceChildren(found.length ? field("Gevonden adressen", select([["", "Kies het juiste adres…"], ...found.map((s, i) => [String(i), s.address])], "", { onchange: event => {
+      const choices = found.length ? select([["", "Kies het juiste adres…"], ...found.map((s, i) => [String(i), s.address])], "", { onchange: event => {
         const site = found[Number(event.target.value)]; if (!site) return;
         state.site = site; state.address = site.address; address.value = site.address; persist();
-      } })) : h("p", { class: "help" }, "Geen adressen gevonden. Je kunt het adres ook handmatig gebruiken."));
+      } }) : null;
+      results.replaceChildren(choices ? field(`Gevonden adressen (${found.length})`, choices)
+        : h("p", { class: "help" }, "Geen adressen gevonden. Je kunt het adres ook handmatig gebruiken."));
+      choices?.focus();
     }), "secondary");
     const totals = new Map(), changes = h("div"), sums = [];
     const profile = select([["", "Profielen laden…"]], "",
@@ -266,9 +270,9 @@ window.Scenario = (() => {
         const kind = CHANGES[change.kind], sum = h("p", { class: "help", "aria-live": "polite" });
         sums.push(() => {
           const { kwh: base, name } = totals.get(state.profile) || {}, year = parse(change.year);
-          const extras = state.changes.map(c => [parse(c.year), parse(c.kwh)])
+          const extras = state.changes.map(c => [parse(c.year), parse(c.kwh, { whole: true })])
             .filter(([y, kwh]) => y != null && kwh != null && year != null && y <= year).map(([, kwh]) => kwh);
-          sum.textContent = base != null && year != null && parse(change.kwh) != null
+          sum.textContent = base != null && year != null && parse(change.kwh, { whole: true }) != null
             ? `Je verbruik vanaf 1 januari ${year}: ${[base, ...extras].map(v => n(v, 0)).join(" + ")} = ongeveer ${n(extras.reduce((a, b) => a + b, base), 0)} kWh per jaar. ` +
               `De ${n(base, 0)} kWh is het bruto verbruik in profiel ‘${name}’: alles wat het huis gebruikt, ook direct van de panelen. ` +
               "Op je jaarafrekening staat alleen wat van het net kwam, dus daar staat een ander getal."
@@ -279,7 +283,7 @@ window.Scenario = (() => {
         return h("fieldset", {}, h("legend", {}, kind.label),
           h("div", { class: "grid" },
             own("Vanaf jaar (1 januari)", "year", { min: "2026", max: "2100", step: "1" }),
-            own("Extra verbruik (kWh per jaar)", "kwh", { min: "1", max: String(kind.max), step: "1" },
+            own("Extra verbruik (kWh per jaar)", "kwh", { whole: true, min: "1", max: String(kind.max), step: "1" },
               change.kind === "heat_pump" ? "Wat er bij je huidige verbruik bij komt, niet je nieuwe totaal."
                 : "Wat de auto thuis laadt, met 3,68 kW (16 A, één fase)."),
             change.kind === "ev" ? field("Laden", bindValue(select(CHARGING), () => change.charging, v => { change.charging = v; })) : null),
@@ -306,11 +310,15 @@ window.Scenario = (() => {
       }));
       profile.value = state.profile;
     });
+    // De zoekknop staat naast het adresveld waar hij bij hoort.
+    const addressField = field("Adres in Nederland (optioneel)", address, "Alleen een label bij de berekening. Alleen de zoekknop stuurt je zoekterm naar PDOK; aansluiting en contract worden niet uit het adres afgeleid.");
+    const addressRow = h("div", { class: "input-row" });
+    address.replaceWith(addressRow);
+    addressRow.append(address, lookup);
     body.append(h("h2", {}, "Profiel en doel"), h("div", { class: "grid" },
       field("Naam van de berekening",
         bindValue(input({ required: true, maxlength: "200" }), () => state.title, v => { state.title = v; })),
-      field("Adres in Nederland (optioneel)", address, "Alleen een label bij de berekening. Alleen de zoekknop stuurt je zoekterm naar PDOK; aansluiting en contract worden niet uit het adres afgeleid.")),
-      h("div", { class: "actions" }, lookup), results,
+      addressField), results,
       h("div", { class: "grid" },
         field("Energieprofiel (volledig jaar met opwek en verbruik)", profile,
           h("span", {}, "Nog geen profiel? ", link("Importeer een bestand", "#/energie/import"),

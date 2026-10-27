@@ -81,6 +81,9 @@
   const when = seconds => new Date(seconds * 1000).toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam",
     day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
 
+  // De eerste rijen zoals ze in het bestand staan; kolommen met alleen getallen rechts uitgelijnd.
+  const previewTable = (headers, rows) => table(headers, rows, { caption: "Eerste rijen uit het bestand",
+    numeric: headers.map((_, i) => i).filter(i => rows.length > 0 && rows.every(row => /^[+-]?[\d.,]+$/.test(String(row[i] ?? "").trim()))) });
   // fileZone: de tijdzone waarin het bestand is gelezen; null voor een geschat profiel.
   function summaryView(summary, fileZone = null) {
     const hasUse = summary.consumption_kwh != null;
@@ -89,7 +92,7 @@
         ["Verbruik", hasUse ? kwh(summary.consumption_kwh) : "Niet in bestand"], ["Meetperioden", n(summary.rows, 0)],
         ["Dekking", `${n(summary.coverage_hours, 0)} uur`], ["Ontbrekende perioden", n(summary.gaps, 0)]]),
       h("p", { class: "help" },
-        `Van ${when(summary.from_unix_s)} tot ${when(summary.to_unix_s)}${fileZone ? ` · bestand gelezen in tijdzone ${fileZone}` : ""}`),
+        `Van ${when(summary.from_unix_s)} tot ${when(summary.to_unix_s)}${fileZone ? ` · tijden in het bestand: ${zoneLabel(fileZone)}` : ""}`),
       summary.grid_import_kwh != null ? h("p", {}, `Gemeten netafname: ${kwh(summary.grid_import_kwh)}. Teruglevering: ` +
         `${kwh(summary.grid_export_kwh)}. Vergelijk dit met je jaarafrekening over dezelfde periode; een groot verschil wijst ` +
         "meestal op een verkeerde kolom, eenheid of soort waarden.") : null,
@@ -407,28 +410,33 @@
         UI.append(body, [h("h2", {}, "Kolommen en eenheden"),
           h("p", { class: "lead", role: "status" }, `${n(r.row_count, 0)} rijen ingelezen. Controleer kolommen, eenheid, ` +
             "periode en tijdzone."), noProduction,
-          state.cumulative ? h("p", { class: "callout", role: "note" }, CUMULATIVE_NOTE) : null, h("div", { class: "grid" },
-          field("Datum of tijdstip", column("time_column")),
+          state.cumulative ? h("p", { class: "callout", role: "note" }, CUMULATIVE_NOTE) : null,
+          // Drie groepen in de volgorde waarin je het bestand naloopt: welke kolom wat is, hoe de tijd erin staat,
+          // en hoe de getallen te lezen zijn.
+          h("fieldset", {}, h("legend", {}, "Welke kolom is wat"), h("div", { class: "grid" },
+            field("Datum of tijdstip", column("time_column")),
             field("Aparte tijdkolom", column("time_part_column", true)),
             field("Zonne-opwek", production),
-          field("Verbruik of netafname", column("consumption_column", true)),
-            field("Wat staat in die kolom?", source), ...p1Fields,
-          field("Eenheid",
-            opts([["kwh", "kWh (energie)"], ["wh", "Wh (energie)"], ["kw", "kW (gemiddeld vermogen)"],
-              ["w", "W (gemiddeld vermogen)"]],
-              "unit")),
-          field("Soort waarden",
-            opts([["interval", "Per meetperiode"], ["cumulative", "Cumulatieve meterstanden"]], "mode")),
-          field("Meetperiode", opts(Object.entries(PERIODS), "period")),
-          field("Tijdstempel markeert",
-            opts([["start", "Begin van de periode"], ["end", "Einde van de periode"]], "timestamp_position")),
-          field("Decimaalteken", opts([["dot", "Punt (1.25)"], ["comma", "Komma (1,25)"]], "decimal")),
-          ...zoneFields(options, "file", "Voor tijdstippen zonder UTC-offset; een offset in het bestand blijft leidend."),
-          field("Herkomst", opts([["measured", "Gemeten"], ["modelled", "Gemodelleerd"]], "data_kind")),
-          field("Datumnotatie",
-            opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
-          field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
-          h("h3", {}, "Eerste rijen"), table(r.headers, r.preview)]);
+            field("Verbruik of netafname", column("consumption_column", true)),
+            field("Wat staat in die kolom?", source), ...p1Fields)),
+          h("fieldset", {}, h("legend", {}, "Tijd"), h("div", { class: "grid" },
+            field("Meetperiode", opts(Object.entries(PERIODS), "period")),
+            field("Tijdstempel markeert",
+              opts([["start", "Begin van de periode"], ["end", "Einde van de periode"]], "timestamp_position")),
+            field("Datumnotatie",
+              opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
+            ...zoneFields(options, "file", "Voor tijdstippen zonder UTC-offset; een offset in het bestand blijft leidend."))),
+          h("fieldset", {}, h("legend", {}, "Getallen"), h("div", { class: "grid" },
+            field("Eenheid",
+              opts([["kwh", "kWh (energie)"], ["wh", "Wh (energie)"], ["kw", "kW (gemiddeld vermogen)"],
+                ["w", "W (gemiddeld vermogen)"]],
+                "unit")),
+            field("Soort waarden",
+              opts([["interval", "Per meetperiode"], ["cumulative", "Cumulatieve meterstanden"]], "mode")),
+            field("Decimaalteken", opts([["dot", "Punt (1.25)"], ["comma", "Komma (1,25)"]], "decimal")),
+            field("Herkomst", opts([["measured", "Gemeten"], ["modelled", "Gemodelleerd"]], "data_kind")),
+            field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows")))),
+          previewTable(r.headers, r.preview)]);
       }
       // Stap 3: een apart bestand van de slimme meter naast de opwek van de omvormer.
       function stepMeter(body) {
@@ -504,7 +512,7 @@
           field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
           h("p", { class: "help" }, "Telt je meter per tarief (normaal en dal, T1 en T2)? Kies dan bij ‘tarief 2’ de tweede kolom; " +
             "die wordt per meetperiode opgeteld. Cumulatieve P1-meterstanden kunnen direct; de eerste stand is dan alleen het beginpunt."),
-          h("h3", {}, "Eerste rijen"), table(meter.inspected.headers, meter.inspected.preview));
+          previewTable(meter.inspected.headers, meter.inspected.preview));
       }
       // Al na de kolommen een controle van het omvormerbestand, zodat een fout in tijd of getallen bij de
       // stap komt waar je hem oplost; na de meterstap opnieuw met het meterbestand, als er iets veranderde.

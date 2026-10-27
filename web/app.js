@@ -103,7 +103,8 @@
     async render(view, actions, { id }, page) {
       let run;
       try { run = await Data.run(id); }
-      catch (error) { view.append(UI.empty("Berekening niet gevonden", error.message,
+      catch (error) { page.setTitle("Berekening niet gevonden", "");
+        view.append(UI.empty("Deze berekening is er niet (meer)", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button")));
         return; }
       page.setTitle(run.title);
@@ -116,7 +117,8 @@
     async render(view, actions, { data }, page) {
       let run;
       try { run = await Results.fromShare(data); }
-      catch (error) { view.append(UI.empty("Deze link werkt niet", error.message,
+      catch (error) { page.setTitle("Deze link werkt niet", "");
+        view.append(UI.empty("De berekening in deze link is niet te lezen", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
       page.setTitle(run.title);
       await Results.render(run, view, actions, null, { shared: true });
@@ -289,9 +291,11 @@
     const [view, actions] = ["view", "page-actions"].map(id => { const old = $(id), fresh = old.cloneNode(false);
       old.replaceWith(fresh); return fresh; });
     // Een scherm dat na een await zijn kop zet, doet dat alleen als het nog het actuele scherm is.
-    const context = { current: () => run === generation, setTitle(text) {
+    // `subtitle` vervangt de ondertitel als die is meegegeven, zoals bij een scherm dat niet gevonden is.
+    const context = { current: () => run === generation, setTitle(text, subtitle) {
       if (run !== generation) return;
-      $("page-title").textContent = text; document.title = `${text} · Thuisaccu`; } };
+      $("page-title").textContent = text; document.title = `${text} · Thuisaccu`;
+      if (subtitle != null) $("page-subtitle").textContent = subtitle; } };
     view.setAttribute("aria-busy", "true");
     try { await found.page.render(view, actions, found.params, context); }
     catch (error) { if (run === generation) view.replaceChildren(UI.empty("Dit scherm kon niet worden geladen", error.message,

@@ -127,9 +127,14 @@ window.Compare = (() => {
     const stress = runs.some(run => run.input.request.parameters.export_variant);
     const guarantee = columns.some(({ run, option }) => Results.warranty(run, option));
     const body = ROWS.filter(([label]) => (stress || label !== "Netto voordeel als teruglevering minder oplevert") &&
-      (guarantee || label !== "Lonend tot als hij stopt na de garantie")).map(([label, hint, value]) => h("tr", {},
-      h("th", { scope: "row" }, label, hint ? [h("br"), h("small", {}, hint)] : null),
-      columns.map(({ run, rec, option }) => h("td", {}, value(run, rec, option) ?? "—"))));
+      (guarantee || label !== "Lonend tot als hij stopt na de garantie")).map(([label, hint, value]) => {
+      const cells = columns.map(({ run, rec, option }) => value(run, rec, option) ?? "—");
+      const same = cells.length > 1 && cells.every(cell => typeof cell === "string" && cell === cells[0]);
+      return h("tr", { class: same ? "same" : null },
+        h("th", { scope: "row" }, label, hint ? [h("br"), h("small", {}, hint)] : null,
+          same ? [h("br"), h("small", {}, "Gelijk in alle berekeningen")] : null),
+        cells.map(cell => h("td", {}, cell)));
+    });
     body.push(h("tr", {}, h("th", { scope: "row" }, "Wat is anders"),
       columns.map(({ run }) => h("td", {}, differences(run, runs)))));
     const warnings = caveats(runs);
@@ -142,8 +147,9 @@ window.Compare = (() => {
           h("thead", {}, head), h("tbody", {}, body))),
       h("p", { class: "help" }, "Elke kolom gebruikt de invoer en het rekenmodel van die berekening. Bij geen aanbevolen accu staat " +
         "de accu met het hoogste netto voordeel erbij."),
-      h("section", { class: "panel plain glossary" }, h("h2", {}, "Wat betekenen deze woorden?"),
-        h("dl", {}, Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)])))]);
+      // Ingeklapt, zoals op de uitkomstpagina: de vergelijking zelf staat voorop.
+      h("details", { class: "fold" }, h("summary", {}, "Wat betekenen deze woorden?"),
+        h("dl", { class: "glossary" }, Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)])))]);
   }
 
   UI.page("vergelijk/:data", {

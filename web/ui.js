@@ -50,14 +50,15 @@ window.UI = (() => {
   // Getal uit een invoerveld in Nederlandse notatie: komma (of punt) als decimaalteken, punten in groepen
   // van drie als duizendtallen (6.500,00 en 1.250.000). Leeg of geen getal geeft null.
   // ‘3.500’ kan 3500 of 3,5 zijn: dat is dubbelzinnig, geeft null, en `validate` vraagt het na. Bij een
-  // bedrag in euro (`money`) is het 3500, want centen hebben twee decimalen. ‘6500,-’ is 6500; ‘0x10’ en
+  // bedrag in euro (`money`) is het 3500, want centen hebben twee decimalen, en bij een jaartotaal in hele kWh
+  // (`whole`) ook: zo staat het op de jaarafrekening, en 3,5 kWh per jaar is geen jaartotaal. ‘6500,-’ is 6500; ‘0x10’ en
   // ‘1e3’ zijn geen getal.
   const tidy = raw => String(raw ?? "").trim().replace(/^€/, "").replace(/\s/g, "").replace(/,-{1,2}$/, "");
   const ambiguous = raw => /^[+-]?[1-9]\d{0,2}\.\d{3}$/.test(tidy(raw));
-  const parse = (raw, { money = false } = {}) => {
+  const parse = (raw, { money = false, whole = false } = {}) => {
     let text = tidy(raw);
     if (/^[+-]?\d{1,3}(\.\d{3})+,\d*$/.test(text) || /^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(text)) text = text.replace(/\./g, "");
-    else if (ambiguous(text)) { if (!money) return null; text = text.replace(".", ""); }
+    else if (ambiguous(text)) { if (!money && !whole) return null; text = text.replace(".", ""); }
     text = text.replace(",", ".");
     return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(text) && Number.isFinite(Number(text)) ? Number(text) : null;
   };
@@ -163,10 +164,10 @@ window.UI = (() => {
   // Een tekstveld, geen type=number: dat leest ‘3.500’ in een Nederlandse browser als 3,5 of laat de komma
   // vallen. `parse` leest de tekst; `validate` controleert getal, grenzen en stappen met Nederlandse meldingen.
   // Het decimale toetsenbord op een telefoon heeft geen minteken; velden die negatief mogen krijgen er een gewoon.
-  // `money`: een bedrag in euro, waarin ‘6.500’ als 6500 telt (zie parse).
-  const numberInput = ({ money: euro = false, ...props } = {}) => h("input", { type: "text", step: "any", autocomplete: "off",
+  // `money`: een bedrag in euro, `whole`: een jaartotaal in kWh; in beide telt ‘6.500’ als 6500 (zie parse).
+  const numberInput = ({ money: euro = false, whole = false, ...props } = {}) => h("input", { type: "text", step: "any", autocomplete: "off",
     spellcheck: "false", inputmode: props.min != null && Number(props.min) < 0 ? "text" : "decimal", ...props,
-    dataset: euro ? { number: "", money: "" } : { number: "" } });
+    dataset: { number: "", ...(euro ? { money: "" } : {}), ...(whole ? { whole: "" } : {}) } });
   function select(options, value, props = {}) {
     const element = h("select", props, options.map(([v, text]) => h("option", { value: v }, text)));
     if (value != null) element.value = String(value);
@@ -191,7 +192,7 @@ window.UI = (() => {
   function numberProblem(control) {
     const raw = control.value.trim(), // Zonder duizendtalpunt, zoals de meldingen zelf vragen: ‘Vul 2026 of meer in.’
     num = value => Number(value).toLocaleString("nl-NL", { maximumFractionDigits: 6, useGrouping: false });
-    const options = { money: "money" in control.dataset }, problem = parseProblem(raw, options);
+    const options = { money: "money" in control.dataset, whole: "whole" in control.dataset }, problem = parseProblem(raw, options);
     if (raw === "" || problem) return problem;
     const value = parse(raw, options);
     if (control.min !== "" && value < Number(control.min)) return `Vul ${num(control.min)} of meer in.`;

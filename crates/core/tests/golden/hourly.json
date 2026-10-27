@@ -491,7 +491,7 @@
     }
   ],
   "export_variant_recommended_key": "no_battery",
-  "model_version": "nl-self-consumption-v6",
+  "model_version": "nl-self-consumption-v7",
   "recommendation": "Geen accu komt binnen deze aannames en het gekozen doel als beste uit de vergelijking.",
   "recommended_key": "no_battery",
   "warnings": [

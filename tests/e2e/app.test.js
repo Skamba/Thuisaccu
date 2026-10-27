@@ -197,12 +197,10 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(await page.textContent(`[id="${describedBy.split(" ").pop()}"]`), /Vul de opwek van je panelen in, of hieronder het vermogen in kWp/);
   await production.fill("3800");
   await page.getByLabel("Waarvan warmtepomp (kWh per jaar)").fill("1500");
-  // Een punt met drie cijfers is dubbelzinnig en wordt nagevraagd; Nederlandse notatie met komma telt goed.
+  // Een jaartotaal zoals op de jaarafrekening: ‘4.600’ is 4600 kWh, ook met komma en decimalen.
   const gridImport = page.getByLabel("Stroom van het net per jaar (kWh)");
   await gridImport.fill("4.600");
-  await next(page);
-  assert.match(await page.textContent(`[id="${(await gridImport.getAttribute("aria-describedby")).split(" ").pop()}"]`),
-    /Bedoel je 4600 of 4,600\?/);
+  assert.match(await page.textContent(".derived"), /5\.500 kWh/);
   await gridImport.fill("4.600,00");
   assert.match(await page.textContent(".derived"), /5\.500 kWh/);
   await next(page);
@@ -672,9 +670,9 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await page.waitForFunction(() => /energie\/\d+/.test(location.hash), null, { timeout: 30000 });
   // De periode staat in Nederlandse tijd, met het einde van de laatste meetperiode als ‘tot’.
   // #view bestaat al voordat het profiel geladen is; wacht op de tekst, niet alleen op de nieuwe hash.
-  await page.waitForSelector("text=bestand gelezen in tijdzone");
+  await page.waitForSelector("text=tijden in het bestand:");
   assert.match(await page.textContent("#view"),
-    /Van 1-1-2025, 00:00 CET tot 1-1-2026, 00:00 CET · bestand gelezen in tijdzone Europe\/Amsterdam/);
+    /Van 1-1-2025, 00:00 CET tot 1-1-2026, 00:00 CET · tijden in het bestand: Nederlandse tijd, met zomertijd/);
   // Het profiel opent de keuzehulp met dit bestand gekozen, ook zonder de pagina te herladen.
   await page.click("button:has-text('Gebruik in de keuzehulp')");
   await page.waitForSelector("text=Bewaard energieprofiel");
@@ -937,7 +935,7 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await compare.click();
   await page.waitForSelector("table.compare");
   const side = await page.textContent("table.compare");
-  assert.match(side, /Uitkomst(Advies: |Geen accu komt het beste uit)/);
+  assert.match(side, /Uitkomst(Gelijk in alle berekeningen)?(Advies: |Geen accu komt het beste uit)/);
   assert.match(side, /Lonend tot.*(Zelfs gratis niet|Tot €)/);
   assert.match(side, /Wat is anders.*offerte: bruikbare capaciteit 10 kWh → 9,3 kWh.*vaste prijs/);
   // Ook de accu zelf staat bij ‘Wat is anders’, per accu met dezelfde naam.

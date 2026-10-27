@@ -112,7 +112,7 @@ impl<'a> Profiles<'a> {
 /// Versie van het rekenmodel in elke uitkomst. Verhoog hem als de betekenis van uitkomsten
 /// verandert en documenteer dat in `docs/roi-model.md`; de interface (`MODEL_VERSION` in
 /// `web/data.js`) noemt oudere runs bij het vergelijken.
-pub const MODEL_VERSION: &str = "nl-self-consumption-v6";
+pub const MODEL_VERSION: &str = "nl-self-consumption-v7";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -779,6 +779,7 @@ fn choose<'a>(
         Objective::Payback => f64::NEG_INFINITY,
         _ => 0.0,
     };
+    let mut best_npv = 0.0;
     for (r, npv, roi, payback) in options {
         if !r.within_budget {
             continue;
@@ -803,8 +804,14 @@ fn choose<'a>(
             }
             Objective::SelfConsumption => r.first_year.self_consumption_pct,
         };
-        if score > best_score + 1e-8 {
+        // De terugverdientijd telt in hele jaren; bij een gelijke tijd wint de hoogste NPV, niet
+        // de eerste (kleinste) optie in de lijst. Bij -∞ (niet terugverdiend) is er geen gelijkspel.
+        let tie_won = matches!(objective, Objective::Payback)
+            && (score - best_score).abs() <= 1e-8
+            && npv > best_npv + 1e-8;
+        if score > best_score + 1e-8 || tie_won {
             best_score = score;
+            best_npv = npv;
             best_key = r.key.clone();
         }
     }

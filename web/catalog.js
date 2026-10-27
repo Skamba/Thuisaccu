@@ -313,12 +313,19 @@
         ["unknown", "Onbekend"]], filters.connection,
         { onchange: event => { filters.connection = event.target.value; draw(); } });
       const count = h("p", { class: "help", "aria-live": "polite" });
+      // Zolang niemand bronnen heeft nagekeken, zegt één zin dat; een kolom met overal dezelfde waarschuwing helpt
+      // niet kiezen. Zodra één uitvoering is nagekeken, toont de kolom per rij de status.
+      const claimsOf = c => ["numbers", "features", "texts", "warranties", "offers"].flatMap(key => ofConfig(cmp[key], c));
+      const isReviewed = c => { const claims = claimsOf(c); return claims.length > 0 && claims.every(v => v.review_status === "reviewed"); };
+      const anyReviewed = cmp.configurations.some(isReviewed);
       view.append(h("div", { class: "toolbar" }, field("Zoek", search), field("Fabrikant", maker), field("Aansluiting", connection),
         UI.menu("Meer", [button("Laad onderzochte uitvoeringen", event => loadReferences(event.target), "ghost")])),
         ...(Data.priceAge().stale ? [h("p", { class: "callout", role: "note" }, Data.priceAge().text)] : []),
         h("p", { class: "help" }, `Onderzochte uitvoeringen zijn bronmomentopnamen van ${Data.RESEARCHED_SPAN}. ` +
           "Kies maximaal vier om naast elkaar te zetten. Nieuwe onderzochte uitvoeringen worden automatisch toegevoegd." +
           (cmp.hidden ? ` ${cmp.hidden} onderzochte ${cmp.hidden === 1 ? "uitvoering staat" : "uitvoeringen staan"} er niet bij, omdat capaciteit, ontlaadvermogen of een prijs inclusief btw in de bronnen ontbreekt.` : "")),
+        ...(anyReviewed ? [] : [h("p", { class: "help" }, "De bronclaims zijn nog door niemand nagekeken. Open een uitvoering om bron, " +
+          "vindplaats en meetgrens zelf te controleren.")]),
         count, list, priceless(cmp, rerender), tray);
       function drawTray() {
         tray.hidden = selected.size === 0;
@@ -332,7 +339,7 @@
         const all = cmp.configurations.length;
         count.textContent = configs.length === all ? `${all} ${all === 1 ? "uitvoering" : "uitvoeringen"}`
           : `${configs.length} van ${all} uitvoeringen bij deze filters`;
-        list.replaceChildren(configs.length ? table(["Vergelijk", "Accu", "Bruikbare energie", "Prijs", "Bronnen", "Status"], configs.map(c => {
+        list.replaceChildren(configs.length ? table(["Vergelijk", "Accu", "Bruikbare energie", "Prijs", "Bronnen", ...(anyReviewed ? ["Status"] : [])], configs.map(c => {
           const box = h("input", { type: "checkbox", checked: selected.has(c.id), "aria-label": `Vergelijk ${c.manufacturer_name} ${c.product_name} ${c.name}`,
             onchange: event => {
               if (event.target.checked && selected.size >= 4) { event.target.checked = false;
@@ -340,16 +347,15 @@
               if (event.target.checked) selected.add(c.id); else selected.delete(c.id);
               remember(); drawTray();
             } });
-          const claims = ["numbers", "features", "texts", "warranties", "offers"].flatMap(key => ofConfig(cmp[key], c));
+          const claims = claimsOf(c);
           const usable = ofConfig(cmp.numbers, c).filter(v => v.metric_key === "usable_energy_wh"),
             nominal = ofConfig(cmp.numbers, c).find(v => v.metric_key === "nominal_energy_wh");
           const capacity = usable.length === 1 ? `${Data.qualifiers[usable[0].qualifier] || ""}${n(usable[0].value / 1000)} kWh · ${Data.boundaries[usable[0].boundary]}` : usable.length > 1 ? "Meerdere claims" : nominal ? `Onbekend (nominaal ${n(nominal.value / 1000)} kWh)` : "Onbekend";
           const offer = ofConfig(cmp.offers, c).sort(Data.newestOffer)[0];
-          const reviewed = claims.length > 0 && claims.every(v => v.review_status === "reviewed");
           return [box, h("div", {}, h("strong", {}, `${c.manufacturer_name} ${c.product_name}`), h("small", {}, `${c.name} · ${c.product_kind === "battery_module" ? "accumodule" : "accusysteem"}`)),
             capacity, offer ? priceText(offer) : h("span", { class: "unknown" }, "Geen prijs"),
               String(new Set(claims.map(v => `${v.source_title}|${v.source_url}`)).size),
-            badge(reviewed ? "Bronnen nagekeken" : "Bronnen niet nagekeken", reviewed ? "success" : "warning")];
+            ...(anyReviewed ? [isReviewed(c) ? badge("Bronnen nagekeken", "success") : badge("Bronnen niet nagekeken", "warning")] : [])];
         }), { caption: "Accucatalogus", stack: true }) : h("p", { class: "empty" }, "Geen uitvoeringen bij deze filters."));
         drawTray();
       }

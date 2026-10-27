@@ -73,6 +73,13 @@ button, .button { font: inherit; display: inline-flex; align-items: center; just
 .row-buttons { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
 .ghost.remove:hover { background: var(--soft); }
 button:disabled { opacity: .45; cursor: not-allowed; }
+/* Komende stappen blijven leesbaar: de rij is het enige overzicht van wat de wizard vraagt. */
+.stepper button:disabled, .wizard-footer button:disabled { opacity: 1; color: var(--muted); cursor: default; }
+.wizard-footer button:disabled { border-color: var(--line); }
+.input-row { display: flex; gap: .5rem; align-items: stretch; }
+.input-row > input { flex: 1 1 auto; min-width: 0; }
+.input-row > button { flex: 0 0 auto; }
+@media (max-width: 40rem) { .input-row { flex-wrap: wrap; } .input-row > button { flex: 1 1 100%; } }
 .actions, .toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; margin: .75rem 0; }
 .toolbar .field { min-width: 12rem; flex: 1 1 12rem; margin: 0; }
 
@@ -159,7 +166,9 @@ thead th { background: var(--soft); font-size: .82rem; }
 td strong, th strong { display: block; }
 .compare th[scope="row"] { position: sticky; left: 0; background: var(--surface); min-width: 11rem; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
-.compare td { min-width: 13rem; }
+.compare td { min-width: 13rem; font-variant-numeric: tabular-nums; }
+/* Een rij die in alle berekeningen gelijk is, treedt terug; de tekst in de rijkop zegt het ook. */
+.compare tr.same td { color: var(--muted); }
 .compare thead :is(th, td):first-child { position: sticky; left: 0; z-index: 1; }
 .compare-hint { display: none; }
 /* Vóór het smalle scherm: dat maakt de tabbladen compacter. */

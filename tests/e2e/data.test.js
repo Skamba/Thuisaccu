@@ -216,6 +216,11 @@ test("UI.parse leest Nederlandse notatie en weigert dubbelzinnige punten", () =>
   for (const [raw, expected] of [["6.500", 6500], ["€ 6.500", 6500], ["6.500,-", 6500], ["0.25", 0.25], ["12.345.678", 12345678]]) {
     assert.equal(UI.parse(raw, { money: true }), expected, raw);
   }
+  // Een jaartotaal in hele kWh leest ‘3.200’ ook als 3200; een kleiner getal blijft gewoon decimaal.
+  for (const [raw, expected] of [["3.200", 3200], ["3.200,5", 3200.5], ["12.5", 12.5], ["0.250", 0.25]]) {
+    assert.equal(UI.parse(raw, { whole: true }), expected, raw);
+  }
+  assert.equal(UI.parseProblem("3.200", { whole: true }), "");
   assert.match(UI.parseProblem("€ 3.500"), /Bedoel je 3500 of 3,500\?/);
   assert.equal(UI.parseProblem("€ 3.500", { money: true }), "");
   assert.match(UI.parseProblem("0x10"), /Vul een getal in/);
