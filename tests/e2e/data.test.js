@@ -446,3 +446,32 @@ test("het advies zegt of de accu binnen het capaciteitsbereik van de keuzehulp v
   delete old.input.request.sizing_range;
   assert.equal(Results.sizeNote(old, { key: "a" }), null);
 });
+
+test("rank() volgt de regels van de rekenkern: verlies telt niet mee, bij gelijke score wint de hoogste NPV", () => {
+  const option = (key, npv_eur, extra = {}) => ({ key, name: `FICTIEF ${key}`, npv_eur, roi_pct: null, payback_years: null,
+    within_budget: true, first_year: { self_consumption_pct: 50 }, ...extra });
+  const run = (objective, candidates, recommended_key) => ({
+    input: { request: { parameters: { objective }, candidates: candidates.map(c => ({ key: c.key })) } },
+    result: { recommended_key, candidates } });
+  const keys = r => Array.from(Results.rank(r), c => c.key);
+  // Terugverdientijd: de snelle optie met verlies in geld van nu komt na de lonende; gelijke jaren op NPV.
+  const payback = [option("verlies", -50, { payback_years: 3 }), option("klein", 100, { payback_years: 7 }),
+    option("groot", 300, { payback_years: 7 }), option("nooit", 20)];
+  assert.deepEqual(keys(run("payback", payback, "groot")), ["groot", "klein", "nooit", "verlies"]);
+  // ROI: zonder startinvestering (geen ROI) maar met winst is het best denkbaar; met verlies het slechtst.
+  const roi = [option("roi", 400, { roi_pct: 30 }), option("gratis", 10), option("min", -5, { roi_pct: 80 })];
+  assert.deepEqual(keys(run("roi", roi, "gratis")), ["gratis", "roi", "min"]);
+  // Buiten het budget achteraan, ook met een hogere NPV.
+  const budget = [option("duur", 900, { within_budget: false }), option("past", 100)];
+  assert.deepEqual(keys(run("net_present_value", budget, "past")), ["past", "duur"]);
+});
+
+test("trimmed(): een kopie van een grote berekening houdt de beste vijf en de beste vaste accu", () => {
+  context.Scenario = { MAX_OPTIONS: 12 };
+  const candidates = Array.from({ length: 14 }, (_, i) => ({ key: `p${i}`, name: `FICTIEF ${i}`, npv_eur: 1000 - i,
+    within_budget: true }));
+  const request = { parameters: { objective: "net_present_value" },
+    candidates: candidates.map((c, i) => ({ key: c.key, connection: i === 13 ? "fixed" : "plug" })) };
+  const run = { input: { request }, result: { recommended_key: "p0", candidates } };
+  assert.deepEqual(Array.from(Results.trimmed(run, request).candidates, c => c.key), ["p0", "p1", "p2", "p3", "p4", "p13"]);
+});

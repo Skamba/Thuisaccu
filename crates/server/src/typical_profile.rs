@@ -343,7 +343,13 @@ pub fn build(request: &TypicalRequest) -> Result<TypicalProfile, String> {
                 label_orientation(&s.orientation)
             )
         });
-    let extras: String = [(heat_pump, "warmtepomp"), (ev, "auto")]
+    // Het laadmoment staat in de naam: profielen die alleen daarin verschillen, zijn anders niet uit elkaar te houden.
+    let ev_label = match request.ev.as_ref().map(|ev| ev.charging.as_str()) {
+        Some("evening") => "auto, ’s avonds laden",
+        Some("night") => "auto, ’s nachts laden",
+        _ => "auto, overdag laden",
+    };
+    let extras: String = [(heat_pump, "warmtepomp"), (ev, ev_label)]
         .iter()
         .filter(|(kwh, _)| *kwh > 0.0)
         .map(|(kwh, label)| format!(" ({} kWh {label})", whole(*kwh)))

@@ -50,10 +50,8 @@ window.Results = (() => {
     const result = run.result;
     const baseline = { key: "no_battery", name: "Geen accu", initial_investment_eur: 0, npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null, first_year: result.baseline_first_year, years: [], pessimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, optimistic: { npv_eur: 0, net_profit_eur: 0, roi_pct: null }, within_budget: true, color: "#7d847f",
       export_variant: result.export_variant_recommended_key == null ? undefined : { npv_eur: 0, net_profit_eur: 0, roi_pct: null, payback_years: null } };
-    // Op volgorde van het gekozen doel, de aanbevolen optie voorop; kleuren volgen die volgorde.
-    const score = SCORE[run.input.request.parameters.objective] || SCORE.net_present_value;
-    const ranked = [...result.candidates].sort((a, b) => Number(b.key === result.recommended_key) -
-      Number(a.key === result.recommended_key) || score(b) - score(a));
+    // Kleuren volgen de volgorde van `rank`.
+    const ranked = rank(run);
     const quote = run.input.request.quote_basis?.candidate_key;
     return [baseline, ...ranked.map((c, i) => ({ ...c, color: palette[i % palette.length], quoted: c.key === quote }))];
   }
@@ -62,11 +60,24 @@ window.Results = (() => {
     const key = run.input.request.quote_basis?.candidate_key;
     return key == null ? null : run.result.candidates.find(c => c.key === key) ?? null;
   }
+  // Dezelfde regels als `choose` in analysis.rs: bij ROI en terugverdientijd telt een optie met verlies in geld van nu
+  // (NPV onder nul) niet mee, en zonder startinvestering is de ROI met winst het best denkbare. Bij een gelijke
+  // score gaat de hoogste NPV voor (zie `rank`), zoals de rekenkern bij de terugverdientijd beslist.
   const SCORE = {
-    net_present_value: c => c.npv_eur, roi: c => c.roi_pct ?? -Infinity,
-    payback: c => c.payback_years == null ? -Infinity : -c.payback_years,
+    net_present_value: c => c.npv_eur,
+    roi: c => c.npv_eur < 0 ? -Infinity : c.roi_pct ?? (c.npv_eur > 0 ? Infinity : -Infinity),
+    payback: c => c.npv_eur < 0 || c.payback_years == null ? -Infinity : -c.payback_years,
     self_consumption: c => c.first_year?.self_consumption_pct ?? -Infinity
   };
+  // De opties op volgorde van het gekozen doel: de aanbevolen voorop, dan wat binnen het budget valt, dan de score
+  // en bij gelijke score de hoogste NPV. Zonder aftrekken: ∞ − ∞ is geen getal.
+  function rank(run) {
+    const result = run.result, score = SCORE[run.input.request.parameters.objective] || SCORE.net_present_value;
+    const compare = (x, y) => x === y ? 0 : x > y ? 1 : -1;
+    return [...result.candidates].sort((a, b) => Number(b.key === result.recommended_key) -
+      Number(a.key === result.recommended_key) || Number(b.within_budget !== false) - Number(a.within_budget !== false) ||
+      compare(score(b), score(a)) || compare(b.npv_eur, a.npv_eur));
+  }
   // Grafieken en kaarten tonen geen accu en de beste vijf; tabellen tonen alles.
   const TOP = 5;
   // Capaciteit en vermogen in labels: hele getallen zonder decimaal, anders één.
@@ -512,8 +523,9 @@ window.Results = (() => {
       // Bij een offerte open: daar staat hoe de offerteprijs op de startkosten komt.
       origin.children.length ? Object.assign(fold(quotedOption ? `Uit je offerte, op basis van ‘${quote.title}’`
         : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin), { open: Boolean(quotedOption) }) : null,
-      fold("Wat betekenen deze woorden?", h("dl", { class: "glossary" },
-        Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))),
+      // De woordenlijst klapt bij afdrukken niet open: hij maakt het blad een paar pagina's langer.
+      Object.assign(fold("Wat betekenen deze woorden?", h("dl", { class: "glossary" },
+        Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))), { className: "fold print-closed" }),
       h("p", { class: "next-step" }, "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en " +
         "omvormer geschikt zijn. De offertecheck zet op een rij wat je controleert, met de waarden waarmee hier is gerekend. ", toCheck));
   }
@@ -879,6 +891,8 @@ window.Results = (() => {
     const pick = UI.select(all.slice(1).map(c => [c.key, c.short]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
     const basis = request.quote_basis;
+    // Een elektrische auto in het geschatte profiel of als latere verbruiksverandering.
+    const charges = run.input.profile?.options?.inputs?.ev?.annual_kwh > 0 || (request.load_changes || []).some(c => c.kind === "ev");
     // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3), en welke regels kloppen.
     // Bewaard in deze browser per berekening, zodat je de offerte in delen kunt nalopen; een gemak, geen opslag.
     const memoryKey = Results.checkKey(run);
@@ -926,6 +940,11 @@ window.Results = (() => {
           "plek waar hij komt? Telt niet als antwoord: ‘thuisbatterijen zijn altijd meeverzekerd’. " + Data.RULES.insurance,
           status(line("insurance")), ["insurance"]),
         cost("Noodstroom", "Kan de accu het huis van stroom voorzien als het net uitvalt, en zit dat in de prijs?", status(line("backup")), ["backup"]),
+        // Het laden van de auto is hier gewoon verbruik, dus de accu mag het in de berekening leveren.
+        ...(charges ? [{ question: "Laden van de auto", hint: "Mag en kan de accu ontladen naar de laadpaal, en hoe stuurt het " +
+          "energiebeheer (EMS) dat? Veel installaties sluiten dat uit, en een accu met minder vermogen dan de laadpaal levert maar een deel.",
+          fields: [], value: "Gerekend: de accu levert ook aan de auto, tot zijn ontlaadvermogen",
+          origin: badge("aanname: vraag dit eerst", "warning"), assumed: true }] : []),
         cost("App en abonnement", "Werkt de accu zonder cloud-app of betaald abonnement, en blijft hij werken als de app van de fabrikant verdwijnt?",
           subscription?.status === "priced" && !paper ? `${money(subscription.amount_minor / 100)} per jaar` : status(subscription),
           ["subscription"], ["subscription_eur"]),
@@ -1130,14 +1149,19 @@ window.Results = (() => {
     return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
   };
   const fromBase64Url = data => Uint8Array.from(atob(data.replaceAll("-", "+").replaceAll("_", "/")), c => c.charCodeAt(0));
+  // De beste vaste thuisaccu op netto contante waarde, als de run de soort aansluiting kent. Een link of kopie houdt hem,
+  // zodat de afweging stekker tegen vaste installatie (het oordeel noemt hem) niet stilletjes verdwijnt.
+  function bestFixedKey(run) {
+    const fixed = new Set(run.input.request.candidates.filter(c => c.connection === "fixed").map(c => c.key));
+    return run.result.candidates.filter(c => fixed.has(c.key)).sort((a, b) => b.npv_eur - a.npv_eur)[0]?.key;
+  }
   // Om de link kort te houden gaan alleen de opties mee die de uitkomst bepalen: de aanbevolen accu, de beste
-  // vijf op het gekozen doel en de beste op netto contante waarde en in de terugleveringsvariant.
+  // vijf op het gekozen doel, de beste op netto contante waarde en in de terugleveringsvariant, en de beste vaste accu.
   function shareable(run) {
     const input = run.input, request = input.request, result = run.result, source = input.profile?.options || {};
-    const score = SCORE[request.parameters.objective] || SCORE.net_present_value;
-    const byScore = [...result.candidates].sort((a, b) => score(b) - score(a));
+    const byScore = rank(run);
     const best = [...result.candidates].sort((a, b) => b.npv_eur - a.npv_eur)[0];
-    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key,
+    const keep = new Set([result.recommended_key, result.export_variant_recommended_key, best?.key, bestFixedKey(run),
       ...byScore.slice(0, TOP).map(c => c.key)]);
     const candidates = result.candidates.filter(c => keep.has(c.key));
     // Alleen wat de weergave nodig heeft; importinstellingen kunnen ook de naam van een meterbestand bevatten.
@@ -1194,6 +1218,8 @@ window.Results = (() => {
         `beste opties mee, niet alle ${run.result.candidates.length} doorgerekende accu’s.`) : null,
       Local.enabled ? null : h("p", { class: "help" },
         "De link wijst naar deze lokale app. Iemand anders opent hem in een eigen Thuisaccu: vervang dan het begin tot #/gedeeld/ door dat adres."),
+      h("p", { class: "help" }, "Heeft de ander geen Thuisaccu, bijvoorbeeld een installateur? Kies dan onder ‘Meer’ voor Afdrukken " +
+        "en sla de uitkomst op als pdf."),
       field("Link naar deze berekening", box), h("p", { class: "help" }, `${n(url.length, 0)} tekens.`), h("div", { class: "actions" }, copy), status);
   }
 
@@ -1222,8 +1248,9 @@ window.Results = (() => {
       changes.length ? [" Wat er sindsdien in het rekenmodel veranderde:", modelChangeList(changes)] : null);
   }
   // Wat er in het rekenmodel veranderde, met per verandering of die deze berekening raakt.
-  const modelChangeList = changes => h("ul", { class: "compact" }, changes.map(({ text, affects }) => h("li", {}, text +
-    (affects === false ? " Raakt deze berekening niet." : affects === true ? " Raakt deze berekening." : ""))));
+  // Op papier alleen wat deze berekening raakt (styles.css).
+  const modelChangeList = changes => h("ul", { class: "compact" }, changes.map(({ text, affects }) =>
+    h("li", { class: affects === false ? "unaffected" : undefined }, text + (affects === false ? " Raakt deze berekening niet." : affects === true ? " Raakt deze berekening." : ""))));
   async function outdatedNote(run, shared) {
     const changes = Data.modelChanges(run.result.model_version, run);
     const unaffected = Data.unaffectedByModel(run);
@@ -1315,17 +1342,17 @@ window.Results = (() => {
     ]));
   }
 
-  // De doorgerekende accu's op volgorde van het doel, zonder geen accu.
-  const ranked = run => options(run).slice(1);
   // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de beste vijf op het doel, de beste
-  // in de terugleveringsvariant, de optie uit een offerte en `extra`; de rest blijft in de oorspronkelijke berekening.
+  // in de terugleveringsvariant, de beste vaste accu, de optie uit een offerte en `extra`; de rest blijft in de
+  // oorspronkelijke berekening.
   function trimmed(run, request, extra = []) {
     if (request.candidates.length <= Scenario.MAX_OPTIONS) return request;
-    const keep = new Set([...ranked(run).slice(0, 5).map(c => c.key), run.result.export_variant_recommended_key,
+    const top = rank(run).slice(0, 5).map(c => c.key);
+    const keep = new Set([...top, run.result.export_variant_recommended_key, bestFixedKey(run),
       request.quote_basis?.candidate_key, ...extra].filter(Boolean));
     return { ...request, candidates: request.candidates.filter(c => keep.has(c.key)) };
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, ranked, trimmed, trimmedText };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText };
 })();

@@ -259,6 +259,12 @@ fn heat_pump_and_ev_reshape_the_year_but_keep_the_annual_total() {
             .iter()
             .any(|w| w.contains("Elektrische auto") && w.contains("geladen met 3,68 kW"))
     );
+    // Het laadmoment staat in de naam, zodat profielen die alleen daarin verschillen uit elkaar te houden zijn.
+    assert!(
+        charged.title.contains("(2.000 kWh auto, ’s avonds laden)"),
+        "{}",
+        charged.title
+    );
 
     for invalid in [
         json!({"heat_pump_kwh": 6000}),

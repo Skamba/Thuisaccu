@@ -66,6 +66,11 @@ window.Compare = (() => {
     const others = all.filter(r => r !== run).map(r => new Map(facts(r)));
     const lines = facts(run).filter(([label, text]) => others.some(o => o.has(label) && o.get(label) !== text))
       .map(([label, text]) => `${label}: ${text}`);
+    // Een geschat profiel met dezelfde naam kan toch anders zijn (bij oudere runs stond het laadmoment er niet in).
+    const sha = run.input.profile_sha256, name = run.input.profile?.filename;
+    if (sha && !lines.some(line => line.startsWith("profiel: ")) &&
+      all.some(r => r !== run && r.input.profile?.filename === name && r.input.profile_sha256 && r.input.profile_sha256 !== sha))
+      lines.unshift("ander energieprofiel met dezelfde naam");
     const battery = batteries(run, all);
     if (battery) lines.push(battery);
     const quote = run.input.request.quote_basis;
@@ -81,7 +86,8 @@ window.Compare = (() => {
       distinct(run => `${p(run).horizon_years}/${p(run).start_year}`) &&
         "De looptijd of het startjaar verschilt. Netto voordeel en ‘Lonend tot’ tellen dan over een andere periode.",
       distinct(run => p(run).discount_pct) && "De discontovoet verschilt. Het netto voordeel weegt latere jaren dan anders mee.",
-      distinct(run => run.input.request.solar_import_id) && "Niet elke berekening gebruikt hetzelfde energieprofiel."
+      distinct(run => run.input.profile_sha256 || run.input.request.solar_import_id) &&
+        "Niet elke berekening gebruikt hetzelfde energieprofiel."
     ].filter(Boolean);
   }
 

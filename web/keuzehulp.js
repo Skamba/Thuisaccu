@@ -389,7 +389,8 @@
       objective: { net_present_value: "het meeste over de looptijd", payback: "snel terugverdienen", self_consumption: "zo veel mogelijk eigen zonnestroom" } };
     const fileName = answers.data === "file" ? "een bewaard energieprofiel" : null, made = production(), use = gross();
     const extra = [yearKwh(answers.heatPump) > 0 ? `warmtepomp ${kwh(yearKwh(answers.heatPump))}` : null,
-      yearKwh(answers.ev) > 0 ? `auto ${kwh(yearKwh(answers.ev))}` : null].filter(Boolean);
+      yearKwh(answers.ev) > 0 ? `auto ${kwh(yearKwh(answers.ev))} (${{ evening: "’s avonds", night: "’s nachts",
+        daytime: "overdag" }[answers.evCharging]} laden)` : null].filter(Boolean);
     const { export: paid, fee } = feedIn();
     const groups = [
       ["Je energie", fileName ? [`Uit ${fileName}`] : [
