@@ -460,3 +460,45 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 @media (max-width: 30rem) { .cost-controls > .cost-status { grid-column: 1 / -1; } .cost-controls > .field:has(input:disabled) { display: none; } }
 .cost-group > summary { padding: .5rem 0; }
 .fold-count { color: var(--muted); font-weight: normal; }
+
+/* Het korte antwoord als kaart, met vensters achter knoppen (UI.sheet). */
+.answer-product { margin: 0; color: var(--muted); font-size: .9rem; }
+.answer-figure { margin: .6rem 0 0; font-size: 1.05rem; }
+.answer-figure strong { font-size: clamp(2rem, 5vw, 2.6rem); line-height: 1.1; margin-right: .3rem; font-variant-numeric: tabular-nums; }
+.answer-figure.small { font-size: 1rem; }
+.answer-range, .answer-tip { margin: .3rem 0 0; }
+.answer-tip { font-size: .95rem; }
+.answer-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0 0; }
+.popup-host { display: contents; }
+button.pill { border: 1px solid var(--control-line); background: var(--surface); color: var(--ink); border-radius: 2rem; padding: .35rem .9rem; font-size: .9rem; font-weight: 600; }
+button.pill:hover { background: var(--soft); }
+button.pill.notice { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; }
+button.ghost.inline { padding: 0 .15rem; text-decoration: underline; font-weight: 600; }
+.verdict-sub { margin: 1.5rem 0 0; font-size: 1.05rem; }
+.verdict .variant-switch { border: 0; padding: .25rem 0; background: none; gap: .25rem .4rem; }
+.verdict .variant-switch legend { float: left; margin-right: .5rem; padding: .3rem 0; font-weight: 600; font-size: .9rem; }
+.verdict .variant-switch label { border: 1px solid var(--line); background: var(--surface); border-radius: 2rem; padding: .25rem .75rem; font-size: .88rem; cursor: pointer; }
+.verdict .variant-switch label:has(input:checked) { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.verdict .variant-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.verdict .variant-switch label:has(input:focus-visible) { outline: 3px solid var(--focus, var(--accent)); outline-offset: 2px; }
+.meta-line { margin: .6rem 0 1rem; }
+dialog.popup h2 { font-size: 1.25rem; margin: 0; }
+dialog.popup h3 { margin: 1.1rem 0 .3rem; font-size: 1rem; }
+.popup-body > :first-child { margin-top: .5rem; }
+ul.variant-strips { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .35rem; }
+ul.variant-strips li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .25rem 1rem; font-weight: 600; }
+ul.variant-strips small { font-weight: 400; color: var(--muted); }
+ol.turns { margin: .5rem 0 0; padding-left: 1.4rem; display: grid; gap: .7rem; }
+ol.turns li p { margin: 0; font-weight: 600; }
+ol.turns li small { display: block; color: var(--muted); }
+ol.turns li .ghost { padding-left: 0; }
+@media (max-width: 40rem) {
+  dialog.popup { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: var(--radius) var(--radius) 0 0; max-height: 88vh; }
+  ul.variant-strips li { grid-template-columns: 1fr; }
+}
+@media print {
+  dialog.popup { display: block; position: static; inset: auto; border: 0; padding: 0; margin: .5rem 0; width: auto; max-width: none; max-height: none; background: none; color: inherit; }
+  dialog.popup.print-closed { display: none; }
+  .popup-host > button, dialog.popup .dialog-head button { display: none; }
+  .answer-actions { display: block; }
+}

@@ -303,6 +303,16 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(await page.textContent(".sheet [aria-live]"), /^Ongunstig: het hoogste netto voordeel in dit blad heeft .+ \(\D{0,2}€\s?[\d.]+\), binnen deze berekening\.$/);
   assert.ok((await lanes.locator("tr:has(th:text-is('Besparing in jaar 1')) td").allTextContents()).slice(1).every(t => t === "Niet apart berekend"));
   await page.locator(".variant-switch label:has-text('Basisaannames') input").check();
+  // Hoe zeker het antwoord is, staat in een venster: open met de knop, dicht met Escape, focus terug op de knop.
+  const certain = page.locator(".answer-actions button:has-text('Hoe zeker is dit?')");
+  const certainDialog = page.locator("dialog.popup:has(h2:text-is('Hoe zeker is dit?'))");
+  assert.equal(await certainDialog.isVisible(), false);
+  await certain.click();
+  assert.ok(await certainDialog.isVisible());
+  assert.match(await certainDialog.textContent(), /Per variant.+Wanneer kantelt dit antwoord\?/s);
+  await page.keyboard.press("Escape");
+  assert.equal(await certainDialog.isVisible(), false);
+  assert.ok(await certain.evaluate(el => el === document.activeElement));
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.

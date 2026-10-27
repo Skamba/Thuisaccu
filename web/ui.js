@@ -410,6 +410,29 @@ window.UI = (() => {
     return { element, close };
   }
 
+  // Een venster achter een knop dat in de pagina blijft staan: de inhoud bestaat meteen (zoeken in de tekst, tests,
+  // afdrukken), maar komt pas in beeld na de knop. Escape, de sluitknop en een klik naast het venster sluiten het; de
+  // focus gaat terug naar de knop. Afgedrukt staat de inhoud gewoon in de pagina, behalve met `print: false`
+  // (styles.css). Een knop in het venster die ergens anders heen gaat, sluit eerst het venster (`closePopup`).
+  function popup(label, title, content, { variant = "secondary", print = true, props = {} } = {}) {
+    const id = uid("popup");
+    const element = h("dialog", { class: print ? "popup" : "popup print-closed", id, "aria-labelledby": `${id}-title` },
+      h("div", { class: "dialog-head" }, h("h2", { id: `${id}-title` }, title),
+        button("✕", () => element.close(), "ghost", { "aria-label": "Sluiten" })),
+      h("div", { class: "popup-body" }, content));
+    const open = () => { if (!element.open) element.showModal(); };
+    const opener = button(label, open, variant, { "aria-haspopup": "dialog", "aria-controls": id, ...props });
+    element.addEventListener("close", () => { if (opener.isConnected) opener.focus(); });
+    // Alleen een klik op de achtergrond, niet in het venster zelf (ook de rand van het venster is `element`).
+    element.addEventListener("click", event => {
+      if (event.target !== element) return;
+      const r = element.getBoundingClientRect();
+      if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) element.close();
+    });
+    return Object.assign(h("span", { class: "popup-host" }, opener, element), { open, close: () => element.close() });
+  }
+  const closePopup = node => node?.closest?.("dialog.popup")?.close();
+
   // CSV met puntkomma en BOM voor Excel; voorkomt formule-injectie.
   // Bevestiging voor iets wat niet terug te draaien is; `work` draait pas na de rode knop.
   // De focus staat op Annuleren, zodat Enter niets verwijdert.
@@ -631,7 +654,7 @@ window.UI = (() => {
 
   return {
     h, svg, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
-    csvCell, clip, button, link, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
+    csvCell, clip, button, link, popup, closePopup, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();
