@@ -31,7 +31,7 @@ Fronius documenteert [Solar.web-productierapporten](https://www.fronius.com/~/do
 - CSV, TSV of TXT in UTF-8, met optionele BOM. Scheiding: komma, puntkomma of tab. Het aantal regels vóór de kopregel is instelbaar.
 - XLSX, XLS en ODS via Calamine. Kies een werkblad en kopregel. Een XLSX-voorbeeld met echte Excel-datumcellen is meegeleverd en getest. Formules worden niet berekend; gebruik een export met opgeslagen waarden.
 - JSON: array van objecten, `data`-array, SolarEdge `energy.values` of PVGIS 5 `outputs.hourly`. Ontbrekende velden worden als ontbrekend behandeld, niet als nul.
-- Maximaal 10 MB, 250.000 gegevensrijen en 200 kolommen. Dit biedt ruimte voor een jaar met 5-minutenwaarden. PDF, afbeeldingen, ZIP-bundels en niet-tabulaire rapporten worden niet uitgelezen.
+- Maximaal 10 MB, 250.000 gegevensrijen en 200 kolommen. Dit biedt ruimte voor een jaar met 5-minutenwaarden. Bij een werkblad telt ook het rechthoekige gebied van de eerste tot de laatste gevulde cel: maximaal 5 miljoen cellen, lege cellen meegeteld. Een `.xlsx` wordt cel voor cel gelezen en geweigerd zodra het gebied te groot wordt, zodat één verdwaalde cel ver onderaan of rechts niet al het geheugen opvraagt. PDF, afbeeldingen, ZIP-bundels en niet-tabulaire rapporten worden niet uitgelezen.
 
 De fictieve voorbeeldbestanden [CSV](../crates/server/resources/solar-example.csv), [JSON](../crates/server/resources/solar-example.json) en [XLSX](../crates/server/resources/solar-example.xlsx) staan in de repository als testfixtures. De voorbeeldbestanden zijn geen echte huishoudgegevens. Het XLSX-voorbeeld gebruikt naïeve UTC-datums; de CSV/JSON-voorbeelden bevatten expliciete offsets.
 

@@ -106,7 +106,7 @@ window.UI = (() => {
     if (error) return;
     // Lang genoeg om te lezen (minstens 6 s, ongeveer 3 woorden per seconde erbij), en niet zolang de muis of
     // focus op de melding staat.
-    const wait = Math.max(6000, 2000 + String(text).split(/\s+/).length * 330);
+    const wait = Math.max(6000, 2000 + item.firstChild.textContent.split(/\s+/).length * 330);
     let timer;
     const start = () => { clearTimeout(timer); timer = setTimeout(() => item.remove(), wait); };
     for (const type of ["mouseenter", "focusin"]) item.addEventListener(type, () => clearTimeout(timer));
@@ -312,25 +312,30 @@ window.UI = (() => {
     // Op een smal scherm vervangt één regel met voortgang de rij stapknoppen (styles.css).
     const compact = h("p", { class: "stepper-compact" }), progress = h("progress", { max: steps.length, "aria-hidden": "true" });
     const previous = button("← Vorige", () => show(current - 1), "secondary");
-    const next = button("Volgende →", async () => {
+    // Een stap controleren kan een verzoek zijn (zoals een bestand inlezen); zolang dat loopt, staat de wizard stil.
+    const next = button("Volgende →", () => busyWith("", async () => {
       body.querySelectorAll("input, select, textarea").forEach(control => control.setCustomValidity(""));
       if (await check(current, body)) show(current + 1);
-    });
+    }).catch(error => toast(error.message, true)));
     const slot = h("span", { class: "wizard-action" });
-    const footer = h("div", { class: "wizard-footer" }, previous, next, slot, finish ?? null);
-    let current = 0, reached = 0, shown = null;
+    const status = h("p", { class: "wizard-status", role: "status" });
+    const footer = h("div", { class: "wizard-footer" }, previous, next, status, slot, finish ?? null);
+    let current = 0, reached = 0, shown = null, working = false;
     steps.forEach((step, index) => stepper.append(h("li", {},
       h("button", { type: "button", class: "ghost", onclick: () => index <= reached && show(index) }, `${index + 1}. ${step.label}`))));
+    function sync() {
+      [...stepper.children].forEach((li, i) => { li.firstChild.disabled = working || i > reached; });
+      previous.disabled = working || current === 0; next.disabled = working;
+    }
     function show(index) {
       current = Math.max(0, Math.min(steps.length - 1, index)); reached = Math.max(reached, current);
       [...stepper.children].forEach((li, i) => {
-        const control = li.firstChild; control.disabled = i > reached;
-        if (i === current) control.setAttribute("aria-current", "step"); else control.removeAttribute("aria-current");
+        if (i === current) li.firstChild.setAttribute("aria-current", "step"); else li.firstChild.removeAttribute("aria-current");
       });
       compact.replaceChildren(`Stap ${current + 1} van ${steps.length} · ${steps[current].label}`, progress);
       progress.value = current + 1;
       slot.replaceChildren(); body.replaceChildren(); steps[current].render(body);
-      previous.disabled = current === 0; next.hidden = current === steps.length - 1;
+      sync(); next.hidden = current === steps.length - 1;
       onShow(current, body);
       const heading = body.querySelector("h2, h3");
       heading?.setAttribute("tabindex", "-1");
@@ -338,9 +343,25 @@ window.UI = (() => {
       if (shown !== null && shown !== current) heading?.focus({ preventScroll: true });
       shown = current;
     }
+    // Lang werk, zoals een berekening: stappen en Vorige/Volgende staan stil en de balk onderaan zegt wat er
+    // gebeurt, na 3 seconden met de verstreken tijd. Fouten gaan naar de aanroeper.
+    async function busyWith(text, work) {
+      const started = Date.now(), label = text || "Even geduld…";
+      const tick = () => { const seconds = Math.round((Date.now() - started) / 1000);
+        status.replaceChildren(label, seconds >= 3 ? h("span", { "aria-hidden": "true" }, ` (${seconds} s)`) : ""); };
+      working = true; sync(); body.setAttribute("aria-busy", "true");
+      // Snel werk (de meeste stapcontroles) knippert niet met een melding.
+      const timer = setInterval(tick, 1000), first = setTimeout(tick, text ? 0 : 600);
+      try { return await work(); }
+      finally { clearInterval(timer); clearTimeout(first); status.replaceChildren(); working = false; sync(); body.removeAttribute("aria-busy"); }
+    }
     const element = h("div", { class: "wizard" }, stepper, compact, body, footer);
+    // Na lang werk naar de uitkomst, maar alleen als de wizard nog in beeld is: wie intussen naar een ander scherm
+    // ging, krijgt een melding met een link in plaats van teruggetrokken te worden.
+    const arrive = (hash, text) => { if (element.isConnected) location.hash = hash;
+      else toast([`${text} `, link("Bekijk de uitkomst", hash)]); };
     return { element, show, rerender: () => show(current), action: control => slot.replaceChildren(control),
-      get current() { return current; } };
+      busy: busyWith, arrive, get current() { return current; } };
   }
 
   function dialog(title, ...content) {

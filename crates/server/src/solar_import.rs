@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, io::Cursor};
 
-use calamine::{Data, Reader, open_workbook_auto_from_rs};
+use calamine::{Cell, Data, DataRef, Range, Reader, Sheets, Xlsx, open_workbook_auto_from_rs};
 use chrono::{DateTime, Duration, LocalResult, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
@@ -210,9 +210,12 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
             let mut workbook = open_workbook_auto_from_rs(Cursor::new(bytes.to_vec())).map_err(|e| format!("Spreadsheet: {e}"))?;
             sheets = workbook.sheet_names();
             let name = options.sheet.as_ref().or(sheets.first()).ok_or("Geen werkblad gevonden.")?;
-            let range = workbook.worksheet_range(name).map_err(|e| format!("Werkblad: {e}"))?;
-            if range.height() > MAX_ROWS + options.header_row + 1 || range.width() > 200 {
-                return Err("Werkblad is te groot: maximaal 250.000 gegevensrijen en 200 kolommen.".into());
+            let range = match &mut workbook {
+                Sheets::Xlsx(xlsx) => xlsx_range(xlsx, name, options.header_row)?,
+                other => other.worksheet_range(name).map_err(|e| format!("Werkblad: {e}"))?,
+            };
+            if range.height() > MAX_ROWS + options.header_row + 1 || range.width() > 200 || range.height() * range.width() > MAX_CELLS {
+                return Err(TOO_LARGE.into());
             }
             range.rows().skip(options.header_row).map(|row| row.iter().map(|cell| spreadsheet_cell(cell, &options.decimal)).collect()).collect()
         },
@@ -270,6 +273,45 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
         rows,
         sheets,
     })
+}
+
+const TOO_LARGE: &str =
+    "Werkblad is te groot: maximaal 250.000 gegevensrijen, 200 kolommen en 5 miljoen cellen.";
+/// Bovengrens voor het rechthoekige gebied van een werkblad (lege cellen tellen mee): 250.000 rijen
+/// met 20 kolommen past, 250.000 bij 200 (ruim 1,5 GB) niet.
+const MAX_CELLS: usize = 5_000_000;
+
+/// Leest een xlsx-werkblad cel voor cel en controleert de omvang vóór er een rechthoekig blok wordt
+/// aangemaakt. `worksheet_range` reserveert geheugen voor het hele gebruikte gebied, ook voor lege
+/// cellen: één verdwaalde cel in XFD1048576 vraagt dan tientallen gigabytes en breekt het proces af.
+fn xlsx_range<RS: std::io::Read + std::io::Seek>(
+    xlsx: &mut Xlsx<RS>,
+    name: &str,
+    header_row: usize,
+) -> Result<Range<Data>, String> {
+    let max_height = MAX_ROWS + header_row + 1;
+    let mut reader = xlsx
+        .worksheet_cells_reader(name)
+        .map_err(|e| format!("Werkblad: {e}"))?;
+    let (mut cells, mut rows, mut cols) = (Vec::new(), (u32::MAX, 0), (u32::MAX, 0));
+    while let Some(cell) = reader.next_cell().map_err(|e| format!("Werkblad: {e}"))? {
+        if matches!(cell.get_value(), DataRef::Empty) {
+            continue;
+        }
+        let (row, col) = cell.get_position();
+        rows = (rows.0.min(row), rows.1.max(row));
+        cols = (cols.0.min(col), cols.1.max(col));
+        // Het gebied kan alleen groeien; zodra het te groot is, stoppen met lezen.
+        let (height, width) = (
+            (rows.1 - rows.0) as usize + 1,
+            (cols.1 - cols.0) as usize + 1,
+        );
+        if height > max_height || width > 200 || height * width > MAX_CELLS {
+            return Err(TOO_LARGE.into());
+        }
+        cells.push(Cell::new((row, col), Data::from(cell.get_value().clone())));
+    }
+    Ok(Range::from_sparse(cells))
 }
 
 /// Zet een spreadsheetcel om naar tekst zoals in een CSV. Een cel met alleen een tijd (een

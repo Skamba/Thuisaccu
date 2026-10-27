@@ -666,12 +666,13 @@ window.Scenario = (() => {
       const run = button("Bereken en bewaar", () => UI.busy(run, async () => {
         if (count) { host.querySelector(".review-problems")?.focus(); throw new Error("Los eerst de punten hierboven op."); }
         if (!UI.validate(host)) return;
-        const response = await UI.api("/api/v1/analysis/runs",
-          { method: "POST",
-            json: { ...request, costs_confirmed: true, technical_assumptions_confirmed: true,
-              consumption_is_gross: true, production_is_ac: true } });
+        const response = await flow.busy(`Bezig met rekenen aan ${state.options.length} ${state.options.length === 1 ? "optie" : "opties"}…`,
+          () => UI.api("/api/v1/analysis/runs",
+            { method: "POST",
+              json: { ...request, costs_confirmed: true, technical_assumptions_confirmed: true,
+                consumption_is_gross: true, production_is_ac: true } }));
         store.set(STORE, null); state = blank();
-        location.hash = `#/berekeningen/${response.id}`;
+        flow.arrive(`#/berekeningen/${response.id}`, "De berekening is klaar en bewaard.");
       }));
       UI.append(host, [table(["Onderdeel", "Invoer"], [
         ["Naam en adres", `${state.title} · ${state.address || "geen adres"}`],

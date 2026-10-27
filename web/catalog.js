@@ -381,12 +381,12 @@
         location.hash = "#/zelf";
       }));
       actions.append(calculate, button("Exporteer CSV", () => exportComparison(holder.querySelector("table")), "secondary"));
-      view.append(h("div", { class: "toolbar" }, toggle("Alleen verschillen", "differencesOnly"), toggle("Verberg rijen zonder bekende waarde", "knownOnly")),
+      UI.append(view, [h("div", { class: "toolbar" }, toggle("Alleen verschillen", "differencesOnly"), toggle("Verberg rijen zonder bekende waarde", "knownOnly")),
         h("p", { class: "callout" },
           "Bruikbare energie, nominale energie en kVA zijn verschillende grootheden, en een rendement hoort bij een meetgrens. Open een bron voor de context; onbekend blijft onbekend."),
         configs.length > 2 ? h("p", { class: "compare-hint" }, "Schuif de tabel opzij voor de andere uitvoeringen.") : null,
         holder, h("p", { class: "help" }, "Prijs per kWh is een kengetal, geen terugverdientijd. Een aanbeveling bestaat alleen binnen een doorgerekend scenario: met ‘Reken deze accu’s door’ worden ze opties in Zelf doorrekenen, of gebruik de ",
-          link("keuzehulp", "#/keuzehulp"), "."));
+          link("keuzehulp", "#/keuzehulp"), ".")]);
       draw();
     }
   });

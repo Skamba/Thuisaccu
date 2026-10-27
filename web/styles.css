@@ -116,6 +116,9 @@ input.range { padding: 0; border: 0; background: none; accent-color: var(--accen
 .live-check:empty { padding: 0; margin: 0; }
 .derived { font-weight: 650; }
 .unknown { color: var(--muted); font-style: italic; }
+/* Pas na 300 ms zichtbaar, zodat een snel scherm niet knippert. */
+#view[aria-busy="true"]:empty::before { content: "Laden…"; display: block; color: var(--muted); padding: 1rem 0; animation: appear 0s .3s both; }
+@keyframes appear { from { visibility: hidden; } }
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 2rem; text-align: left; }
 .badge { display: inline-block; border-radius: 1rem; padding: .15rem .6rem; font-size: .76rem; font-weight: 650; background: var(--soft); color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
 .badge.success { background: var(--ok-bg); color: var(--ok-ink); }
@@ -148,7 +151,7 @@ td strong, th strong { display: block; }
 .compare th[scope="row"] { position: sticky; left: 0; background: var(--surface); min-width: 11rem; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
 .compare td { min-width: 13rem; }
-.compare thead th:first-child { position: sticky; left: 0; z-index: 1; }
+.compare thead :is(th, td):first-child { position: sticky; left: 0; z-index: 1; }
 .compare-hint { display: none; }
 /* Vóór het smalle scherm: dat maakt de tabbladen compacter. */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
@@ -168,7 +171,7 @@ td strong, th strong { display: block; }
   table.compare caption { display: block; text-align: left; }
   table.compare tr { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(9.5rem, 1fr)); border-bottom: 1px solid var(--line); }
   table.compare :is(th, td) { border: 0; min-width: 0; width: auto; }
-  table.compare thead th:first-child { display: none; }
+  table.compare thead :is(th, td):first-child { display: none; }
   table.compare th:is([scope="row"], [scope="rowgroup"]) { grid-column: 1 / -1; justify-self: start; position: sticky; left: 0; padding-bottom: 0; }
   .compare-hint { display: block; font-size: .875rem; color: var(--muted); margin: .25rem 0; }
   /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
@@ -199,6 +202,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .stepper button[aria-current="step"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); }
 .stepper-compact { display: none; }
 .wizard-action:empty { display: none; }
+.wizard-status { margin: 0 auto 0 0; align-self: center; color: var(--muted); font-size: .9rem; }
+.wizard-status:empty { display: none; }
 .wizard-footer { position: sticky; bottom: 0; display: flex; gap: .6rem; justify-content: space-between; background: var(--bg); padding: .8rem 0; border-top: 1px solid var(--line); margin-top: 1.5rem; z-index: 5; }
 
 /* Keuzehulp en resultaat */

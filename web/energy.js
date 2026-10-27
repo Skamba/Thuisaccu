@@ -119,12 +119,12 @@
 
   UI.page("energie/:id", {
     title: "Energieprofiel", subtitle: "Opwek, verbruik en datakwaliteit.", parent: "energie",
-    async render(view, actions, { id }) {
+    async render(view, actions, { id }, page) {
       const item = (await Data.imports()).find(i => String(i.id) === id);
       if (!item) { view.append(UI.empty("Profiel niet gevonden", "Kies een bewaard energieprofiel.",
         link("Terug naar energiegegevens", "#/energie", "button")));
         return; }
-      UI.$("page-title").textContent = item.filename;
+      page.setTitle(item.filename);
       const fit = Data.suitability(item);
       if (fit.ok === true) {
         actions.append(

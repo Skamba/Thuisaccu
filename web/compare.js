@@ -134,7 +134,7 @@ window.Compare = (() => {
     const warnings = caveats(runs);
     if (warnings.length) view.append(h("div", { class: "callout", role: "note" }, h("p", {}, h("strong", {}, "Let op bij vergelijken")),
       h("ul", { class: "compact" }, warnings.map(text => h("li", {}, text)))));
-    view.append(
+    UI.append(view, [
       runs.length > 2 ? h("p", { class: "compare-hint" }, "Schuif de tabel opzij voor de andere berekeningen.") : null,
       h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": "Berekeningen naast elkaar" },
         h("table", { class: "compare", style: `--cols:${runs.length}` }, h("caption", {}, `${runs.length} berekeningen naast elkaar`),
@@ -142,7 +142,7 @@ window.Compare = (() => {
       h("p", { class: "help" }, "Elke kolom gebruikt de invoer en het rekenmodel van die berekening. Bij geen aanbevolen accu staat " +
         "de accu met het hoogste netto voordeel erbij."),
       h("section", { class: "panel plain glossary" }, h("h2", {}, "Wat betekenen deze woorden?"),
-        h("dl", {}, Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))));
+        h("dl", {}, Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)])))]);
   }
 
   UI.page("vergelijk/:data", {

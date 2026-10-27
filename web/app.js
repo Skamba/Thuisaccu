@@ -95,25 +95,25 @@
 
   UI.page("berekeningen/:id", {
     title: "Uitkomst", subtitle: "Vergelijking met geen accu, binnen de vastgelegde aannames.", parent: "berekeningen",
-    async render(view, actions, { id }) {
+    async render(view, actions, { id }, page) {
       let run;
       try { run = await Data.run(id); }
       catch (error) { view.append(UI.empty("Berekening niet gevonden", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button")));
         return; }
-      $("page-title").textContent = run.title;
+      page.setTitle(run.title);
       await Results.render(run, view, actions, duplicate);
     }
   });
 
   UI.page("gedeeld/:data", {
     title: "Gedeelde berekening", subtitle: "Geopend uit een link; niet bewaard in deze app.", parent: "berekeningen",
-    async render(view, actions, { data }) {
+    async render(view, actions, { data }, page) {
       let run;
       try { run = await Results.fromShare(data); }
       catch (error) { view.append(UI.empty("Deze link werkt niet", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
-      $("page-title").textContent = run.title;
+      page.setTitle(run.title);
       await Results.render(run, view, actions, null, { shared: true });
       // Wie een link krijgt, kan meteen de eigen situatie doorrekenen.
       actions.prepend(link("Reken je eigen situatie door", "#/keuzehulp", "button"));
@@ -283,9 +283,15 @@
     // Elk scherm krijgt verse elementen: een trager vorig scherm schrijft daarna in losgekoppelde elementen.
     const [view, actions] = ["view", "page-actions"].map(id => { const old = $(id), fresh = old.cloneNode(false);
       old.replaceWith(fresh); return fresh; });
-    try { await found.page.render(view, actions, found.params); }
-    catch (error) { if (run === generation) view.replaceChildren(h("p", { class: "warning" },
-      `Dit scherm kon niet worden geladen: ${error.message}`)); }
+    // Een scherm dat na een await zijn kop zet, doet dat alleen als het nog het actuele scherm is.
+    const context = { current: () => run === generation, setTitle(text) {
+      if (run !== generation) return;
+      $("page-title").textContent = text; document.title = `${text} · Thuisaccu`; } };
+    view.setAttribute("aria-busy", "true");
+    try { await found.page.render(view, actions, found.params, context); }
+    catch (error) { if (run === generation) view.replaceChildren(UI.empty("Dit scherm kon niet worden geladen", error.message,
+      button("Probeer opnieuw", UI.reload), link("Naar de keuzehulp", "#/keuzehulp", "button secondary"))); }
+    finally { view.removeAttribute("aria-busy"); }
     if (run === generation) { $("page-title").focus({ preventScroll: true }); window.scrollTo(0, 0); }
   }
 

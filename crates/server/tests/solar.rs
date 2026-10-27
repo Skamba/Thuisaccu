@@ -228,6 +228,15 @@ fn xlsx_with_separate_date_and_time_cells_is_read_like_a_csv() {
 }
 
 #[test]
+fn xlsx_with_one_far_off_cell_is_refused_before_memory_is_reserved() {
+    // Synthetisch werkblad met alleen A1, B1 en XFD1048576: een rechthoekig blok zou ruim
+    // 17 miljard cellen zijn. De import weigert het in plaats van het geheugen te reserveren.
+    let bytes = include_bytes!("fixtures/stray-far-cell.xlsx");
+    let error = read_table("verbruik.xlsx", bytes, &ImportOptions::default()).unwrap_err();
+    assert!(error.contains("te groot"), "{error}");
+}
+
+#[test]
 fn json_column_mapping_and_pvgis_hourly_envelope_are_supported() {
     let bytes = br#"{"outputs":{"hourly":[{"time":"20260601:1000","P":1000},{"time":"20260601:1100","P":2000}]}}"#;
     let mut options = ImportOptions {

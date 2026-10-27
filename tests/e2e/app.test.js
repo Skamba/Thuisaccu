@@ -106,6 +106,12 @@ async function open(options = {}) {
   return { page, problems, close: () => context.close() };
 }
 const next = page => page.click(".wizard-footer button:has-text('Volgende')");
+// Tekstknopen met ‘null’, ‘undefined’ of ‘NaN’: een waarde die als tekst in de pagina belandde.
+const strayText = page => page.evaluate(() => {
+  const walker = document.createTreeWalker(document.getElementById("view"), NodeFilter.SHOW_TEXT), found = [];
+  while (walker.nextNode()) if (/\b(null|undefined|NaN)\b/.test(walker.currentNode.data)) found.push(walker.currentNode.data);
+  return found;
+});
 
 // Synthetisch jaar: omvormer per kwartier, slimme meter per uur, zonder bestaande accu.
 function syntheticYear(dir) {
@@ -426,6 +432,8 @@ test("keuzehulp zonder zonnepanelen rekent ter controle alleen de goedkoopste ac
   const { page, problems, close } = await open();
   await page.goto(`${base}/#/keuzehulp`);
   await page.click("label:has-text('Nee') >> nth=0");
+  // Meteen bij de vraag, niet pas na vier stappen: wat een accu zonder panelen in dit model betekent.
+  assert.match(await page.textContent(".wizard-body .callout"), /Zonder zonnepanelen levert een accu in deze berekening niets op/);
   await page.getByLabel("Stroom van het net per jaar (kWh)").fill("2800");
   await next(page);
   await next(page);
@@ -821,6 +829,7 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   // Ook de accu zelf staat bij ‘Wat is anders’, per accu met dezelfde naam.
   assert.match(side, /: 10 kWh bruikbaar, .*: 9,3 kWh bruikbaar, /);
   assert.doesNotMatch(side, /ouder rekenmodel/);
+  assert.deepEqual(await strayText(page), []);
   assert.match(await page.textContent(".glossary"), /Discontovoet.*kWh en kW/);
   // Een berekening van een ouder rekenmodel nabootsen (alleen in de pagina): met één klik opnieuw, met
   // dezelfde invoer, en de nieuwe neemt in de vergelijking de plaats van de oude in.
@@ -1025,6 +1034,8 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   await boxes.nth(0).check();
   await boxes.nth(1).check();
   await page.click("a:has-text('Vergelijk (2)')");
+  await page.waitForSelector("table.compare");
+  assert.deepEqual(await strayText(page), []);
   await page.click("button:has-text('Reken deze accu’s door')");
   // Zonder gekozen profiel begint de wizard bij het profiel; de opties staan klaar met kostenindicaties.
   await page.waitForSelector("text=Profiel en doel");
@@ -1088,6 +1099,36 @@ test("accu’s uit de catalogusvergelijking worden opties in Zelf doorrekenen", 
   assert.deepEqual(more.after.battery, more.before.battery);
   assert.match(more.message, /kostenpost/);
   assert.notDeepEqual(more.after.costs.installation, more.before.costs.installation);
+  assert.deepEqual(problems, []);
+  await close();
+});
+
+test("een traag scherm schrijft niet over het volgende, een mislukt scherm biedt opnieuw proberen", async () => {
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("text=Accucatalogus", { timeout: 30000 });
+  // Een berekening die pas binnenkomt als je al naar de catalogus bent gegaan: de kop blijft van de catalogus.
+  await page.evaluate(() => {
+    Data.run = () => new Promise(resolve => setTimeout(() => resolve({ title: "Trage berekening" }), 700));
+    location.hash = "#/berekeningen/1";
+  });
+  await page.waitForSelector("#view[aria-busy=true]");
+  await page.evaluate(() => { location.hash = "#/accus"; });
+  await page.waitForSelector("text=Accucatalogus");
+  await page.waitForTimeout(1000);
+  assert.equal(await page.textContent("#page-title"), "Accu’s vergelijken");
+  assert.equal(await page.title(), "Accu’s vergelijken · Thuisaccu");
+  // Een scherm dat niet laadt, zegt dat met de reden en een knop om het opnieuw te proberen.
+  await page.evaluate(() => {
+    const runs = Data.runs;
+    Data.runs = () => { Data.runs = runs; return Promise.reject(new Error("Synthetische storing.")); };
+    location.hash = "#/berekeningen";
+  });
+  const failed = page.locator(".empty", { hasText: "Dit scherm kon niet worden geladen" });
+  assert.match(await failed.textContent(), /Synthetische storing\./);
+  await failed.locator("button:has-text('Probeer opnieuw')").click();
+  await failed.waitFor({ state: "detached" });
+  await page.waitForSelector("#page-actions >> text=Nieuwe keuzehulp");
   assert.deepEqual(problems, []);
   await close();
 });

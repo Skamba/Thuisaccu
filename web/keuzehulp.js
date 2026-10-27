@@ -75,6 +75,11 @@
         "Een accu slaat zonnestroom op die je overdag over hebt, zodat je die ’s avonds zelf gebruikt. Daarvoor kijken we naar je verbruik en je zonnepanelen."),
       h("p", { class: "help" }, "Handig om erbij te pakken: je laatste jaarafrekening (verbruik en teruglevering in kWh) en de app of website van je omvormer (opwek per jaar)."),
       pick("panels", "Heb je zonnepanelen?", [["yes", "Ja"], ["no", "Nee"]]),
+      // Meteen zeggen wat dat betekent, niet pas na vier stappen bij de uitkomst.
+      ...(answers.panels === "no" ? [h("p", { class: "callout", role: "note" },
+        "Zonder zonnepanelen levert een accu in deze berekening niets op: hij slaat alleen je eigen zonnestroom op, en we " +
+        "rekenen met vaste stroomprijzen. Goedkoop laden van het net met een dynamisch contract rekenen we nog niet. Je kunt " +
+        "doorgaan om dat met je eigen cijfers te zien. Komen er panelen? Kies dan ‘Ja’ en vul het verwachte vermogen (kWp) in.")] : []),
       pick("data", "Welke gegevens heb je?", [
         ["totals", "Jaartotalen",
           "Van je jaarafrekening en de app van je omvormer. We maken er een geschat uurprofiel van."],
@@ -592,19 +597,18 @@
       "Ik begrijp dat de accugegevens uit de bronnen komen, aangevuld met de genoemde aannames, en dat de keuzehulp niet controleert of een accu in mijn meterkast past.",
       "Ik begrijp dat de kostenindicaties zijn uit de genoemde bronnen en aannames, en dat een offerte voor mijn woning daarvoor in de plaats komt."
     ].map(text => checkbox(text, { required: true }));
-    const status = h("p", { class: "help", "aria-live": "polite" });
     const go = button("Bereken mijn advies", () => UI.busy(go, async () => {
       if (!UI.validate(run)) return;
       if (!included.length) throw new Error("Er is geen accu om door te rekenen; reken een offerte door met Zelf doorrekenen.");
-      status.textContent = `Bezig met rekenen aan ${included.length} ${included.length === 1 ? "accu" : "accu’s"}…`;
-      const response = await UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included, check) });
-      location.hash = `#/berekeningen/${response.id}`;
-    }).finally(() => { status.textContent = ""; }));
+      const response = await flow.busy(`Bezig met rekenen aan ${included.length} ${included.length === 1 ? "accu" : "accu’s"}…`,
+        () => UI.api("/api/v1/analysis/runs", { method: "POST", json: buildRequest(importId, included, check) }));
+      flow.arrive(`#/berekeningen/${response.id}`, "Je advies is klaar.");
+    }));
     // De knop staat in de vaste balk onderaan; de bevestigingen staan er vlak boven.
     const run = h("section", { class: "panel" }, h("h3", {}, "3. Controleer en reken het door"),
       h("p", {},
         "Elke kostenpost heeft een indicatie met bron of aanname. Niet meegeteld: meerwerk dat pas bij de schouw blijkt (zoals hak- en breekwerk of een verouderde groepenkast), lokale subsidies en handel met een dynamisch contract. Laadverliezen, sluimerverbruik en capaciteitsverlies zitten al in de besparing."),
-      h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)), status);
+      h("fieldset", {}, h("legend", {}, "Bevestig"), confirmations.map(c => c.element)));
     // Het stekkeradvies staat al bij de woningvragen en komt terug op de uitkomst; hier ingeklapt.
     const rules = h("details", { class: "fold" }, h("summary", {}, "Voordat je koopt: aanmeldplicht, veiligheid en verzekering"),
       h("p", {}, RULES.placement), h("p", {}, RULES.register), h("p", {}, RULES.insurance), answers.install === "fixed" ? null : h("p", {}, RULES.plug),
