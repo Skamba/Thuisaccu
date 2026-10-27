@@ -59,7 +59,7 @@ async fn home_and_stylesheet_are_served_without_external_services() {
         "text/css; charset=utf-8"
     );
     assert!(
-        !to_bytes(response.into_body(), 32 * 1024)
+        !to_bytes(response.into_body(), 64 * 1024)
             .await
             .unwrap()
             .is_empty()

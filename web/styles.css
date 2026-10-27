@@ -74,7 +74,7 @@ button, .button { font: inherit; display: inline-flex; align-items: center; just
 .ghost.remove:hover { background: var(--soft); }
 .jump-tabs { display: none; }
 @media (max-width: 40rem) { .jump-tabs { display: block; margin: -.4rem 0 .8rem -.6rem; text-align: left; text-decoration: underline; } }
-@media print { .jump-tabs { display: none !important; } }
+@media print { .jump-tabs, .variant-switch { display: none !important; } }
 button:disabled { opacity: .45; cursor: not-allowed; }
 /* Komende stappen blijven leesbaar: de rij is het enige overzicht van wat de wizard vraagt. */
 .stepper button:disabled, .wizard-footer button:disabled { opacity: 1; color: var(--muted); cursor: default; }
@@ -176,6 +176,18 @@ td strong, th strong { display: block; }
 .compare tr.same td { color: var(--muted); }
 .compare thead :is(th, td):first-child { position: sticky; left: 0; z-index: 1; }
 .compare-hint { display: none; }
+/* Het beslisblad: kolommen per rol (geen accu, je offerte, met installateur, stekker), de besproken accu met een vlak. */
+.lanes td { min-width: 9rem; }
+.lanes thead th { vertical-align: bottom; }
+.lanes .lane-title { display: block; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.lanes .lane-name { display: block; font-weight: 700; }
+.lanes .lane-status { display: inline-block; margin-top: .25rem; padding: .05rem .4rem; border: 1px solid currentColor; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+.lanes .lane-lead { background: var(--accent-soft); }
+.lanes td .stat-range { display: block; font-size: .78rem; color: var(--muted); line-height: 1.3; }
+.lanes td button { padding: 0; margin-top: .15rem; }
+.variant-switch { display: flex; flex-wrap: wrap; gap: .25rem 1rem; padding: .5rem .75rem; margin: .75rem 0 0; background: var(--surface); }
+.variant-switch label { font-weight: 600; }
+.variant-switch small { font-weight: 400; color: var(--muted); }
 /* Vóór het smalle scherm: dat maakt de tabbladen compacter. */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
 @media (max-width: 40rem) {
@@ -205,6 +217,16 @@ td strong, th strong { display: block; }
   table.compare thead :is(th, td):first-child { display: none; }
   table.compare th:is([scope="row"], [scope="rowgroup"]) { grid-column: 1 / -1; justify-self: start; position: sticky; left: 0; padding-bottom: 0; }
   .compare-hint { display: block; font-size: .875rem; color: var(--muted); margin: .25rem 0; }
+  /* Het beslisblad schuift niet: twee waarden naast elkaar, elk met de naam van zijn kolom erboven. */
+  table.lanes tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Bovenaan per kolom één keer rol en accu; daaronder staat bij elke waarde alleen de rol. */
+  table.lanes thead tr { grid-template-columns: 1fr; }
+  table.lanes thead th { padding-block: .35rem; }
+  table.lanes thead .lane-title { display: inline; }
+  table.lanes thead .lane-title::after { content: ": "; }
+  table.lanes thead .lane-name { display: inline; }
+  table.lanes td::before { content: attr(data-lane); display: block; font-size: .75rem; font-weight: 600; color: var(--muted); }
+  .variant-switch label { display: block; }
   /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
   table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   table.stack, table.stack tbody, table.stack tr, table.stack caption { display: block; }

@@ -234,7 +234,12 @@ pub struct AnalysisResult {
     pub recommendation: String,
     pub baseline_first_year: EnergyYear,
     pub candidates: Vec<CandidateResult>,
+    /// Wat bij deze invoer aandacht vraagt: zaken die de uitkomst of de keuze kunnen veranderen.
     pub warnings: Vec<String>,
+    /// Hoe het model rekent: vaste uitleg die bij iedere berekening hoort. Runs van vóór 27 oktober 2026 hebben
+    /// deze zinnen nog tussen de waarschuwingen.
+    #[serde(default)]
+    pub notes: Vec<String>,
     /// Beste optie volgens hetzelfde doel, maar binnen de terugleveringsvariant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export_variant_recommended_key: Option<String>,
@@ -914,23 +919,24 @@ pub fn analyze_with(
             results.iter().find(|r| r.key == best_key).unwrap().name
         )
     };
-    let mut warnings = vec![
+    let mut notes = vec![
         "Model: zonnestroom opslaan voor eigen gebruik, met vaste ingevoerde all-in tarieven. Geen dynamische handel, onbalansinkomsten of optimale prijsgestuurde aansturing.".into(),
         "Het gemeten jaar wordt ieder projectiejaar hergebruikt met de opgegeven groei/degradatie. Varianten zijn aannamegevoeligheid, geen kansinterval of gegarandeerde opbrengst.".into(),
         "ROI = ongedisconteerde nettowinst over de horizon / netto startinvestering. NPV houdt rekening met de opgegeven discontovoet. Een lening telt als rente en aflossing in het jaar waarin je ze betaalt; alleen het eigen deel van de investering staat op tijdstip nul. ROI deelt door de volledige netto startinvestering. Dit is geen eigenvermogenrendement.".into(),
         "Bedragen zijn inclusief niet-teruggevraagde btw. Geen automatische subsidie of btw-teruggave; voeg alleen een bevestigde teruggave toe. Verliezen en standby zijn al in de energierekening verwerkt.".into(),
         "Een adres bepaalt geen verbruiksprofiel, omvormercompatibiliteit, aansluiting of installatiemaatwerk. De fysieke geschiktheid blijft een apart te bevestigen voorwaarde.".into(),
     ];
-    warnings.push(match parameters.load_variation {
+    notes.push(match parameters.load_variation {
         LoadVariation::Households => "Binnen iedere meetperiode van 5 tot 60 minuten volgt het verbruik de gemiddelde verdeling van 74 per seconde gemeten Duitse huishoudens (HTW Berlin, 2010). Korte pieken boven het ontlaadvermogen en wisselingen tussen overschot en tekort binnen het uur tellen zo mee. Opwek is binnen de periode gelijkmatig. De regelvertraging van de accu is niet meegerekend: HTW Berlin mat bij 22 thuisaccusystemen gemiddeld 1 s totdat de accu reageert en 4,5 s totdat het nieuwe vermogen bereikt is (Stromspeicher-Inspektion 2025); in een controle per seconde kostte een vertraging van 2 tot 5 s ongeveer 2 tot 3% van de besparing.".into(),
         LoadVariation::Uniform => "Het verbruik is binnen iedere meetperiode gelijkmatig verondersteld. Bij uur- of kwartierwaarden ontbreken korte pieken, waardoor vermogensgrenzen van de accu minder vaak knellen dan in werkelijkheid.".into(),
     });
+    let mut warnings = Vec::new();
     let measured = profile
         .iter()
         .filter(|i| i.measured_import_kwh.is_some())
         .count();
     if measured > 0 {
-        warnings.push(format!(
+        notes.push(format!(
             "In {} van de {} meetperioden zijn netafname en teruglevering zonder accu gemeten. Daar volgt uit de meter hoeveel opwek en verbruik binnen de periode samenvielen; de verdeling hierboven bepaalt alleen nog welk deel binnen het laad- en ontlaadvermogen valt.",
             measured,
             profile.len()
@@ -1059,6 +1065,7 @@ pub fn analyze_with(
         baseline_first_year: baseline,
         candidates: results,
         warnings,
+        notes,
         export_variant_recommended_key,
     })
 }

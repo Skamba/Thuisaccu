@@ -632,6 +632,37 @@ test("quotesCompared(): twee offertes naast elkaar, met hoeveel de ongunstige mo
     { quote_basis: { candidate_key: "a" } })), null);
 });
 
+test("lanes(): geen accu, je offerte en per soort aansluiting de eerste in de volgorde van het doel", () => {
+  const option = (key, npv_eur, within_budget = true) => ({ key, name: `FICTIEF ${key}`, npv_eur, within_budget });
+  const line = { category: "battery", status: "priced", amount_minor: 500000, source: Data.QUOTE_TOTAL };
+  const run = (recommended, costs = {}) => ({ input: { request: { parameters: { objective: "net_present_value" },
+    candidates: ["plug1", "plug2", "fixed", "circuit", "own"].map(key => ({ key, costs: costs[key] || [] })) } },
+    result: { recommended_key: recommended, candidates: [option("plug1", 900), option("plug2", 950, false), option("fixed", 400),
+      option("circuit", 600), option("own", 1200, false)] } });
+  const kinds = new Map([["plug1", "plug"], ["plug2", "plug"], ["fixed", "fixed"], ["circuit", "circuit"], ["own", null]]);
+  const view = lanes => JSON.parse(JSON.stringify(lanes.map(l => [l.titles.join(" + "), l.option?.key ?? null])));
+  // Boven het budget komt na wat erbinnen valt; een stekker op een eigen groep telt als ‘met installateur’.
+  assert.deepEqual(view(Results.lanes(run("plug1"), kinds)),
+    [["Geen accu", null], ["Beste met installateur", "circuit"], ["Beste stekker", "plug1"]]);
+  // Je offerte staat voorop; is die ook de beste in zijn soort, dan krijgt één kolom beide rollen.
+  assert.deepEqual(view(Results.lanes(run("plug1", { circuit: [line] }), kinds)),
+    [["Geen accu", null], ["Je offerte + Beste met installateur", "circuit"], ["Beste stekker", "plug1"]]);
+  // De aanbevolen accu zonder bekende aansluiting staat er ook bij; geen accu aanbevolen geeft geen extra kolom.
+  assert.deepEqual(view(Results.lanes(run("own"), kinds)).at(-1), ["Aanbevolen", "own"]);
+  assert.equal(Results.lanes(run("no_battery"), kinds).length, 3);
+});
+
+test("notesOf(): modeluitleg apart, ook in oudere runs waar hij tussen de waarschuwingen staat", () => {
+  const notes = ["Model: zonnestroom opslaan.", "ROI = winst / investering.", "In 744 van de 8760 meetperioden zijn netafname en teruglevering gemeten."];
+  const warnings = ["GESCHAT PROFIEL: synthetisch.", "Nettarieven: de ACM wil vanaf 2029 iets anders."];
+  const old = Results.notesOf({ warnings: [warnings[0], ...notes, warnings[1]] });
+  assert.deepEqual([...old.warnings], warnings);
+  assert.deepEqual([...old.notes], notes);
+  const current = Results.notesOf({ warnings, notes: [] });
+  assert.deepEqual([...current.warnings], warnings);
+  assert.equal(current.notes.length, 0);
+});
+
 test("applyQuotePrice(): na een vaste prijs is de reserve bij ‘onder voorbehoud’ onbekend, niet nul", () => {
   const candidate = { costs: [
     { category: "battery", timing: "upfront", status: "priced", amount_minor: 400000, source: "Richtprijs" },

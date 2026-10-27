@@ -284,12 +284,22 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Hierboven is het bereik met de schuifjes op het volle bereik gezet.
   assert.equal(sizing.label, "je eigen bereik");
   assert.ok(sizing.low_kwh === 0 && sizing.high_kwh > 0);
-  if (await page.locator(".verdict .stats").count()) {
+  // Het beslisblad: geen accu naast de besproken accu, met de bandbreedte onder het netto voordeel.
+  const lanes = page.locator(".verdict table.lanes");
+  assert.equal(await lanes.locator("thead th").first().textContent(), "Geen accu");
+  const leadCell = label => lanes.locator(`tr:has(th:has-text('${label}')) td.lane-lead`);
+  if (await leadCell("Startinvestering nu").count()) {
     assert.match(await page.textContent(".verdict"), /bruikbaar\) valt binnen je eigen bereik van 0 tot [\d,]+ kWh\./);
-    // Onder het netto voordeel staat wat het wordt als het tegenzit.
-    const npvTile = page.locator(".verdict .stats div:has(dt:has-text('Netto voordeel')) dd");
-    if (await npvTile.count()) assert.match(await npvTile.textContent(), /^-?€\s?-?[\d.]+ongunstig -?€\s?-?[\d.]+/);
+    assert.match(await leadCell("Netto voordeel (NPV)").textContent(), /^\D{0,2}€\s?[\d.]+ongunstig \D{0,2}€\s?[\d.]+ · gunstig \D{0,2}€\s?[\d.]+$/);
   }
+  // Wisselen naar een variant bouwt alleen het blad opnieuw en meldt de uitkomst; daarna terug naar de basis.
+  const variantNames = await page.locator(".variant-switch label").allTextContents();
+  assert.ok(variantNames.some(t => t.startsWith(" Ongunstig")) && variantNames.some(t => t.startsWith(" Stopt na de garantie")), variantNames.join("|"));
+  await page.locator(".variant-switch label:has-text('Ongunstig') input").check();
+  assert.match(await page.textContent(".verdict caption"), /^Beslisblad, ongunstig$/);
+  assert.match(await page.textContent(".sheet [aria-live]"), /^Ongunstig: het hoogste netto voordeel in dit blad heeft .+ \(\D{0,2}€\s?[\d.]+\), binnen deze berekening\.$/);
+  assert.ok((await lanes.locator("tr:has(th:text-is('Besparing in jaar 1')) td").allTextContents()).slice(1).every(t => t === "Niet apart berekend"));
+  await page.locator(".variant-switch label:has-text('Basisaannames') input").check();
   assert.match((await page.locator(".more-figures").allTextContents()).join(" "), /Stopt na de garantie \(\d+ jaar\): lonend tot/);
   const summary = await page.textContent(".plain");
   // De tarieven staan direct onder het antwoord; de woordenlijst staat in de uitleg.
@@ -313,7 +323,7 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     : /Als teruglevering vanaf 2030 niets meer oplevert/);
   // De besparing van jaar 1 is na te rekenen en komt uit op hetzelfde bedrag als de samenvatting noemt.
   const euro = text => (/[−-]/.test(text) ? -1 : 1) * Number(text.replace(/\D/g, ""));
-  const saving = await page.textContent(".verdict .stats div:has(dt:text-is('Besparing in jaar 1')) dd");
+  const saving = await page.textContent(".verdict table.lanes tr:has(th:text-is('Besparing in jaar 1')) td.lane-lead");
   const receipt = await page.locator(".plain .receipt li").allTextContents();
   const [, gain] = receipt[0].match(/^\+ [\d.]+ kWh minder van het net × €\s*[\d,]+ = (€\s*[\d.]+)$/);
   const [, sign, lost] = receipt[1].match(/^([+−]) [\d.]+ kWh minder teruggeleverd × €\s*[\d,]+ \(.+\) = (€\s*[\d.]+)$/);

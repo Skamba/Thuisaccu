@@ -167,13 +167,19 @@ async fn capacity_curve_and_analysis_mark_the_estimate() {
             .starts_with("GESCHAT PROFIEL")
     );
     // Zonder `load_variation` (runs van vóór modelversie 2) blijft het verbruik gelijkmatig.
-    let warnings = |body: &Value| body["result"]["warnings"].to_string();
-    assert!(warnings(&body).contains("gelijkmatig verondersteld"));
+    // De verdeling binnen de meetperiode is modeluitleg, geen waarschuwing.
+    let notes = |body: &Value| body["result"]["notes"].to_string();
+    assert!(notes(&body).contains("gelijkmatig verondersteld"));
+    assert!(
+        !body["result"]["warnings"]
+            .to_string()
+            .contains("gelijkmatig verondersteld")
+    );
     let mut spread = run;
     spread["parameters"]["load_variation"] = json!("households");
     let (status, varied) = send(&app, post("/api/v1/analysis/runs", spread)).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert!(warnings(&varied).contains("HTW Berlin"));
+    assert!(notes(&varied).contains("HTW Berlin"));
     let delivered = |body: &Value| {
         body["result"]["candidates"][0]["first_year"]["battery_to_load_kwh"]
             .as_f64()
