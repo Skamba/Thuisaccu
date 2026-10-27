@@ -19,6 +19,12 @@ window.UI = (() => {
     append(element, children);
     return element;
   }
+  // Hetzelfde voor SVG-elementen: attributen als tekst, kinderen als knopen.
+  function svg(tag, attrs = {}, ...children) {
+    const element = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attrs)) if (value != null && value !== false) element.setAttribute(key, value);
+    return append(element, children);
+  }
   function append(parent, children) {
     for (const child of children.flat(Infinity)) {
       if (child == null || child === false) continue;
@@ -624,7 +630,7 @@ window.UI = (() => {
   const page = (key, definition) => pages.set(key, definition);
 
   return {
-    h, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
+    h, svg, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
     csvCell, clip, button, link, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
     tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };

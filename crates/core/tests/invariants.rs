@@ -878,6 +878,70 @@ fn break_even_investment_is_the_investment_plus_npv_and_gives_zero_npv() {
 /// bedrag en de terugleveringsvariant) maal k > 0: de energiebesparing schaalt met k. Er is geen
 /// voorwaarde nodig: het vaste bedrag valt weg in het verschil en de prijsstress is relatief.
 /// Staffelgrenzen zijn kWh en blijven gelijk; procentuele prijsstijging ook.
+/// Elk kantelpunt geeft, ingevuld met al het andere gelijk, een NPV van nul: de NPV is lineair in
+/// het afnametarief, de terugleververgoeding en (bij vaste kosten) in de besparing.
+#[test]
+fn tipping_points_give_zero_npv_when_filled_in() {
+    let mut checked = 0;
+    for seed in seeds(9, 12) {
+        let mut rng = Rng::new(seed);
+        let shape = ProfileShape::random(&mut rng);
+        let profile = profile(&mut rng, shape);
+        let p = parameters(&mut rng);
+        let count = rng.int(1, 3);
+        let cs = candidates(&mut rng, p.horizon_years, count);
+        let r = run(seed, &profile, &p, &cs);
+        for c in &r.candidates {
+            let ctx = format!("seed {seed}, {}", c.key);
+            let t = c.tipping_points.as_ref().expect("kantelpunten");
+            let scale =
+                c.initial_investment_eur + c.lifetime_energy_saving_eur.abs() + c.npv_eur.abs();
+            let input = cs_by_key(&cs, &c.key);
+            for (value, set) in [
+                (
+                    t.import_eur_per_kwh,
+                    (|p: &mut Parameters, v| p.tariff.import_eur_per_kwh = v)
+                        as fn(&mut Parameters, f64),
+                ),
+                (t.export_eur_per_kwh, |p: &mut Parameters, v| {
+                    p.tariff.export_eur_per_kwh = v
+                }),
+            ] {
+                // Buiten het geldige bereik (|€ 10| per kWh) valt niets na te rekenen.
+                let Some(value) = value.filter(|v| v.abs() < 10.0) else {
+                    continue;
+                };
+                let mut q = p.clone();
+                set(&mut q, value);
+                q.budget_eur = None;
+                let again = run(seed, &profile, &q, std::slice::from_ref(input));
+                assert_near!(
+                    again.candidates[0].npv_eur,
+                    0.0,
+                    scale,
+                    "{ctx}: NPV bij het kantelpunt"
+                );
+                checked += 1;
+            }
+            if let Some(share) = t.saving_share {
+                let discount = 1.0 + p.discount_pct / 100.0;
+                let savings: f64 = c
+                    .years
+                    .iter()
+                    .map(|y| y.energy_saving_eur / discount.powi(y.year as i32))
+                    .sum();
+                assert_near!(
+                    c.npv_eur + (share - 1.0) * savings,
+                    0.0,
+                    scale,
+                    "{ctx}: besparingsdeel"
+                );
+            }
+        }
+    }
+    assert!(checked >= 8, "te weinig kantelpunten nagerekend: {checked}");
+}
+
 #[test]
 fn scaling_all_tariff_amounts_scales_the_energy_savings() {
     for seed in seeds(7, 10) {

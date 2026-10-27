@@ -225,6 +225,26 @@ pub struct CandidateResult {
     /// Uitkomst met [`Candidate::warranty_stress`], met verder dezelfde aannames.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warranty_stress: Option<ExportVariantResult>,
+    /// Kantelpunten met de basisaannames; ontbreekt in runs van vóór 27 oktober 2026.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tipping_points: Option<TippingPoints>,
+}
+
+/// Waar de NPV van een optie nul wordt als je één invoer verandert en al het andere gelijk houdt,
+/// met de basisaannames (geen prijs- of kostenstress, geen terugleveringsvariant). De NPV hangt bij
+/// vaste energiestromen lineair af van elk van deze drie, dus het punt is exact. `None` als de
+/// invoer de NPV niet verandert (bijvoorbeeld geen besparing).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TippingPoints {
+    /// Afnametarief in het eerste jaar (all-in, per kWh) waarbij de NPV nul is; de jaarlijkse
+    /// prijsverandering blijft gelijk.
+    pub import_eur_per_kwh: Option<f64>,
+    /// Terugleververgoeding in het eerste jaar (per kWh) waarbij de NPV nul is, met dezelfde
+    /// terugleverkosten.
+    pub export_eur_per_kwh: Option<f64>,
+    /// Deel van de berekende energiebesparing (1 = zoals berekend) waarbij de NPV nul is, met alle
+    /// kosten gelijk: hoeveel de besparing mag tegenvallen.
+    pub saving_share: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -749,6 +769,40 @@ fn project(
         within_budget: p.budget_eur.is_none_or(|budget| upfront <= budget),
         export_variant: None,
         warranty_stress: None,
+        tipping_points: None,
+    }
+}
+
+/// De kantelpunten van [`TippingPoints`] voor een optie met de basisuitkomst `base`. Omdat de NPV
+/// lineair is in elk van de drie, volgt het nulpunt uit één extra doorrekening met een andere waarde.
+fn tipping_points(
+    baselines: &[EnergyYear],
+    energies: &[EnergyYear],
+    p: &Parameters,
+    c: &Candidate,
+    base: &CandidateResult,
+) -> TippingPoints {
+    // Eén euro per kWh erbij geeft de helling; het nulpunt ligt daarmee vast.
+    let zero = |current: f64, change: &dyn Fn(&mut Tariff)| {
+        let mut shifted = p.clone();
+        change(&mut shifted.tariff);
+        let slope = project(baselines, energies, &shifted, c, 0, None).npv_eur - base.npv_eur;
+        (slope.abs() > 1e-9).then(|| current - base.npv_eur / slope)
+    };
+    let discount = 1.0 + p.discount_pct / 100.0;
+    let savings: f64 = base
+        .years
+        .iter()
+        .map(|y| y.energy_saving_eur / discount.powi(y.year as i32))
+        .sum();
+    TippingPoints {
+        import_eur_per_kwh: zero(p.tariff.import_eur_per_kwh, &|t| {
+            t.import_eur_per_kwh += 1.0
+        }),
+        export_eur_per_kwh: zero(p.tariff.export_eur_per_kwh, &|t| {
+            t.export_eur_per_kwh += 1.0
+        }),
+        saving_share: (savings.abs() > 1e-9).then(|| 1.0 - base.npv_eur / savings),
     }
 }
 
@@ -876,6 +930,7 @@ pub fn analyze_with(
         if let Some(v) = &parameters.export_variant {
             base.export_variant = Some(outcome(&run(0, Some(v))));
         }
+        base.tipping_points = Some(tipping_points(&baselines, energies, parameters, c, &base));
         // Zelfde accu met een kortere levensduur en sneller verlies; telt niet mee voor de keuze.
         if c.warranty_stress.is_some() {
             let energies = stress_tracks.next().unwrap_or_default();

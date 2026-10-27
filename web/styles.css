@@ -188,6 +188,17 @@ td strong, th strong { display: block; }
 .variant-switch { display: flex; flex-wrap: wrap; gap: .25rem 1rem; padding: .5rem .75rem; margin: .75rem 0 0; background: var(--surface); }
 .variant-switch label { font-weight: 600; }
 .variant-switch small { font-weight: 400; color: var(--muted); }
+/* Met strepen: één regel per variant, de strepen op dezelfde schaal onder elkaar. */
+.variant-switch.with-strips { display: grid; gap: .2rem; }
+.variant-switch.with-strips label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .25rem 1rem; }
+.variant-switch .variant-name small { display: inline; }
+.strip-cell { display: inline-flex; align-items: center; gap: .5rem; font-weight: 400; }
+.strip-value { min-width: 9rem; font-variant-numeric: tabular-nums; }
+.strip .strip-zero { stroke: var(--muted); stroke-width: 1.5; }
+.strip .strip-gain { fill: var(--accent); }
+.strip .strip-loss { fill: var(--danger); }
+.lanes td .tip { display: block; font-size: .84rem; line-height: 1.35; }
+.lanes td .tip + .tip { margin-top: .2rem; }
 /* Vóór het smalle scherm: dat maakt de tabbladen compacter. */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0; }
 @media (max-width: 40rem) {
@@ -227,6 +238,7 @@ td strong, th strong { display: block; }
   table.lanes thead .lane-name { display: inline; }
   table.lanes td::before { content: attr(data-lane); display: block; font-size: .75rem; font-weight: 600; color: var(--muted); }
   .variant-switch label { display: block; }
+  .variant-switch.with-strips label { grid-template-columns: 1fr; }
   /* Lijsttabellen worden kaartjes: de kolomkop staat bij elke waarde, zodat niets zijwaarts schuift. */
   table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   table.stack, table.stack tbody, table.stack tr, table.stack caption { display: block; }
@@ -281,6 +293,9 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
 .product-group { margin-top: var(--gap); }
 .product-group > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--gap); }
 .verdict { background: var(--accent-soft); border-color: transparent; }
+.firmer ol { margin: .5rem 0 0; padding-left: 1.4rem; display: grid; gap: .6rem; }
+.firmer li p { margin: 0; font-weight: 600; }
+.firmer li .actions { margin-top: .3rem; }
 .verdict h2 { margin-bottom: .25rem; }
 .verdict-for { margin: .5rem 0 0; color: var(--muted); }
 .verdict-lead { margin: 0; font-weight: 600; }

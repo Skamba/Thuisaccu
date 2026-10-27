@@ -721,3 +721,47 @@ test("modelwijziging v7 raakt alleen een run met een gelijke terugverdientijd di
   assert.equal(affects([option("a", 100, 6, variant(50, 8)), option("b", 90, 7, variant(80, 8))], "a",
     { export_variant_recommended_key: "a" }), true);
 });
+
+// Bedragen hebben een harde spatie na het euroteken en een echt minteken (UI.money); de verwachtingen hieronder
+// gebruiken een gewone spatie en een streepje.
+const spaced = text => text.replace(/[\u00a0\u202f]/g, " ").replace(/\u2212\u2060?/g, "-");
+
+test("tipping(): kantelpunten als zinnen, het kleinste verschil eerst; leeg bij oudere runs", () => {
+  const run = { input: { request: { parameters: { tariff: { import_eur_per_kwh: 0.3, export_eur_per_kwh: 0.05 } } } } };
+  const option = { key: "a", npv_eur: 500, tipping_points: { import_eur_per_kwh: 0.27, export_eur_per_kwh: 0.2, saving_share: 0.8 } };
+  const tips = Results.tipping(run, option).map(t => ({ ...t, text: spaced(t.text) }));
+  // Stroomprijs 10% lager, besparing 20% lager, teruglevering van 5 naar 20 cent: in die volgorde.
+  assert.deepEqual([...tips.map(t => t.key)], ["import", "saving", "export"]);
+  assert.match(tips[0].text, /^Niet meer lonend als de stroomprijs onder € 0,27 per kWh komt \(nu € 0,30\)$/);
+  assert.match(tips[1].text, /meer dan 20% lager/);
+  // Een niet lonende accu: lonend als de prijs stijgt; een kantelpunt onder nul is geen gewone prijs.
+  const loss = { key: "b", npv_eur: -300, tipping_points: { import_eur_per_kwh: 0.42, export_eur_per_kwh: -0.4, saving_share: 1.25 } };
+  const texts = Results.tipping(run, loss).map(t => spaced(t.text));
+  assert.ok(texts.includes("Lonend als de stroomprijs boven € 0,42 per kWh komt (nu € 0,30)"), texts.join(" | "));
+  assert.ok(texts.some(t => /besparing meer dan 25% hoger/.test(t)));
+  const below = Results.tipping(run, { ...loss, tipping_points: { import_eur_per_kwh: -0.1 } });
+  assert.equal(spaced(below[0].text), "Niet lonend bij elke stroomprijs boven € 0");
+  const free = Results.tipping(run, { ...option, tipping_points: { import_eur_per_kwh: -0.1 } });
+  assert.equal(spaced(free[0].text), "Lonend bij elke stroomprijs boven € 0");
+  // Oudere runs hebben geen kantelpunten; zonder opwek of besparing blijven ze onbekend.
+  assert.equal(Results.tipping(run, { key: "c", npv_eur: 100 }).length, 0);
+  assert.equal(Results.tipping(run, { key: "d", npv_eur: 100, tipping_points: {} }).length, 0);
+});
+
+test("answer(): de kop zegt of een accu loont en hoe zeker, over de doorgerekende varianten", () => {
+  const run = (recommended_key, option, uncertain = true) => ({
+    input: { request: { candidates: [{ key: option.key }], parameters: { horizon_years: 15,
+      price_uncertainty_pct: uncertain ? 10 : 0, cost_uncertainty_pct: uncertain ? 10 : 0 } } },
+    result: { recommended_key, candidates: [option] } });
+  const sure = { key: "a", npv_eur: 900, pessimistic: { npv_eur: 200 }, optimistic: { npv_eur: 1600 } };
+  assert.match(spaced(Results.answer(run("a", sure), sure)), /iets op, ook in de ongunstige varianten: tussen € 200 en € 1\.600 over 15 jaar/);
+  const shaky = { ...sure, pessimistic: { npv_eur: -400 } };
+  assert.match(spaced(Results.answer(run("a", shaky), shaky)), /€ 900 op over 15 jaar, maar dat is niet zeker: tussen -€ 400 en € 1\.600/);
+  assert.match(spaced(Results.answer(run("a", sure, false), sure)), /^Een accu levert in deze berekening € 900 op over 15 jaar/);
+  const none = { key: "a", npv_eur: -500, pessimistic: { npv_eur: -900 }, optimistic: { npv_eur: 150 } };
+  assert.match(spaced(Results.answer(run("no_battery", none), none)), /loont in deze berekening niet\. Alleen in de gunstigste variant .* hooguit € 150/);
+  const never = { ...none, optimistic: { npv_eur: -50 } };
+  assert.match(spaced(Results.answer(run("no_battery", never), never)), /Ook in de gunstigste variant niet\.$/);
+  // Een ander doel kan een accu aanraden die geld kost.
+  assert.match(spaced(Results.answer(run("a", none), none)), /kost in deze berekening geld: netto € 500 over 15 jaar/);
+});

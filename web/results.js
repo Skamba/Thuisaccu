@@ -300,6 +300,80 @@ window.Results = (() => {
     ].filter(Boolean);
   }
 
+  // Kantelpunten van de rekenkern (sinds 27 oktober 2026): bij welke stroomprijs, terugleververgoeding of besparing de
+  // NPV van een optie nul wordt, met al het andere gelijk. Per punt een korte tekst voor het blad, een zin en hoeveel er
+  // relatief moet veranderen (`change`); leeg bij oudere runs.
+  function tipping(run, c) {
+    const t = c?.tipping_points, tariff = run.input.request.parameters.tariff;
+    if (!t || !finite(c.npv_eur)) return [];
+    const pays = c.npv_eur >= 0, out = [], price = v => money(v, { decimals: 2 });
+    const add = (key, label, now, at) => {
+      if (!finite(at) || !finite(now)) return;
+      const side = at < now ? "onder" : "boven";
+      // Een all-in stroomprijs onder nul komt in dit model niet voor; dan kantelt het niet bij een gewone prijs.
+      if (key === "import" && at <= 0 && at < now) return out.push({ key, change: Infinity,
+        short: "Stroomprijs: bij elke prijs boven € 0", text: `${pays ? "Lonend" : "Niet lonend"} bij elke stroomprijs boven € 0` });
+      out.push({ key, now, at, change: Math.abs(at - now) / Math.max(Math.abs(now), 0.01),
+        short: `${label} ${side} ${price(at)} (nu ${price(now)})`,
+        text: `${pays ? "Niet meer lonend" : "Lonend"} als de ${label.toLowerCase()} ${side} ${price(at)} per kWh komt (nu ${price(now)})` });
+    };
+    add("import", "Stroomprijs", tariff.import_eur_per_kwh, t.import_eur_per_kwh);
+    add("export", "Terugleververgoeding", tariff.export_eur_per_kwh, t.export_eur_per_kwh);
+    const share = t.saving_share;
+    if (finite(share) && share > 0) {
+      const by = `${n(Math.abs(1 - share) * 100, 0)}%`;
+      out.push({ key: "saving", change: Math.abs(1 - share), short: `Besparing ${by} ${pays ? "lager" : "hoger"}`,
+        text: `${pays ? "Niet meer lonend" : "Lonend"} als de besparing meer dan ${by} ${pays ? "lager" : "hoger"} uitvalt` });
+    }
+    return out.sort((a, b) => a.change - b.change);
+  }
+  // Het antwoord als zin: levert een accu iets op en hoe zeker is dat, over de varianten die de rekenkern doorrekende.
+  function answer(run, option) {
+    const result = run.result, years = run.input.request.parameters.horizon_years;
+    if (!option) return result.recommendation;
+    const values = variants(run, [{ option }]).map(([key]) => laneOutcome(run, option, key)?.npv_eur).filter(finite);
+    const lo = Math.min(...values), hi = Math.max(...values), span = values.length > 1;
+    if (result.recommended_key === "no_battery") return "Een accu loont in deze berekening niet." + (!option || !span ? ""
+      : hi > 0 ? ` Alleen in de gunstigste variant levert de beste accu iets op: hooguit ${eur0(hi)} over ${years} jaar.`
+        : " Ook in de gunstigste variant niet.");
+    const npv = option.npv_eur, range = `tussen ${eur0(lo)} en ${eur0(hi)}`;
+    if (npv < 0) return `Een accu komt met dit doel het beste uit, maar kost in deze berekening geld: netto ${eur0(-npv)} over ${years} jaar` +
+      (span ? `, ${range} in de varianten.` : ".");
+    if (!span) return `Een accu levert in deze berekening ${eur0(npv)} op over ${years} jaar, in geld van nu.`;
+    return lo >= 0 ? `Een accu levert in deze berekening iets op, ook in de ongunstige varianten: ${range} over ${years} jaar, in geld van nu.`
+      : `Een accu levert in deze berekening ${eur0(npv)} op over ${years} jaar, maar dat is niet zeker: ${range} in de varianten, in geld van nu.`;
+  }
+
+  // Wanneer kantelt het antwoord: de kantelpunten van de besproken accu en de grensprijs, bovenaan wat het minst hoeft te
+  // veranderen. Bij elk punt wat je kunt doen om het zekerder te maken. Null bij oudere runs zonder kantelpunten.
+  function firmer(run, option, { onDuplicate, shared, openTab }) {
+    if (!option?.tipping_points) return null;
+    const again = shared || !onDuplicate ? null : () => button("Pas aan en reken opnieuw", () => onDuplicate(run), "secondary");
+    const items = tipping(run, option).map(t => ({ change: t.change, text: `${t.text}.`,
+      more: t.key === "import" ? "Je stroomprijs staat in je contract; met een vast tarief ligt hij voor de looptijd van het contract vast."
+        : t.key === "export" ? "De terugleververgoeding verschilt per leverancier en contract en kan na het einde van salderen veranderen."
+          : isEstimated(run) ? "Je verbruik en opwek zijn geschat uit jaartotalen; gemeten uur- of kwartierwaarden van je slimme meter maken de besparing zekerder."
+            : "De besparing hangt aan het verbruik en de opwek in je profiel; een ander jaar of een nieuw apparaat verandert die.",
+      action: t.key === "saving" ? (isEstimated(run) ? link("Importeer meetwaarden", "#/energie/import", "button secondary") : null)
+        : again?.() }));
+    const limit = option.break_even_investment_eur, start = option.initial_investment_eur;
+    if (finite(limit) && limit > 0 && finite(start) && start > 0) {
+      const quote = quoted(run);
+      items.push({ change: Math.abs(limit - start) / start,
+        text: `${option.npv_eur >= 0 ? "Niet meer lonend" : "Lonend"} als de startinvestering ${option.npv_eur >= 0 ? "boven" : "onder"} ` +
+          `${roundedLimit(limit)} komt (nu ${eur0(start)}).`,
+        more: quote ? "Met je offerte gerekend; de offertecheck laat zien welke posten erin zitten."
+          : "Nu gerekend met een indicatie; een offerte maakt de prijs zeker.",
+        action: openTab ? button("Naar de offertecheck", () => openTab("Offertecheck"), "secondary") : null });
+    }
+    if (!items.length) return null;
+    items.sort((a, b) => a.change - b.change);
+    return h("section", { class: "panel firmer" }, h("h2", {}, "Wanneer kantelt dit antwoord?"),
+      h("p", { class: "help" }, `Voor ${option.name}, telkens met één ding anders en de rest gelijk. Bovenaan wat het minst hoeft ` +
+        "te veranderen om de uitkomst te laten kantelen."),
+      h("ol", {}, items.map(i => h("li", {}, h("p", {}, i.text), h("small", {}, i.more), i.action ? h("div", { class: "actions" }, i.action) : null))));
+  }
+
   // Het beslisblad: geen accu naast je offerte en per soort aansluiting de eerste in de volgorde van het doel (`rank`).
   // De besproken accu staat er altijd in, ook zonder bekende aansluiting (oudere runs, eigen accu's). Een kolom is geen
   // rangorde buiten deze berekening: de kolommen volgen vaste rollen, de rij ‘Aansluiting’ zegt wat erbij hoort.
@@ -359,6 +433,8 @@ window.Results = (() => {
       ["Startinvestering nu", null, c => sameCosts ? eur0(c.initial_investment_eur) : NOT_SEPARATE, eur0(0)],
       ["Besparing in jaar 1", null, c => !base ? NOT_SEPARATE : c.years?.[0] ? eur0(c.years[0].energy_saving_eur) : "Onbekend", eur0(0)],
       ["Terugverdiend na", null, (c, o) => !o ? missing() : base || variant === "export" || variant === "stress" ? payback(o.payback_years) : NOT_SEPARATE, NA],
+      shownLanes.some(l => l.option?.tipping_points) ? ["Kantelt bij", "één ding anders, de rest gelijk", c => !base ? NOT_SEPARATE
+        : !c.tipping_points ? "Niet berekend" : tipping(run, c).map(t => h("span", { class: "tip" }, t.short)), NA] : null,
       ["Aansluiting", null, c => kinds.get(c.key) === "plug"
         ? [`${connectionText(c, kinds)}: Milieu Centraal raadt dit af. `, toAdvice("Lees waarom", c.name)] : connectionText(c, kinds), NA],
       p.budget_eur != null ? ["Budget", null, c => c.within_budget === false ? `Boven je budget van ${eur0(p.budget_eur)}` : "Binnen je budget", NA] : null
@@ -390,9 +466,23 @@ window.Results = (() => {
       live.textContent = key === "base" || !scored.length ? "" : `${label}: het hoogste netto voordeel in dit blad heeft ` +
         `${scored[0][0].option?.name ?? "geen accu"} (${eur0(scored[0][1].npv_eur)}), binnen deze berekening.`;
     };
-    const switcher = list.length < 2 ? null : h("fieldset", { class: "variant-switch" }, h("legend", {}, "Bekijk het blad met"),
-      list.map(([key, label, help]) => h("label", {}, h("input", { type: "radio", name, value: key, checked: key === state.variant,
-        onchange: () => pick(key) }), ` ${label}`, h("small", {}, ` (${help})`))));
+    // Per variant de uitkomst van de besproken accu als streep vanaf geen accu (de nullijn), met het bedrag erbij: zo is te
+    // zien hoe zeker het antwoord is. De kleur zegt hetzelfde als ‘voordeel’ of ‘verlies’ in de tekst.
+    const leadOption = shownLanes.find(l => l.option?.key === leadKey)?.option;
+    const values = list.map(([key]) => laneOutcome(run, leadOption, key)?.npv_eur);
+    const known = values.filter(finite), low = Math.min(0, ...known), high = Math.max(0, ...known), width = 120;
+    const x = v => high === low ? width / 2 : 4 + (v - low) / (high - low) * (width - 8);
+    const strip = v => !finite(v) ? h("span", { class: "strip-value" }, "Niet berekend")
+      : [UI.svg("svg", { class: "strip", viewBox: `0 0 ${width} 14`, width, height: 14, "aria-hidden": "true", focusable: "false" },
+        UI.svg("line", { x1: x(0), x2: x(0), y1: 1, y2: 13, class: "strip-zero" }),
+        UI.svg("rect", { x: Math.min(x(0), x(v)), y: 5, width: Math.max(Math.abs(x(v) - x(0)), 1), height: 4, class: v >= 0 ? "strip-gain" : "strip-loss" }),
+        UI.svg("circle", { cx: x(v), cy: 7, r: 3.5, class: v >= 0 ? "strip-gain" : "strip-loss" })),
+      h("span", { class: "strip-value" }, `${v >= 0 ? "voordeel" : "verlies"} ${eur0(Math.abs(v))}`)];
+    const switcher = list.length < 2 ? null : h("fieldset", { class: leadOption ? "variant-switch with-strips" : "variant-switch" }, h("legend", {},
+      leadOption ? `Hoe zeker is dit? ${leadOption.name} per variant, tegenover geen accu; kies er een voor het blad` : "Bekijk het blad met"),
+      list.map(([key, label, help], i) => h("label", {}, h("span", { class: "variant-name" }, h("input", { type: "radio", name, value: key,
+        checked: key === state.variant, onchange: () => pick(key) }), ` ${label}`, h("small", {}, ` (${help})`)),
+      leadOption ? h("span", { class: "strip-cell" }, strip(values[i])) : null)));
     return h("div", { class: "sheet" }, switcher, holder, live);
   }
 
@@ -423,9 +513,7 @@ window.Results = (() => {
     // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
     // installateur die hem vast wil aansluiten. Het blad zet stekker op eigen groep en vast samen onder ‘met installateur’.
     const installed = isCircuit ? bestInstalled(run, kinds).fixed : null;
-    // De aanbevolen accu als kop, de zin van de rekenkern eronder: zo staat het antwoord ook op een telefoon in één oogopslag.
-    const lead = quote ? null : rec && result.recommendation.startsWith(`${option.name} `)
-      ? result.recommendation.slice(option.name.length + 1) : null;
+    // Het antwoord als zin in de kop, de keuze van de rekenkern eronder: zo staat het ook op een telefoon in één oogopslag.
     // Wat deze berekening zonder de offerte zou aanraden, als dat een andere optie is.
     const best = quote && !rec ? judged(run) : null;
     const other = !quote || rec ? null : result.recommended_key === "no_battery" || !best || best.key === quote.key
@@ -433,9 +521,8 @@ window.Results = (() => {
       : `Het beste in deze berekening komt ${best.name} uit: ${netText(best.npv_eur)} in geld van nu.`;
     const stress = option && warrantyFlip(run, option);
     return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
-      h("h2", {}, quote ? option.name : lead ? option.name : result.recommendation),
-      quote ? h("p", { class: "verdict-lead" }, quoteLead(run, option)) : null,
-      lead ? h("p", { class: "verdict-lead" }, lead[0].toUpperCase() + lead.slice(1)) : null,
+      h("h2", {}, quote ? option.name : answer(run, option)),
+      h("p", { class: "verdict-lead" }, quote ? quoteLead(run, option) : result.recommendation),
       option ? [sheet(run, kinds, option.key), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
         : h("p", { class: "verdict-for" }, other)) : closeCall(run, option)] : null,
       quote ? null : quotesSide(run),
@@ -1596,7 +1683,11 @@ window.Results = (() => {
     const jump = h("button", { type: "button", class: "ghost jump-tabs", onclick: () => {
       parts.scrollIntoView({ block: "start" }); parts.querySelector('[role="tab"][aria-selected="true"]')?.focus();
     } }, `Naar de onderdelen: ${warnings.length} ${warnings.length === 1 ? "waarschuwing" : "waarschuwingen"}, offertecheck, kosten`);
-    view.append(verdict(run, kinds), jump, ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), parts);
+    const openTab = label => {
+      const tab = [...parts.querySelectorAll("[role=tab]")].find(t => t.textContent === label);
+      tab?.click(); tab?.focus();
+    };
+    view.append(verdict(run, kinds), ...[firmer(run, quoted(run) ?? judged(run), { onDuplicate, shared, openTab })].filter(Boolean), jump, ...meta, summary(run, kinds, costCatalog.estimates?.amounts?.dedicated_circuit, categories), parts);
   }
 
   // Zelf doorrekenen houdt twaalf opties. Een kopie van een grotere berekening houdt de opties die de uitkomst noemt
@@ -1608,5 +1699,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, notesOf, lanes, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap };
+  return { render, notesOf, lanes, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, warrantyFlip, quoteLead, sizeNote, outdated, recalculation, rank, trimmed, trimmedText, shareable, whatIf, perCent, salderenGap, quotesCompared, billGap, tipping, answer };
 })();

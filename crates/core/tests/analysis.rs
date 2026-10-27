@@ -402,6 +402,44 @@ fn break_even_investment_is_the_start_cost_at_which_the_npv_becomes_zero() {
 }
 
 #[test]
+fn tipping_points_are_the_prices_and_saving_share_at_which_the_npv_becomes_zero() {
+    // De accu verschuift 4380 × 2 = 8760 kWh per jaar van teruglevering naar eigen verbruik; iedere
+    // kWh is het verschil tussen afname- en terugleverprijs waard. Twee jaar tegen 10% disconto
+    // (factor 1/1,1 + 1/1,21) en € 2000 startinvestering: de NPV is nul als dat verschil
+    // 2000 / (8760 × factor) = € 0,1315 per kWh is.
+    let mut p = parameters();
+    p.horizon_years = 2;
+    p.discount_pct = 10.0;
+    let r = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 200_000)]).unwrap();
+    let factor = 1.0 / 1.1 + 1.0 / 1.21;
+    let margin = 2000.0 / (8760.0 * factor);
+    let t = r.candidates[0].tipping_points.as_ref().unwrap();
+    close(t.import_eur_per_kwh.unwrap(), 0.08 + margin);
+    close(t.export_eur_per_kwh.unwrap(), 0.30 - margin);
+    close(t.saving_share.unwrap(), margin / 0.22);
+    // Met precies dat afnametarief is de NPV nul.
+    p.tariff.import_eur_per_kwh = t.import_eur_per_kwh.unwrap();
+    let again = analysis::analyze(&profile(), &p, &[candidate("b", 2.0, 200_000)]).unwrap();
+    close(again.candidates[0].npv_eur, 0.0);
+    // Een accu die niets verschuift (geen opwek) heeft geen kantelpunt in de prijzen.
+    let dark: Vec<EnergyInterval> = profile()
+        .into_iter()
+        .map(|i| EnergyInterval {
+            production_kwh: 0.0,
+            consumption_kwh: 1.0,
+            ..i
+        })
+        .collect();
+    let none = analysis::analyze(&dark, &p, &[candidate("b", 2.0, 200_000)]).unwrap();
+    let t = none.candidates[0].tipping_points.as_ref().unwrap();
+    assert!(
+        t.import_eur_per_kwh.is_none()
+            && t.export_eur_per_kwh.is_none()
+            && t.saving_share.is_none()
+    );
+}
+
+#[test]
 fn replacement_cost_restores_capacity_only_after_the_replacement_year() {
     let mut c = candidate("replace", 2.0, 50_000);
     c.battery.operating_life_years = 1;

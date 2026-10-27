@@ -63,6 +63,11 @@
         "roi_pct": -75.17228075907325
       },
       "roi_pct": -54.04684583484687,
+      "tipping_points": {
+        "export_eur_per_kwh": -0.16549220204139195,
+        "import_eur_per_kwh": 0.5779999818260755,
+        "saving_share": 2.1752227649153832
+      },
       "within_budget": true,
       "years": [
         {
@@ -299,6 +304,11 @@
         "roi_pct": -127.66450488739434
       },
       "roi_pct": -112.53495000895677,
+      "tipping_points": {
+        "export_eur_per_kwh": -0.5308299302238615,
+        "import_eur_per_kwh": 0.9780458932812548,
+        "saving_share": 3.7227993930285885
+      },
       "within_budget": true,
       "years": [
         {

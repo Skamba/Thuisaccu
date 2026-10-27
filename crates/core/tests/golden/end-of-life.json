@@ -56,6 +56,11 @@
         "roi_pct": -68.54496973145069
       },
       "roi_pct": -50.09176604605994,
+      "tipping_points": {
+        "export_eur_per_kwh": -0.1913074127579279,
+        "import_eur_per_kwh": 0.5823015419116393,
+        "saving_share": 2.181134414392021
+      },
       "warranty_stress": {
         "break_even_investment_eur": 1040.2493072018763,
         "net_profit_eur": -1886.6797254904536,
