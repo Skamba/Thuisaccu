@@ -804,3 +804,26 @@ test("messagesOf leest de vaste codes, en herkent ze in oudere runs aan de tekst
   // Een lijstregel heeft alleen de profielwaarschuwingen.
   assert.deepEqual(codes({ warnings: [demo] }), ["warning:profile.demo"]);
 });
+
+test("band(): accu's die minder verschillen dan wat de aanbevolen accu in de ongunstige variant verliest", () => {
+  const option = (key, npv_eur, extra = {}) => ({ key, name: key, npv_eur, within_budget: true, pessimistic: { npv_eur: npv_eur - 400 }, ...extra });
+  const run = (candidates, objective = "net_present_value") => ({ input: { request: { parameters: { objective }, candidates: [] } },
+    result: { recommended_key: "a", candidates } });
+  const list = [option("a", 1000), option("b", 700), option("c", 601), option("d", 600), option("e", 950, { within_budget: false })];
+  // Verschil 300 en 399 vallen binnen de 400 die a ongunstig verliest; 400 precies niet, en boven budget telt niet.
+  const keys = r => [...Results.band(r, r.result.candidates[0]).map(c => c.key)];
+  assert.deepEqual(keys(run(list)), ["b", "c"]);
+  // Alleen bij het netto voordeel als doel, en alleen voor de aanbevolen accu.
+  assert.deepEqual(keys(run(list, "payback")), []);
+  assert.deepEqual([...Results.band(run(list), list[1])], []);
+  // Zonder ongunstige variant (oudere runs) is er geen onzekerheid om mee te vergelijken.
+  assert.deepEqual(keys(run([option("a", 1000, { pessimistic: undefined }), option("b", 999)])), []);
+});
+
+test("plainName(): aansluiting, bruikbare capaciteit en vermogen; zonder accu-invoer de productnaam", () => {
+  const run = { input: { request: { candidates: [{ key: "a", battery: { usable_capacity_kwh: 4.6, discharge_power_kw: 0.8 } }] } } };
+  const kinds = new Map([["a", "plug"]]);
+  assert.equal(Results.plainName(run, { key: "a", name: "Merk X · 5,12 kWh" }, kinds), "Stekker · 4,6 kWh · 0,8 kW");
+  assert.equal(Results.plainName(run, { key: "a", name: "X" }, new Map()), "Accu · 4,6 kWh · 0,8 kW");
+  assert.equal(Results.plainName(run, { key: "b", name: "Onbekend product" }, kinds), "Onbekend product");
+});

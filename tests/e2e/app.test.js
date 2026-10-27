@@ -257,8 +257,11 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   // Vijftig accu's doorrekenen duurt met de debug-build in CI zo'n 20 tot ruim 30 seconden.
   await page.waitForFunction(() => /berekeningen\/\d+/.test(location.hash), null, { timeout: 120000 });
   const runHash = await page.evaluate(() => location.hash);
-  // De titel zegt waarmee is gerekend, zodat berekeningen van dezelfde dag uit elkaar te houden zijn.
-  await page.waitForSelector("#page-title:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek, stekker')");
+  // De kop is het antwoord; de titel eronder zegt waarmee is gerekend, zodat berekeningen van dezelfde dag uit elkaar
+  // te houden zijn. Het browsertabblad heeft de korte titel.
+  await page.waitForSelector("#page-subtitle:text-is('Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek, stekker')");
+  assert.match(await page.textContent("#page-title"), /^Een accu (levert|loont|komt)/);
+  assert.equal(await page.title(), "Keuzehulp: 5.500 kWh verbruik, 3.800 kWh opwek, stekker · Thuisaccu");
   // Liggen de beste twee binnen de onzekerheid, dan noemt het korte antwoord de nummer twee (aangepaste kopie van deze run).
   const closeCall = await page.evaluate(async id => {
     const run = structuredClone(await Data.run(id)), [a, b, ...others] = run.result.candidates;

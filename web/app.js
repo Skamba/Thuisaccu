@@ -110,7 +110,7 @@
         link("Naar mijn berekeningen", "#/berekeningen", "button")));
         return; }
       page.setTitle(run.title);
-      await Results.render(run, view, actions, duplicate);
+      await Results.render(run, view, actions, duplicate, { page });
     }
   });
 
@@ -123,7 +123,7 @@
         view.append(UI.empty("De berekening in deze link is niet te lezen", error.message,
         link("Naar mijn berekeningen", "#/berekeningen", "button"))); return; }
       page.setTitle(run.title);
-      await Results.render(run, view, actions, null, { shared: true });
+      await Results.render(run, view, actions, null, { shared: true, page });
       // Wie een link krijgt, kan meteen de eigen situatie doorrekenen.
       actions.prepend(link("Reken je eigen situatie door", "#/keuzehulp", "button"));
     }
@@ -288,15 +288,18 @@
       else a.removeAttribute("aria-current"); });
     document.body.classList.remove("menu-open"); $("menu").setAttribute("aria-expanded", "false");
     $("page-title").textContent = found.page.title; $("page-subtitle").textContent = found.page.subtitle || "";
+    $("page-title").classList.remove("sentence");
     document.title = `${found.page.title} · Thuisaccu`;
     // Elk scherm krijgt verse elementen: een trager vorig scherm schrijft daarna in losgekoppelde elementen.
     const [view, actions] = ["view", "page-actions"].map(id => { const old = $(id), fresh = old.cloneNode(false);
       old.replaceWith(fresh); return fresh; });
     // Een scherm dat na een await zijn kop zet, doet dat alleen als het nog het actuele scherm is.
-    // `subtitle` vervangt de ondertitel als die is meegegeven, zoals bij een scherm dat niet gevonden is.
-    const context = { current: () => run === generation, setTitle(text, subtitle) {
+    // `subtitle` vervangt de ondertitel als die is meegegeven, zoals bij een scherm dat niet gevonden is; `tab` is een
+    // kortere titel voor het browsertabblad als de kop een hele zin is.
+    const context = { current: () => run === generation, setTitle(text, subtitle, tab = text) {
       if (run !== generation) return;
-      $("page-title").textContent = text; document.title = `${text} · Thuisaccu`;
+      $("page-title").textContent = text; document.title = `${tab} · Thuisaccu`;
+      $("page-title").classList.toggle("sentence", tab !== text);
       if (subtitle != null) $("page-subtitle").textContent = subtitle; } };
     view.setAttribute("aria-busy", "true");
     try { await found.page.render(view, actions, found.params, context); }
