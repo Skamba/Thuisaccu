@@ -687,7 +687,7 @@
   }
 
   UI.page("keuzehulp", {
-    nav: "Keuzehulp", icon: "help", title: "Welke thuisaccu past bij jou?",
+    nav: "Keuzehulp", group: "advice", icon: "help", title: "Welke thuisaccu past bij jou?",
       subtitle: "Vijf stappen in gewone taal. Duurt ongeveer vijf minuten.",
     render(view, actions) {
       load();
@@ -700,8 +700,33 @@
         { label: "Je energie", render: stepEnergy }, { label: "Je woning", render: stepHome },
           { label: "Je contract", render: stepContract },
         { label: "Wat je belangrijk vindt", render: stepGoal }, { label: "Controleren en berekenen", render: stepAdvice }
-      ], { validate: check, onShow: () => window.scrollTo(0, 0) });
-      view.append(flow.element); flow.show(0);
+      ], { validate: check, onShow: index => { last.hidden = index !== 0; window.scrollTo(0, 0); } });
+      // Wie terugkomt, ziet eerst zijn laatste advies; de keuzehulp staat eronder om opnieuw te rekenen.
+      const last = h("div");
+      view.append(last, flow.element); flow.show(0);
+      lastAdvice(last);
     }
   });
+
+  // De laatst bewaarde berekening als kaart boven stap 1, met dezelfde besproken accu als in Mijn berekeningen. Zonder
+  // berekeningen, of als de lijst niet laadt, blijft de plek leeg: de keuzehulp werkt ook zonder.
+  async function lastAdvice(holder) {
+    let runs;
+    try { runs = await Data.runs(); } catch { return; }
+    const run = runs?.[0];
+    if (!run || !holder.isConnected) return;
+    const quote = Results.quoted(run), option = quote ?? Results.judged(run), wins = Boolean(quote) || option?.key === run.result.recommended_key;
+    const npv = option?.npv_eur, outcome = !option ? "Geen accu doorgerekend"
+      : `${wins ? (quote ? `Je offerte, ${option.name}` : option.name) : "Geen accu komt het beste uit"}` +
+        (Number.isFinite(npv) ? `${wins ? ": " : "; de beste accu komt uit op "}${money(Math.abs(npv), { decimals: 0 })} netto ` +
+          `${npv >= 0 ? "voordeel" : "verlies"} over ${run.input.request.parameters.horizon_years} jaar.` : ".");
+    holder.replaceChildren(h("section", { class: "panel last-advice", "aria-labelledby": "last-advice-title" },
+      h("h2", { id: "last-advice-title" }, "Je laatste advies"),
+      h("p", {}, h("strong", {}, run.title), Results.isFictitious(run) ? [" ", UI.badge("FICTIEF", "demo")] : null,
+        h("small", { class: "help" }, `Berekend op ${UI.dateTime(run.created_at_unix_s)}`)),
+      h("p", {}, outcome),
+      h("div", { class: "actions" }, link("Bekijk je advies", `#/berekeningen/${run.id}`, "button"),
+        runs.length > 1 ? link(`Alle ${runs.length} berekeningen`, "#/berekeningen", "button ghost") : null),
+      h("p", { class: "help" }, "Of reken hieronder opnieuw, bijvoorbeeld met andere antwoorden of de prijzen van nu.")));
+  }
 })();

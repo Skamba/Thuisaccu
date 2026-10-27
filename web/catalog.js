@@ -289,7 +289,7 @@
   }
 
   UI.page("accus", {
-    nav: "Accu’s vergelijken", icon: "battery", title: "Accu’s vergelijken",
+    nav: "Accu’s vergelijken", group: "explore", icon: "battery", title: "Accu’s vergelijken",
       subtitle: "Onderzochte uitvoeringen met bron, zonder automatische winnaar.",
     async render(view, actions) {
       const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));

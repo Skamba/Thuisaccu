@@ -107,7 +107,7 @@
   }
 
   UI.page("energie", {
-    nav: "Energiegegevens", icon: "sun", title: "Energiegegevens",
+    nav: "Energiegegevens", group: "explore", icon: "sun", title: "Energiegegevens",
       subtitle: `Bewaarde profielen met opwek en verbruik, ${Local.where}.`,
     async render(view, actions) {
       actions.append(link("+ Importeer een bestand", "#/energie/import", "button"));

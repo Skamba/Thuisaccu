@@ -240,6 +240,11 @@ pub struct CandidateResult {
     /// Uitkomst met [`Candidate::warranty_stress`], met verder dezelfde aannames.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warranty_stress: Option<ExportVariantResult>,
+    /// De ongunstige variant ([`Self::pessimistic`]) met daarbovenop [`Candidate::warranty_stress`]: tegenvallende
+    /// tarieven en kosten én een accu die stopt na de garantie. Alleen bij een stresstest; ontbreekt in runs van vóór
+    /// 27 oktober 2026. Telt niet mee voor de keuze.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pessimistic_warranty_stress: Option<VariantResult>,
     /// Kantelpunten met de basisaannames; ontbreekt in runs van vóór 27 oktober 2026.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tipping_points: Option<TippingPoints>,
@@ -1030,6 +1035,7 @@ fn project(
         within_budget: p.budget_eur.is_none_or(|budget| upfront <= budget),
         export_variant: None,
         warranty_stress: None,
+        pessimistic_warranty_stress: None,
         tipping_points: None,
     }
 }
@@ -1198,6 +1204,12 @@ pub fn analyze_with(
             base.warranty_stress = Some(outcome(&project(
                 &baselines, &energies, parameters, c, 0, None,
             )));
+            let both = project(&baselines, &energies, parameters, c, -1, None);
+            base.pessimistic_warranty_stress = Some(VariantResult {
+                npv_eur: both.npv_eur,
+                net_profit_eur: both.net_profit_eur,
+                roi_pct: both.roi_pct,
+            });
         }
         base.pessimistic = VariantResult {
             npv_eur: low.npv_eur,

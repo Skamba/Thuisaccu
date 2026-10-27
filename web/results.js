@@ -504,6 +504,8 @@ window.Results = (() => {
       ["optimistic", "Gunstig", `tarieven ${price}% hoger, kosten ${cost}% lager`]);
     if (v && run.result.candidates.some(c => c.export_variant)) out.push(["export", v.label, `vanaf ${v.from_calendar_year}`]);
     if (shownLanes.some(l => l.option && warranty(run, l.option))) out.push(["stress", "Stopt na de garantie", "kortere levensduur, sneller capaciteitsverlies"]);
+    // Beide tegelijk; alleen in runs vanaf 27 oktober 2026 en bij een bekende garantie.
+    if (shownLanes.some(l => l.option?.pessimistic_warranty_stress)) out.push(["pessimistic_warranty_stress", "Ongunstig en stopt na de garantie", "beide tegelijk"]);
     return out;
   }
   // De uitkomst van een optie in een variant; geen accu is in elke variant het vergelijkingspunt. Null als de variant
@@ -519,7 +521,7 @@ window.Results = (() => {
     const top = Math.max(...outcomes.filter(o => o && finite(o.npv_eur)).map(o => o.npv_eur));
     const status = (lane, i) => base ? ((lane.option?.key ?? "no_battery") === result.recommended_key ? "Komt het beste uit" : null)
       : outcomes[i] && outcomes[i].npv_eur === top ? "Hoogste netto voordeel in deze variant" : null;
-    const missing = () => variant === "stress" ? "Geen garantie bekend" : "Niet berekend";
+    const missing = () => ["stress", "pessimistic_warranty_stress"].includes(variant) ? "Geen garantie bekend" : "Niet berekend";
     const payback = value => value === undefined ? "Niet berekend" : value == null ? `Niet binnen ${p.horizon_years} jaar` : years(value);
     const rows = [
       ["Accu", null, c => { const b = inputs.get(c.key)?.battery;
@@ -611,6 +613,10 @@ window.Results = (() => {
         "berekening kosten meer dan ze extra opleveren." : ".");
   }
 
+  // Als het tegenzit: de laagste uitkomst over de varianten behalve gunstig, dus ook stopt na de garantie en
+  // ongunstig en stopt na de garantie samen (oudere runs hebben alleen ongunstig). Dezelfde ondergrens als in de kop.
+  const worst = (run, option) => Math.min(...variants(run, [{ option }]).filter(([key]) => key !== "optimistic")
+    .map(([key]) => laneOutcome(run, option, key)?.npv_eur).filter(finite));
   // De bandbreedte op de kaart: als het tegenzit en als het meezit als tekst aan de uiteinden, ertussen een balk op één
   // schaal met geen accu (€ 0) als streep en de basisaannames als punt. De balk is versiering; de tekst is het antwoord.
   function rangeBar(low, mid, high, outcome) {
@@ -662,7 +668,7 @@ window.Results = (() => {
     const span = `over ${p.horizon_years} jaar, in geld van nu`;
     const name = option ? plainName(run, option, kinds) : null;
     const range = option && finite(option.pessimistic?.npv_eur) && finite(option.optimistic?.npv_eur)
-      ? rangeBar(option.pessimistic.npv_eur, option.npv_eur, option.optimistic.npv_eur, outcome) : null;
+      ? rangeBar(worst(run, option), option.npv_eur, option.optimistic.npv_eur, outcome) : null;
     const items = turns(run, option, ctx);
     const why = [h("p", {}, result.recommendation),
       quote && rec ? h("p", {}, "Ook zonder offerte komt deze accu in deze berekening het beste uit.") : null,
@@ -1750,7 +1756,9 @@ window.Results = (() => {
     });
     if (others.children.length) out.append(rest(`Toon de invoer van de overige ${others.children.length} opties`, others));
     out.append(h("p", { class: "help" }, "Meetgrenzen, technische aannames en kosten zijn vóór deze berekening bevestigd."),
-      h("details", {}, h("summary", {}, "Vastgelegde invoer als JSON"), h("pre", {}, JSON.stringify(input, null, 2))));
+      // Als bestand in plaats van een tekstblok: de invoer is honderden kilobytes en maakte de pagina traag.
+      h("p", {}, button("Download de vastgelegde invoer (JSON)", () => UI.downloadBlob(`invoer-berekening-${run.id ?? "gedeeld"}.json`,
+        new Blob([JSON.stringify(input, null, 2)], { type: "application/json" })), "secondary")));
     return out;
   }
 
@@ -2000,10 +2008,11 @@ window.Results = (() => {
           : h("p", {}, "Geen waarschuwingen bij deze invoer."),
           split.notes.length ? h("details", { class: "fold model-notes" }, h("summary", {}, `Zo rekent het model (${split.notes.length})`),
             h("ul", { class: "notes" }, split.notes.map(text => h("li", {}, text)))) : null] },
-      { label: "Offertecheck", content: quoteCheck(run, all, categories) },
-      { label: "Kostenopbouw", content: costs(run, all, categories) }, { label: "Kasstromen", content: cashflows(run, all) },
-      { label: "Energie", content: energy(all) }, { label: "Gevoeligheid", content: sensitivity(run, all) },
-      { label: "Invoer", content: inputs(run, categories, all) }
+      // De andere tabbladen bouwen pas op bij het eerste bezoek of bij het afdrukken (`UI.tabs`).
+      { label: "Offertecheck", content: () => quoteCheck(run, all, categories) },
+      { label: "Kostenopbouw", content: () => costs(run, all, categories) }, { label: "Kasstromen", content: () => cashflows(run, all) },
+      { label: "Energie", content: () => energy(all) }, { label: "Gevoeligheid", content: () => sensitivity(run, all) },
+      { label: "Invoer", content: () => inputs(run, categories, all) }
     ], 0, "Onderdelen van de uitkomst");
     // Op een telefoon staan de tabbladen een paar schermen lager; deze knop springt erheen (alleen op een smal scherm).
     const jump = h("button", { type: "button", class: "ghost jump-tabs", onclick: () => {

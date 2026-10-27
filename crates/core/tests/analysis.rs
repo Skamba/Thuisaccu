@@ -988,6 +988,11 @@ fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone(
     close(stress.npv_eur, 3354.4);
     close(stress.break_even_investment_eur, 3854.4);
     assert_eq!(stress.payback_years, Some(1));
+    // Samen met de ongunstige variant (20% prijs, 15% kosten): 8.760 × (0,24 − 0,096) = 1.261,44 per jaar,
+    // twee jaar, min 500 × 1,15 = 575 aan kosten: 1.947,88.
+    let both = base.pessimistic_warranty_stress.as_ref().unwrap();
+    close(both.net_profit_eur, 2.0 * 1261.44 - 575.0);
+    close(both.npv_eur, 1947.88);
     assert_eq!(r.recommended_key, "garantie");
     assert!(
         r.warnings
@@ -1016,6 +1021,7 @@ fn warranty_stress_stops_the_savings_after_its_life_and_leaves_the_choice_alone(
     let plain = candidate("plain", 2.0, 50_000);
     let r = analysis::analyze(&profile(), &p, &[plain]).unwrap();
     assert!(r.candidates[0].warranty_stress.is_none());
+    assert!(r.candidates[0].pessimistic_warranty_stress.is_none());
     for (life, basis) in [(0, "Garantie"), (2, " ")] {
         let mut bad = c.clone();
         bad.warranty_stress = Some(analysis::BatteryStress {
@@ -1057,6 +1063,11 @@ fn warranty_stress_of_several_candidates_equals_a_separate_run_with_the_stressed
             stressed.net_profit_eur,
             separate.candidates[0].net_profit_eur,
         );
+        let both = together.candidates[index]
+            .pessimistic_warranty_stress
+            .as_ref()
+            .unwrap();
+        close(both.npv_eur, separate.candidates[0].pessimistic.npv_eur);
     }
     assert!(together.candidates[1].warranty_stress.is_none());
 }

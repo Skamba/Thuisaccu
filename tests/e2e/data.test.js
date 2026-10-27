@@ -767,6 +767,11 @@ test("answer(): de kop zegt of een accu loont en hoe zeker, over de doorgerekend
   assert.equal(Results.answer(run("no_battery", never, false), never), "Een accu loont in deze berekening niet");
   // Een ander doel kan een accu aanraden die geld kost.
   assert.equal(Results.answer(run("a", none), none), "Een accu komt met dit doel het beste uit, maar kost geld");
+  // Ongunstig en stopt na de garantie tegelijk telt mee: is die combinatie negatief, dan is het niet zeker.
+  const both = { ...sure, pessimistic_warranty_stress: { npv_eur: -120 } };
+  assert.equal(Results.answer(run("a", both), both), "Een accu loont met deze aannames, maar het is niet zeker");
+  const holds = { ...sure, pessimistic_warranty_stress: { npv_eur: 40 } };
+  assert.equal(Results.answer(run("a", holds), holds), "Een accu loont, ook als het tegenzit");
 });
 
 test("messagesOf leest de vaste codes, en herkent ze in oudere runs aan de tekst", () => {

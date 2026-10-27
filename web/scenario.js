@@ -873,7 +873,7 @@ window.Scenario = (() => {
   }
 
   UI.page("zelf", {
-    nav: "Zelf doorrekenen", icon: "sliders", title: "Zelf doorrekenen",
+    nav: "Zelf doorrekenen", group: "explore", icon: "sliders", title: "Zelf doorrekenen",
       subtitle: "Voor wie offertes heeft: alle aannames en kostenposten zelf invullen.",
     render(view, actions) {
       state = { ...blank(), ...store.get(STORE, {}) };

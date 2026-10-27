@@ -55,6 +55,11 @@
         "npv_eur": -2453.0866612584223,
         "roi_pct": -68.54496973145069
       },
+      "pessimistic_warranty_stress": {
+        "net_profit_eur": -2643.07542304232,
+        "npv_eur": -2696.0325261725015,
+        "roi_pct": -76.61088182731362
+      },
       "roi_pct": -50.09176604605994,
       "tipping_points": {
         "export_eur_per_kwh": -0.1913074127579279,

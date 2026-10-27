@@ -343,6 +343,11 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   await steps.locator("button:has-text('Naar de offertecheck')").click();
   assert.equal(await page.textContent("[role=tab][aria-selected=true]"), "Offertecheck");
   await page.click("[role=tab]:has-text('Overzicht')");
+  // Tabbladen bouwen pas op bij het eerste bezoek; de Invoer is er dus nog niet.
+  assert.equal(await page.locator("[role=tabpanel]").last().evaluate(el => el.childElementCount), 0);
+  // ‘Hoe zeker’ kent ook ongunstig en stopt na de garantie tegelijk, als er een garantie bekend is.
+  if (stressed.length) assert.ok((await page.$$eval(".variant-switch option", os => os.map(o => o.textContent)))
+    .some(t => t.startsWith("Ongunstig en stopt na de garantie")));
   // Eén h1 en geen kop die een niveau overslaat (vensters tellen niet mee).
   const outline = await page.$$eval("h1, #view h2, #view h3, #view h4", hs => hs.filter(x => !x.closest("dialog") && x.offsetParent)
     .map(x => Number(x.tagName[1])));
@@ -435,6 +440,10 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Terugleveringsvariant/);
   // Lange lijsten: de beste vijf in beeld, de rest ingeklapt.
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /Toon de invoer van de overige \d+ opties/);
+  // De vastgelegde invoer is een bestand, geen tekstblok van honderden kilobytes.
+  assert.equal(await page.locator("#view pre").count(), 0);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click("button:has-text('Download de vastgelegde invoer (JSON)')")]);
+  assert.match(download.suggestedFilename(), /^invoer-berekening-\d+\.json$/);
   // Gewoon afdrukken geeft het overzicht en de waarschuwingen; ‘Alles afdrukken’ alle tabbladen.
   const printed = () => page.$$eval("[role=tabpanel]", panels => panels.map(p => getComputedStyle(p).display !== "none"));
   await page.emulateMedia({ media: "print" });
@@ -487,6 +496,17 @@ test("keuzehulp met jaartotalen, warmtepomp en terugleveringsvariant", async () 
     assert.ok(over <= 0, `${tab}: ${over}px te breed`);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
+  // Wie terugkomt in de keuzehulp, ziet eerst het laatste advies met een knop ernaartoe; vanaf stap 2 niet meer.
+  await page.goto(`${base}/#/keuzehulp`);
+  const last = page.locator(".last-advice");
+  await last.waitFor();
+  assert.match(await last.textContent(), /^Je laatste advies/);
+  assert.equal(await last.locator("a:has-text('Bekijk je advies')").getAttribute("href"), runHash);
+  // De navigatie staat in twee groepen, met Instellingen los eronder.
+  assert.deepEqual(await page.$$eval("#nav .nav-heading", hs => hs.map(x => x.textContent)), ["Je advies", "Verder uitzoeken"]);
+  assert.deepEqual(await page.$$eval("#nav [role=group]:first-child a", as => as.map(a => a.dataset.page)), ["keuzehulp", "berekeningen"]);
+  await last.locator("a:has-text('Bekijk je advies')").click();
+  await page.waitForSelector(".verdict");
 
   // ‘Pas aan en reken opnieuw’ neemt bij meer dan twaalf opties de beste over, zodat er nog een eigen optie bij past.
   const stored = await page.evaluate(async hash => (await UI.api(`/api/v1/analysis/runs/${hash.split("/").pop()}`)).input.request, runHash);

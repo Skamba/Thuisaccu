@@ -41,7 +41,13 @@ pre { overflow: auto; max-height: 30rem; background: var(--soft); padding: var(-
 .sidebar-head { display: flex; justify-content: space-between; align-items: center; }
 .brand { font-weight: 800; font-size: 1.3rem; letter-spacing: -.03em; text-decoration: none; color: var(--ink); padding-left: .4rem; }
 .menu-button { display: none; }
-#nav { display: flex; flex-direction: column; gap: .2rem; }
+#nav { display: flex; flex-direction: column; gap: .9rem; }
+.nav-group { display: flex; flex-direction: column; gap: .2rem; }
+.nav-heading { margin: 0 0 .1rem; padding: 0 .7rem; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.nav-rest { margin-top: .4rem; padding-top: .7rem; border-top: 1px solid var(--line); }
+.last-advice { border-left: 4px solid var(--accent); }
+.last-advice h2 { margin-top: 0; }
+.last-advice .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 #nav a { display: flex; align-items: center; gap: .65rem; padding: .6rem .7rem; border-radius: var(--radius); color: var(--ink); text-decoration: none; font-weight: 600; }
 #nav a:hover { background: var(--soft); }
 #nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }

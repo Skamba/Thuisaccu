@@ -51,7 +51,7 @@
   }
 
   UI.page("berekeningen", {
-    nav: "Mijn berekeningen", icon: "list", title: "Mijn berekeningen",
+    nav: "Mijn berekeningen", group: "advice", icon: "list", title: "Mijn berekeningen",
       subtitle: "Bewaarde uitkomsten, elk met de oorspronkelijke invoer.",
     async render(view, actions) {
       actions.append(link("Nieuwe keuzehulp", "#/keuzehulp", "button"));
@@ -313,11 +313,16 @@
   function start() {
     for (const key of ["theme", "density"]) document.documentElement.dataset[key] = store.get(`thuisaccu-${key}`,
       key === "theme" ? "system" : "comfortable");
-    const nav = $("nav");
-    for (const [key, page] of UI.pages) {
-      if (!page.nav) continue;
-      nav.append(h("a", { href: `#/${key}`, dataset: { page: key } }, icon(page.icon), h("span", {}, page.nav)));
+    // Twee groepen: eerst wat iedereen nodig heeft (advies en bewaarde uitkomsten), dan het verdere uitzoekwerk;
+    // Instellingen staat los onderaan. Een scherm zonder `group` komt in die laatste rij.
+    const nav = $("nav"), entry = (key, page) => h("a", { href: `#/${key}`, dataset: { page: key } }, icon(page.icon), h("span", {}, page.nav));
+    const shown = [...UI.pages].filter(([, page]) => page.nav);
+    for (const [group, title] of [["advice", "Je advies"], ["explore", "Verder uitzoeken"]]) {
+      const id = `nav-${group}`;
+      nav.append(h("div", { class: "nav-group", role: "group", "aria-labelledby": id }, h("p", { class: "nav-heading", id }, title),
+        shown.filter(([, page]) => page.group === group).map(([key, page]) => entry(key, page))));
     }
+    UI.append(nav, shown.filter(([, page]) => !page.group).map(([key, page]) => h("div", { class: "nav-group nav-rest" }, entry(key, page))));
     $("menu").addEventListener("click",
       () => { const open = document.body.classList.toggle("menu-open");
         $("menu").setAttribute("aria-expanded", String(open)); });
@@ -328,8 +333,10 @@
     // Behalve .print-closed: lange herhalende lijsten (zoals de garantiestresstest per accu) blijven dicht.
     // Gewoon afdrukken van een uitkomst laat de uitleg in ‘Wat betekent dit voor jou?’ dicht (styles.css); een open venster
     // gaat dicht, anders ligt het op papier over de pagina heen.
+    // Tabbladen die nog niet bezocht zijn, worden eerst opgebouwd (`UI.buildTabs`), zodat ook hun uitleg openklapt.
     window.addEventListener("beforeprint", () => {
       document.querySelectorAll("dialog.popup[open]").forEach(dialog => dialog.close());
+      UI.buildTabs();
       const all = document.body.classList.contains("print-all");
       document.querySelectorAll("details.fold:not([open]):not(.print-closed)").forEach(fold => {
         if (!all && fold.closest(".summary")) return;

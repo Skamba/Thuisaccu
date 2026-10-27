@@ -312,12 +312,45 @@ window.UI = (() => {
   const empty = (title, text, ...actions) => h("div", { class: "empty" }, h("h2", {}, title), h("p", {}, text),
     h("div", { class: "actions" }, actions));
 
-  // Tabbladen met pijltjestoetsen, Home en End.
+  // Tabbladen die nog moeten worden opgebouwd, voor het afdrukken (`buildTabs`).
+  const unbuilt = new Set();
+  // Bouwt een tabblad op met `content()`; gaat dat mis, dan een melding met een knop om het opnieuw te proberen in
+  // plaats van een leeg tabblad.
+  function build(panel, content) {
+    try {
+      const children = [content()];
+      panel.replaceChildren();
+      append(panel, children);
+    } catch (error) {
+      console.error(error);
+      panel.replaceChildren(h("p", { class: "callout", role: "alert" }, "Dit onderdeel kon niet worden opgebouwd. "),
+        h("button", { type: "button", class: "secondary", onclick: () => build(panel, content) }, "Probeer opnieuw"));
+    }
+  }
+  // Bouwt alle tabbladen op die nog op een eerste bezoek wachten, zodat ze ook afgedrukt kunnen worden. Tabbladen van
+  // een pagina die niet meer in beeld is, vallen af.
+  function buildTabs() {
+    for (const pending of [...unbuilt]) {
+      if (pending.list.isConnected) pending();
+      else unbuilt.delete(pending);
+    }
+  }
+
+  // Tabbladen met pijltjestoetsen, Home en End. Is `content` een functie, dan bouwt het tabblad pas op als het voor het
+  // eerst getoond wordt (of bij het afdrukken); zo blijft een pagina met veel tabbladen licht.
   function tabs(entries, initial = 0, label) {
     const id = uid("tabs"), list = h("div", { class: "tabs", role: "tablist", "aria-label": label }), panels = [];
+    const pending = entries.map((entry, i) => {
+      if (typeof entry.content !== "function") return null;
+      const once = () => { unbuilt.delete(once); pending[i] = null; build(panels[i], entry.content); };
+      once.list = list;
+      unbuilt.add(once);
+      return once;
+    });
     const show = index => entries.forEach((_, i) => {
       list.children[i].setAttribute("aria-selected", String(i === index));
       list.children[i].tabIndex = i === index ? 0 : -1;
+      if (i === index) pending[i]?.();
       panels[i].hidden = i !== index;
     });
     entries.forEach(({ label, content, class: name }, index) => {
@@ -332,7 +365,8 @@ window.UI = (() => {
         event.preventDefault(); show(next); list.children[next].focus();
       });
       list.append(tab);
-      panels.push(h("div", { role: "tabpanel", id: `${id}-panel-${index}`, "aria-labelledby": tab.id }, content));
+      panels.push(h("div", { role: "tabpanel", id: `${id}-panel-${index}`, "aria-labelledby": tab.id },
+        typeof content === "function" ? null : content));
     });
     show(initial);
     return h("div", { class: "tabset" }, list, panels);
@@ -670,6 +704,6 @@ window.UI = (() => {
   return {
     h, svg, append, $, uid, liveCheck, finite, number, money, kwh, pct, years, dateTime, dateOnly, parse, parseProblem, plain, api, store, toast, busy,
     csvCell, clip, button, link, popup, dialogPanel, opens, closePopup, external, badge, menu, field, input, numberInput, select, choice, checkbox, validate, reject, table, stats, empty,
-    tabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
+    tabs, buildTabs, wizard, dialog, confirm, reload, downloadCsv, downloadBlob, chart, palette, pages, page
   };
 })();
