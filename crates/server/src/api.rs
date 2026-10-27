@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Multipart, Path, State},
+    extract::{Multipart, State},
     http::{StatusCode, header},
     response::IntoResponse,
 };
@@ -15,6 +15,7 @@ use thuisaccu_storage::{
 };
 
 use crate::{
+    extract::{ApiJson, ApiMultipart, ApiPath},
     solar_import::{self, ImportOptions, MeterOptions},
     typical_profile::{self, TypicalRequest},
 };
@@ -107,7 +108,7 @@ fn identity(
 
 pub async fn add_candidate(
     State(catalog): State<Catalog>,
-    Json(input): Json<CandidateDraft>,
+    ApiJson(input): ApiJson<CandidateDraft>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let id = catalog
         .add_candidate(&input, Utc::now().timestamp())
@@ -322,7 +323,7 @@ async fn upload(mut multipart: Multipart) -> Result<Upload, ApiError> {
     })
 }
 
-pub async fn inspect(multipart: Multipart) -> Result<Json<Value>, ApiError> {
+pub async fn inspect(ApiMultipart(multipart): ApiMultipart) -> Result<Json<Value>, ApiError> {
     let input = upload(multipart).await?;
     let result = crate::blocking(move || {
         solar_import::read_table(&input.filename, &input.bytes, &input.options)
@@ -367,14 +368,14 @@ async fn process(
     .map_err(bad_request)
 }
 
-pub async fn preview(multipart: Multipart) -> Result<Json<Value>, ApiError> {
+pub async fn preview(ApiMultipart(multipart): ApiMultipart) -> Result<Json<Value>, ApiError> {
     let (_, _, summary) = process(multipart).await?;
     Ok(Json(json!(summary)))
 }
 
 pub async fn save_solar(
     State(catalog): State<Catalog>,
-    multipart: Multipart,
+    ApiMultipart(multipart): ApiMultipart,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let (input, intervals, summary) = process(multipart).await?;
     let mut hasher = Sha256::new();
@@ -437,7 +438,7 @@ pub(crate) fn missing(message: &str) -> ApiError {
 /// Verwijdert een profiel en de berekeningen die erop zijn gemaakt; dat vraagt de interface eerst.
 pub async fn delete_solar(
     State(catalog): State<Catalog>,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let runs = catalog
         .delete_solar(id)
@@ -450,7 +451,7 @@ pub async fn delete_solar(
 /// Maakt een geschat jaarprofiel uit jaartotalen en bewaart het als gemodelleerde import.
 pub async fn save_typical(
     State(catalog): State<Catalog>,
-    Json(request): Json<TypicalRequest>,
+    ApiJson(request): ApiJson<TypicalRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let profile = crate::blocking(move || typical_profile::build(&request))
         .await?

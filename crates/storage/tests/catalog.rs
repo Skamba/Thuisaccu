@@ -597,7 +597,7 @@ async fn steady_consumption_is_stored_and_never_exceeds_gross_consumption() {
 }
 
 #[tokio::test]
-async fn measured_grid_values_are_stored_in_pairs_and_filled_in_for_older_imports() {
+async fn measured_grid_values_are_stored_in_pairs_and_a_duplicate_upload_changes_nothing() {
     use thuisaccu_storage::solar::SolarInterval;
     let catalog = Catalog::in_memory().await.unwrap();
     let interval = |measured: Option<(f64, f64)>| SolarInterval {
@@ -609,16 +609,7 @@ async fn measured_grid_values_are_stored_in_pairs_and_filled_in_for_older_import
         measured_import_wh: measured.map(|m| m.0),
         measured_export_wh: measured.map(|m| m.1),
     };
-    // Zoals een import van vóór migratie 5: zelfde bestand en instellingen, zonder meterwaarden.
     let id = catalog
-        .save_solar("fixture", &"a".repeat(64), "{}", "{}", &[interval(None)], 0)
-        .await
-        .unwrap();
-    assert_eq!(
-        catalog.solar_intervals(id).await.unwrap()[0].measured_import_wh,
-        None
-    );
-    let again = catalog
         .save_solar(
             "fixture",
             &"a".repeat(64),
@@ -629,26 +620,29 @@ async fn measured_grid_values_are_stored_in_pairs_and_filled_in_for_older_import
         )
         .await
         .unwrap();
-    assert_eq!(again, id);
     let stored = catalog.solar_intervals(id).await.unwrap();
     assert_eq!(stored[0].measured_import_wh, Some(500.0));
     assert_eq!(stored[0].measured_export_wh, Some(500.0));
-    // Bestaande meterwaarden worden niet overschreven.
-    catalog
-        .save_solar(
-            "fixture",
-            &"a".repeat(64),
-            "{}",
-            "{}",
-            &[interval(Some((900.0, 900.0)))],
-            0,
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        catalog.solar_intervals(id).await.unwrap()[0].measured_import_wh,
-        Some(500.0)
-    );
+    // Hetzelfde bestand met dezelfde instellingen geeft het bestaande profiel terug, met dezelfde
+    // intervallen: bewaarde berekeningen houden zo hun profiel-hash.
+    for measured in [None, Some((900.0, 900.0))] {
+        let again = catalog
+            .save_solar(
+                "fixture",
+                &"a".repeat(64),
+                "{}",
+                "{}",
+                &[interval(measured)],
+                0,
+            )
+            .await
+            .unwrap();
+        assert_eq!(again, id);
+        let unchanged = catalog.solar_intervals(id).await.unwrap();
+        assert_eq!(unchanged.len(), 1);
+        assert_eq!(unchanged[0].measured_import_wh, Some(500.0));
+        assert_eq!(unchanged[0].measured_export_wh, Some(500.0));
+    }
     // Alleen samen, niet-negatief en met bruto verbruik.
     let mut single = interval(Some((500.0, 500.0)));
     single.measured_export_wh = None;

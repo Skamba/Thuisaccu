@@ -115,7 +115,8 @@ const strayText = page => page.evaluate(() => {
 
 // Synthetisch jaar: omvormer per kwartier, slimme meter per uur, zonder bestaande accu.
 function syntheticYear(dir) {
-  const inverter = ["tijdstip,opwek_kwh"], meter = ["datum,afname_kwh,teruglevering_kwh"];
+  // Teruglevering vóór ‘levering’ (afname, zoals leveranciers het noemen): de kolomkeuze mag ze niet verwarren.
+  const inverter = ["tijdstip,opwek_kwh"], meter = ["datum,teruglevering_kwh,levering_kwh"];
   const start = Date.UTC(2025, 0, 1);
   for (let hour = 0; hour < 8760; hour++) {
     const time = new Date(start + hour * 3600e3), h = time.getUTCHours();
@@ -126,8 +127,8 @@ function syntheticYear(dir) {
       inverter.push(`${new Date(time.getTime() + q * 900e3).toISOString().slice(0, 19)}Z,${value.toFixed(4)}`);
     }
     const load = 0.25 + (h >= 17 && h < 22 ? 0.6 : 0);
-    meter.push(`${time.toISOString().slice(0, 19)}Z,${Math.max(0, load - produced).toFixed(4)},`
-      + `${Math.max(0, produced - load).toFixed(4)}`);
+    meter.push(`${time.toISOString().slice(0, 19)}Z,${Math.max(0, produced - load).toFixed(4)},`
+      + `${Math.max(0, load - produced).toFixed(4)}`);
   }
   const files = { inverter: path.join(dir, "omvormer.csv"), meter: path.join(dir, "p1.csv") };
   fs.writeFileSync(files.inverter, `${inverter.join("\n")}\n`);
@@ -564,6 +565,7 @@ test("omvormer- en meterbestand worden één bruikbaar jaarprofiel", async () =>
   await page.waitForSelector("figure.chart >> nth=1", { timeout: 30000 });
   assert.match(await page.textContent("#view"), /volgens de gemeten netafname en teruglevering/);
   assert.equal(await page.locator(".callout", { hasText: "Importeer dit bestand opnieuw" }).count(), 0);
+  assert.deepEqual(await strayText(page), []);
   // Verwijderen uit het overzicht; zonder berekeningen zegt de vraag dat ook.
   await page.goto(`${base}/#/energie`);
   await row.locator("button:has-text('Verwijder')").click();
@@ -763,6 +765,12 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   const yearly = await page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" })
     .evaluate(t => [...t.tBodies[0].rows].map(r => Number(r.cells[1].textContent.replace(/\D/g, ""))));
   assert.ok(Math.abs(yearly[1] - yearly[0] - 2500) < 50, JSON.stringify(yearly.slice(0, 2)));
+  // Zonder lening zijn rente en aflossing elk jaar € 0: één zin in plaats van twee lege kolommen.
+  // Bedragen staan rechts uitgelijnd, zodat ze onder elkaar te vergelijken zijn.
+  const yearTable = page.locator("[role=tabpanel]:not([hidden]) table", { hasText: "Bruto verbruik" });
+  assert.doesNotMatch(await yearTable.locator("thead").textContent(), /Leningrente|Aflossing/);
+  assert.match(await page.textContent("[role=tabpanel]:not([hidden])"), /eningrente en aflossing: € 0 in alle jaren\./);
+  assert.equal(await yearTable.locator("tbody td.num").first().evaluate(td => getComputedStyle(td).textAlign), "right");
   assert.match(await page.textContent("[role=tabpanel]:not([hidden])"),
     /Extra verbruik ‘Warmtepomp’: vanaf 1 januari 2028 komt er 2\.500 kWh per jaar bij/);
   // Een kopie begint met een leeg adresveld, niet met de omschrijving, en houdt de warmtepomp.
@@ -1227,6 +1235,32 @@ test("browserversie bewaart gegevens in deze browser en maakt een back-up", { sk
   assert.deepEqual([...problems, ...fresh.problems], []);
   await fresh.close();
   await close();
+});
+
+test("een niet bewaarde wijziging vraagt om bevestiging bij sluiten", { skip: !BROWSER_MODE, timeout: 60000 }, async () => {
+  const closing = page => page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  // Bewaren in IndexedDB mislukt altijd, zoals bij een volle schijf; het laden van de referentiesets is een wijziging.
+  const marker = "const bytes = snapshot(), at = changes();";
+  patchWorker = body => { assert.ok(body.includes(marker));
+    return body.replace(marker, `return Promise.reject(new Error("test: opslag vol")); ${marker}`); };
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/accus`);
+  await page.waitForSelector("#unsaved", { timeout: 30000 });
+  assert.match(await page.textContent("#unsaved"), /Maak een back-up voordat je dit tabblad sluit/);
+  assert.equal(await closing(page), true);
+  await close();
+  patchWorker = null;
+  // Zonder openstaande of mislukte wijziging sluit het tabblad zonder vraag.
+  const normal = await open();
+  await normal.page.goto(`${base}/#/accus`);
+  await normal.page.waitForSelector("table tbody tr", { timeout: 30000 });
+  assert.equal(await closing(normal.page), false);
+  assert.deepEqual([...problems, ...normal.problems], []);
+  await normal.close();
 });
 
 test("na een fout in de rekenmodule houdt dit tabblad de database", { skip: !BROWSER_MODE, timeout: 60000 }, async () => {

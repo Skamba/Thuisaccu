@@ -310,7 +310,8 @@
       event => { event.preventDefault(); $("page-title").focus(); });
     window.addEventListener("hashchange", route);
     // Ingeklapte uitleg (.fold) hoort op papier; een gesloten <details> toont in de print alleen de kop.
-    window.addEventListener("beforeprint", () => document.querySelectorAll("details.fold:not([open])")
+    // Behalve .print-closed: lange herhalende lijsten (zoals de garantiestresstest per accu) blijven dicht.
+    window.addEventListener("beforeprint", () => document.querySelectorAll("details.fold:not([open]):not(.print-closed)")
       .forEach(fold => { fold.open = true; fold.dataset.printOpened = ""; }));
     window.addEventListener("afterprint", () => document.querySelectorAll("details[data-print-opened]")
       .forEach(fold => { fold.open = false; delete fold.dataset.printOpened; }));

@@ -121,20 +121,8 @@ impl Catalog {
                 params![sha256, options],
                 |row| row.get(0),
             )?;
-            // Hetzelfde bestand met dezelfde instellingen, geïmporteerd vóór migratie 5: vul
-            // alleen de ontbrekende meterwaarden aan; bestaande waarden blijven staan.
-            if intervals.iter().any(|i| i.measured_import_wh.is_some()) {
-                let mut update = tx.prepare("UPDATE solar_intervals SET measured_import_wh = ?, measured_export_wh = ? WHERE import_id = ? AND start_unix_s = ? AND end_unix_s = ? AND measured_import_wh IS NULL")?;
-                for item in intervals {
-                    update.execute(params![
-                        item.measured_import_wh,
-                        item.measured_export_wh,
-                        id,
-                        item.start_unix_s,
-                        item.end_unix_s
-                    ])?;
-                }
-            }
+            // Hetzelfde bestand met dezelfde instellingen: het bestaande profiel blijft ongewijzigd,
+            // zodat bewaarde berekeningen op dezelfde intervallen (en profiel-hash) blijven passen.
             tx.commit()?;
             return Ok(id);
         };

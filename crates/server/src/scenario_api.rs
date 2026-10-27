@@ -1,9 +1,8 @@
-use crate::api::{ApiError, database_error};
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
+use crate::{
+    api::{ApiError, database_error},
+    extract::{ApiJson, ApiPath},
 };
+use axum::{Json, extract::State, http::StatusCode};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -165,7 +164,7 @@ pub async fn costs() -> Json<Value> {
 
 pub async fn run(
     State(catalog): State<Catalog>,
-    Json(request): Json<RunRequest>,
+    ApiJson(request): ApiJson<RunRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     validate_request(&request)?;
     save_run(&catalog, request, None, None).await
@@ -176,7 +175,7 @@ pub async fn run(
 /// invoer niet meer, of is het profiel weg of veranderd, dan volgt een melding en geen berekening.
 pub async fn recalculate(
     State(catalog): State<Catalog>,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let saved = catalog
         .analysis(id)
@@ -384,7 +383,7 @@ async fn load_profile(
 /// Bovengrens van zelf gebruikte zonnestroom per accugrootte, als hulp bij het kiezen van een bereik.
 pub async fn capacity_curve(
     State(catalog): State<Catalog>,
-    Path(import_id): Path<i64>,
+    ApiPath(import_id): ApiPath<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let (profile, _) = load_profile(&catalog, import_id).await?;
     // Dezelfde eisen als een berekening: dagtotalen zouden de bovengrens sterk overschatten.
@@ -419,7 +418,7 @@ pub async fn capacity_curve(
 
 pub async fn delete_run(
     State(catalog): State<Catalog>,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<Value>, ApiError> {
     if !catalog.delete_analysis(id).await.map_err(database_error)? {
         return Err(crate::api::missing("Deze berekening bestaat niet (meer)."));
@@ -438,7 +437,7 @@ pub async fn history(State(catalog): State<Catalog>) -> Result<Json<Value>, ApiE
 /// Eén bewaarde berekening met de volledige invoer en uitkomst, ook als ze ouder is dan de laatste 100.
 pub async fn saved_run(
     State(catalog): State<Catalog>,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let run = catalog.analysis(id).await.map_err(database_error)?;
     let run = run.ok_or_else(|| crate::api::missing("Deze berekening bestaat niet (meer)."))?;
@@ -451,7 +450,7 @@ pub struct AddressSearch {
     pub query: String,
 }
 
-pub async fn address(Json(input): Json<AddressSearch>) -> Result<Json<Value>, ApiError> {
+pub async fn address(ApiJson(input): ApiJson<AddressSearch>) -> Result<Json<Value>, ApiError> {
     if !(4..=200).contains(&input.query.trim().len()) {
         return Err(invalid("Vul een adres of postcode met huisnummer in."));
     }

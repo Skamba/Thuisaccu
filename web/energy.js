@@ -137,10 +137,11 @@
             { ...UI.store.get("thuisaccu-scenario", {}), profile: String(item.id) }); location.hash = "#/zelf"; }, "secondary"));
       }
       const problem = fit.ok === false ? Data.unusableText(item.summary) : null;
-      view.append(h("p", {}, title(item), " ", fitBadge(item)),
+      // De bestandsnaam staat al in de paginatitel; hier alleen de status (en FICTIEF bij demogegevens).
+      UI.append(view, [h("p", {}, fitBadge(item), Data.isDemo(item) ? [" ", badge("FICTIEF", "demo")] : null),
         problem ? h("div", { class: "callout", role: "note" }, h("p", {}, problem),
           h("p", {}, link("Naar de keuzehulp", "#/keuzehulp", "button secondary"))) : null,
-        summaryView(item.summary, item.options.generator ? null : item.options.timezone || "UTC"));
+        summaryView(item.summary, item.options.generator ? null : item.options.timezone || "UTC")]);
       if (fit.ok === true) {
         const curve = await UI.api(`/api/v1/solar/imports/${item.id}/capacity`).catch(() => null);
         if (curve) view.append(chart("line",
@@ -153,9 +154,9 @@
         // Imports van vóór modelversie 3 bewaarden de meterwaarden per periode nog niet.
         if (curve && curve.measured_periods === 0 && (item.options.consumption_source === "net_meter" || item.options.meter))
           view.append(h("p", { class: "callout", role: "note" }, "Importeer dit bestand opnieuw met dezelfde instellingen. " +
-            "Dit profiel wordt dan aangevuld met de gemeten netafname en teruglevering per periode, zodat deze grafiek en nieuwe " +
+            "Je krijgt dan een nieuw profiel met de gemeten netafname en teruglevering per periode, zodat de grafiek en nieuwe " +
             "berekeningen de werkelijke gelijktijdigheid van opwek en verbruik gebruiken in plaats van een geschatte verdeling. " +
-            "Eerdere berekeningen blijven ongewijzigd."));
+            "Dit profiel en de berekeningen erop blijven ongewijzigd; verwijder het daarna als je het niet meer nodig hebt."));
       }
     }
   });
@@ -362,8 +363,9 @@
           body.append("file", meter.file, meter.file.name);
           body.append("options", JSON.stringify({ header_row: m.header_row, delimiter: m.delimiter, sheet: m.sheet }));
           const result = await UI.api("/api/v1/solar/inspect", { method: "POST", body });
-          const guess = pattern => result.headers.findIndex(name => pattern.test(name));
-          const imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen|levering/i);
+          const guess = (pattern, not = /$^/) => result.headers.findIndex(name => pattern.test(name) && !not.test(name));
+          // ‘Levering’ is afname vanuit de leverancier gezien; ‘Teruglevering’ bevat hetzelfde woord.
+          const imported = guess(/netafname|afname|import|delivered|from.?grid|bezogen|levering/i, /teruglever|export|returned/i);
           const exported = guess(/teruglever|export|feed.?in|injectie|returned/i);
           Object.assign(m, {
             time_column: Math.max(0, guess(/timestamp|datum|date|tijd|time/i)),

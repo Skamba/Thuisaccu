@@ -182,6 +182,65 @@ async fn a_backup_downloads_the_database_as_a_sqlite_file() {
     assert!(body.starts_with(b"SQLite format 3\0"));
 }
 
+/// Afgewezen verzoeken (kapotte JSON, verkeerd type, geen JSON, ongeldig id, geen formulier)
+/// krijgen dezelfde statuscode als in axum, maar een JSON-antwoord met een Nederlandse melding.
+#[tokio::test]
+async fn rejected_requests_are_answered_as_json() {
+    let app = test_app().await;
+    let json = |uri: &str, body: &'static str| {
+        Request::post(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let cases = [
+        (
+            json("/api/v1/analysis/runs", "{"),
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+        ),
+        (
+            json("/api/v1/locations/search", r#"{"query":12}"#),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_json",
+        ),
+        (
+            Request::post("/api/v1/locations/search")
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Binnenhof 1"))
+                .unwrap(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+        ),
+        (
+            Request::get("/api/v1/analysis/runs/abc")
+                .body(Body::empty())
+                .unwrap(),
+            StatusCode::BAD_REQUEST,
+            "invalid_path",
+        ),
+        (
+            json("/api/v1/solar/inspect", "{}"),
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+        ),
+    ];
+    for (request, status, error) in cases {
+        let uri = request.uri().to_string();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), status, "{uri}");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/json",
+            "{uri}"
+        );
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(body["error"], error, "{uri}");
+        assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+}
+
 #[tokio::test]
 async fn health_rejects_unsupported_methods() {
     let response = test_app()

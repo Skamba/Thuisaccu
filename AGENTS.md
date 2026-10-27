@@ -10,7 +10,7 @@ Lokale webapp voor onderzoek naar thuisaccu's: brongebonden productvergelijking,
 | --- | --- |
 | `crates/core` | Domeintypen en rekenkern: `products`, `sizing` (energiestromen; verdeling binnen een meetperiode uit het gegenereerde `load_spread.rs`, zie `tools/build_load_spread.py`), `finance` (rekeningen, kasstromen), `analysis` (validatie, vergelijking, doelen, gevoeligheid). Geen HTTP, opslag of UI. |
 | `crates/storage` | SQLite via rusqlite (één verbinding achter een mutex), migraties in `migrations/`, opslagmethoden en leesmodellen. Werkt native en als WebAssembly. |
-| `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
+| `crates/server` | Axum-router (`src/lib.rs`), API-handlers (`api.rs`, `scenario_api.rs`; extractors met JSON-fouten in `extract.rs`), importadapters (`solar_import.rs`), PDOK-adreszoeken, ingebouwde resources (`resources/`: referenties, kostencatalogus, voorbeeldbestanden). |
 | `crates/browser` | WebAssembly-module voor de browserversie: dezelfde router uit `thuisaccu-server` zonder netwerkpoort, database als bytes in en uit (IndexedDB in `web/worker.js`). Native een lege bibliotheek. |
 | `web/` | `index.html` (shell; `data-backend` is `server` of `browser`), `styles.css`, `local.js` (API via webworker in de browserversie), `ui.js` (bouwstenen), `data.js` (API, labels, bronclaims → rekengegevens, kostenindicaties), schermen `keuzehulp.js`, `catalog.js`, `energy.js`, `scenario.js`, `results.js`, `compare.js` (berekeningen naast elkaar), en `app.js` (router, berekeningen, instellingen). Ingebakken via de tabel `ASSETS` in `crates/server/src/lib.rs`; `worker.js` hoort alleen bij de browserversie. |
 | `docs/` | Architectuur, API-contract, datamodel, importafspraken, rekenmodel, onderzoek en roadmap. |
@@ -71,7 +71,7 @@ Deze regels zijn de kern van het project. Een wijziging die er één schendt is 
 ## API
 
 - Het contract staat in [docs/api.md](docs/api.md). Nieuwe of gewijzigde routes: router in `crates/server/src/lib.rs`, handler, test in `crates/server/tests/`, en de tabel in `docs/api.md`.
-- Request-structs gebruiken `#[serde(deny_unknown_fields)]`; houd dat zo. Fouten geven JSON zonder interne details (HTTP 500 lekt geen databasefouten).
+- Request-structs gebruiken `#[serde(deny_unknown_fields)]`; houd dat zo. Handlers lezen invoer met `ApiJson`, `ApiPath` en `ApiMultipart` (`extract.rs`), niet met de axum-extractors zelf, zodat ook een afgewezen verzoek JSON krijgt. Fouten geven JSON zonder interne details (HTTP 500 lekt geen databasefouten).
 - Wijzigingen in `RunRequest` of het resultaat raken ook `web/keuzehulp.js`, `web/scenario.js`, `web/results.js` en bewaarde runs in bestaande databases; de browser moet oude runs blijven kunnen tonen.
 
 ## Frontend (`web/`)

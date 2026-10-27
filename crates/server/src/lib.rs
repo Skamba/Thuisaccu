@@ -12,6 +12,7 @@ use serde::Serialize;
 use thuisaccu_storage::Catalog;
 
 mod api;
+mod extract;
 pub mod scenario_api;
 pub mod solar_import;
 pub mod typical_profile;

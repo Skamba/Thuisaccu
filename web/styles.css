@@ -147,6 +147,7 @@ table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 caption { text-align: left; padding: .6rem .75rem; color: var(--muted); font-size: .85rem; }
 th, td { text-align: left; vertical-align: top; padding: .55rem .75rem; border-bottom: 1px solid var(--line); }
 thead th { background: var(--soft); font-size: .82rem; }
+:is(th, td).num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td strong, th strong { display: block; }
 .compare th[scope="row"] { position: sticky; left: 0; background: var(--surface); min-width: 11rem; }
 .compare tr.group th { background: var(--soft); text-transform: uppercase; font-size: .75rem; letter-spacing: .06em; }
@@ -180,6 +181,7 @@ td strong, th strong { display: block; }
   table.stack tr { border-bottom: 1px solid var(--line); padding: .35rem 0; }
   table.stack td { display: grid; grid-template-columns: minmax(6.5rem, 35%) minmax(0, 1fr); gap: .75rem; border: 0; padding: .3rem .75rem; }
   table.stack td::before { content: attr(data-label); font-weight: 600; font-size: .8rem; color: var(--muted); }
+  table.stack td.num { text-align: left; white-space: normal; }
   table.stack td input[type="checkbox"] { justify-self: start; }
   /* Een badge blijft een label, geen balk over de hele breedte. */
   table.stack td > .badge { justify-self: start; align-self: start; }
@@ -294,13 +296,17 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 600; marg
   }
   /* Knoppen doen op papier niets; de uitleg in .fold klapt app.js open bij afdrukken. */
   main button, .fold > summary::marker { display: none !important; }
+  details.print-closed:not([open]) > summary::after { content: " (in de app)"; }
   .chart svg { max-height: 9cm; }
   .sidebar, .page-head .actions, .wizard-footer, footer, .tabs { display: none !important; }
   body { display: block; }
   [role="tabpanel"] { display: block !important; }
   /* Gewoon afdrukken: het korte antwoord, de uitleg, het overzicht en de waarschuwingen; ‘Alles afdrukken’ zet print-all. */
   body:not(.print-all) [role="tabpanel"]:not(:has(> .print-keep)), body:not(.print-all) .all-options { display: none !important; }
-  .panel { break-inside: avoid; }
+  .panel, .chart { break-inside: avoid; }
+  /* Een kop of grafiektitel blijft bij wat eronder staat. */
+  :is(h2, h3, figcaption, caption) { break-after: avoid; }
+  tr { break-inside: avoid; }
   .compare { font-size: .85rem; }
   .compare a { color: inherit; text-decoration: none; }
   /* De offertecheck drukt alleen het blad af, zonder energiegegevens of uitkomst. */

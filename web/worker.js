@@ -66,11 +66,13 @@ self.onmessage = async ({ data }) => {
       const reply = await request(data.method, data.path, data.contentType ?? undefined, new Uint8Array(data.body));
       const { status, contentType, body } = reply;
       reply.free();
-      // Het antwoord volgt pas als de wijziging bewaard is; een mislukte wijziging is al teruggerold.
+      // Het antwoord volgt pas als de wijziging bewaard is; een mislukte wijziging is al teruggerold. Ook een
+      // foutantwoord kan na een deel van het werk komen (de referentiesets worden elk apart vastgelegd), dus
+      // beslist alleen of de database veranderd is.
       // Mislukt het bewaren, dan is de wijziging wel gedaan (in het geheugen): het antwoord gaat mee,
       // met `unsaved`, zodat de interface waarschuwt in plaats van een geslaagde actie fout te noemen.
       let unsaved;
-      if (!["GET", "HEAD"].includes(data.method) && status < 400 && changes() !== savedAt) {
+      if (!["GET", "HEAD"].includes(data.method) && changes() !== savedAt) {
         unsaved = await save().then(() => null, error =>
           `Je laatste wijziging staat nog niet blijvend in deze browser (${error?.message ?? error}). ` +
           "Maak een back-up voordat je dit tabblad sluit; bij de volgende wijziging wordt opnieuw opgeslagen.");

@@ -445,7 +445,8 @@ window.Results = (() => {
         eur0(c.export_variant.npv_eur)] : null,
       w ? [`Stopt na de garantie (${w.operating_life_years} jaar)`, cell(w.result.break_even_investment_eur), eur0(w.result.npv_eur)] : null
     ].filter(Boolean);
-    return h("div", {}, table(["Situatie", "Lonend tot", "Netto voordeel"], rows, { caption: `Grensprijs voor ${c.name}`, stack: true }),
+    return h("div", {}, table(["Situatie", "Lonend tot", "Netto voordeel"], rows,
+      { caption: `Grensprijs voor ${c.name}`, stack: true, numeric: [1, 2] }),
       w ? h("p", { class: "help" }, `Stopt na de garantie: dezelfde accu werkt maar ${w.operating_life_years} jaar en verliest ` +
         `${pct(w.annual_capacity_loss_pct)} capaciteit per jaar (bij 3,5% is na 10 jaar ongeveer 70% over). Garantie is geen levensduur, ` +
         "maar een defect daarna betaal je zelf. Het advies verandert er niet door.") : null);
@@ -527,7 +528,7 @@ window.Results = (() => {
         eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
         ...(variant ? [eur0(c.export_variant?.npv_eur)] : [])]),
-      { caption: `Alle ${all.length} opties, op volgorde van je doel` })));
+      { caption: `Alle ${all.length} opties, op volgorde van je doel`, numeric: [2, 3, 4, 5, 6, 7, 8] })));
     }
     out.append(h("p", { class: "help" },
       "NPV is het netto voordeel tegenover geen accu, omgerekend naar geld van nu. ‘Lonend tot’ is de hoogste startinvestering (na teruggaven) waarbij de NPV nog nul is, met alle andere kosten gelijk. ROI is de nettowinst over de hele looptijd gedeeld door de startinvestering, geen jaarlijks rendement. De terugverdientijd blijft ook na latere vervangingskosten positief."));
@@ -558,22 +559,36 @@ window.Results = (() => {
     const pick = UI.select(all.map(c => [c.key, c.short]), run.result.recommended_key), target = h("div");
     const render = () => {
       const c = all.find(o => o.key === pick.value);
-      const yearRows = c.key === "no_battery"
-        ? horizon.map(y => [String(y.calendar_year), kwh(y.energy.consumption_kwh), money(y.baseline_bill_eur), money(y.baseline_bill_eur),
-          money(0), money(0), money(0), money(0), money(0), "—"])
-        : c.years.map(y => [String(y.calendar_year), kwh(y.energy.consumption_kwh), money(y.baseline_bill_eur), money(y.battery_bill_eur),
-          // Vóór modelversie 5 stond de hele investering op tijdstip nul en was er geen aflossing per jaar.
-          money(y.extra_costs_eur), money(y.financing_interest_eur),
-          finite(y.financing_principal_eur) ? money(y.financing_principal_eur) : "—", money(y.net_cashflow_eur), money(y.cumulative_eur),
-          pct(y.energy.self_sufficiency_pct)]);
+      // Zonder accu is de rekening met accu die zonder accu, en zijn er geen extra kosten of financiering.
+      const none = c.key === "no_battery", list = none ? horizon : c.years;
+      const columns = [
+        ["Jaar", y => String(y.calendar_year)],
+        ["Bruto verbruik", y => kwh(y.energy.consumption_kwh)],
+        ["Rekening zonder accu", y => money(y.baseline_bill_eur)],
+        ["Rekening met accu", y => money(none ? y.baseline_bill_eur : y.battery_bill_eur)],
+        ["Extra kosten", y => money(y.extra_costs_eur), "extra_costs_eur"],
+        ["Leningrente", y => money(y.financing_interest_eur), "financing_interest_eur"],
+        // Vóór modelversie 5 stond de hele investering op tijdstip nul en was er geen aflossing per jaar.
+        ["Aflossing", y => finite(y.financing_principal_eur) ? money(y.financing_principal_eur) : "—", "financing_principal_eur"],
+        ["Netto voordeel", y => money(none ? 0 : y.net_cashflow_eur)],
+        ["Cumulatief", y => money(none ? 0 : y.cumulative_eur)],
+        ["Zelfvoorziening", y => none ? "—" : pct(y.energy.self_sufficiency_pct)]
+      ];
+      // Kosten- en financieringskolommen die in elk jaar precies € 0 zijn, worden één zin onder de tabel;
+      // onbekend (zoals een ontbrekende aflossing in oude runs) telt niet als nul.
+      const zero = ([, , key]) => key != null && (none || list.every(y => y[key] === 0));
+      const kept = columns.filter(column => !zero(column));
+      const dropped = columns.filter(zero).map(([header], i) => i ? header.toLowerCase() : header);
       // Zonder accu geen totalen; replaceChildren zou null als tekst tonen.
       target.replaceChildren(...[
-        table(["Jaar", "Bruto verbruik", "Rekening zonder accu", "Rekening met accu", "Extra kosten", "Leningrente", "Aflossing",
-          "Netto voordeel", "Cumulatief", "Zelfvoorziening"],
-          yearRows),
+        table(kept.map(([header]) => header), list.map(y => kept.map(([, value]) => value(y))),
+          { numeric: kept.map((_, i) => i).slice(1) }),
+        dropped.length ? h("p", { class: "help" },
+          `${dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} en ${dropped.at(-1)}` : dropped[0]}: € 0 in alle jaren.`) : null,
         c.key === "no_battery" ? null : stats([
-          ["Extra kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
-            ["Bespaarde energiekosten", money(c.lifetime_energy_saving_eur)],
+          // lifetime_extra_costs_eur telt de startinvestering mee, de kolom ‘Extra kosten’ niet.
+          ["Alle kosten over de looptijd", money(c.lifetime_extra_costs_eur), "startinvestering, jaarkosten, latere posten en leningrente"],
+          ["Bespaarde energiekosten", money(c.lifetime_energy_saving_eur)],
           ["Gedisconteerd terugverdiend na", years(c.discounted_payback_years)]
         ])].filter(Boolean));
     };
@@ -627,14 +642,14 @@ window.Results = (() => {
           ...group("upfront", ["Startinvestering", c.initial_investment_eur]),
           ...group("annual", ["Per jaar, eerste jaar", annual]),
           ...group("event")
-        ], { caption: `Kostenposten van ${c.name}` }),
+        ], { caption: `Kostenposten van ${c.name}`, numeric: [2] }),
         skipped ? h("p", { class: "help" }, `${skipped} ${skipped === 1 ? "kostenpost is" : "kostenposten zijn"} niet van toepassing en staan er niet bij.`) : null,
         stats([
           ["Startinvestering", money(c.initial_investment_eur)],
           ["Startinvestering per kWh bruikbaar", finite(usable) && usable > 0 ? `${money(c.initial_investment_eur / usable)} per kWh` : "Onbekend"],
           ["Jaarkosten en latere posten over de looptijd", money(sum("extra_costs_eur"))],
           ["Leningrente over de looptijd", money(sum("financing_interest_eur"))],
-          ["Extra kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
+          ["Alle kosten over de looptijd", money(c.lifetime_extra_costs_eur)],
           ["Kosten per kWh uit de accu", fromBattery > 0 ? `${money(c.lifetime_extra_costs_eur / fromBattery)} per kWh` : "Niet bepaald"]
         ]));
     };
@@ -701,11 +716,14 @@ window.Results = (() => {
             values: [c.pessimistic?.[key], c[key], c.optimistic?.[key]] })),
           series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }] }));
     }
-    const split = (headers, row) => [table(headers, shown(all).map(row)),
-      more(all) ? rest(`Toon de overige ${all.length - TOP - 1} opties`, table(headers, all.slice(TOP + 1).map(row))) : null];
+    // Korte namen zoals in de grafieken erboven (volledige naam als titel); alle kolommen na de naam zijn getallen.
+    const name = c => c.short === c.name ? c.name : h("span", { title: c.name }, c.short);
+    const numbers = headers => ({ numeric: headers.map((_, i) => i).slice(1) });
+    const split = (headers, row) => [table(headers, shown(all).map(row), numbers(headers)),
+      more(all) ? rest(`Toon de overige ${all.length - TOP - 1} opties`, table(headers, all.slice(TOP + 1).map(row), numbers(headers))) : null];
     const variants = c => [c.pessimistic, c, c.optimistic];
     out.append(...split(["Optie", "NPV ongunstig", "NPV basis", "NPV gunstig", "Nettowinst ongunstig", "Nettowinst basis",
-      "Nettowinst gunstig", "ROI ongunstig", "ROI basis", "ROI gunstig"], c => [c.name,
+      "Nettowinst gunstig", "ROI ongunstig", "ROI basis", "ROI gunstig"], c => [name(c),
       ...variants(c).map(v => eur0(v?.npv_eur)), ...variants(c).map(v => eur0(v?.net_profit_eur)),
       ...variants(c).map(v => c.key === "no_battery" ? "—" : pct(v?.roi_pct))]).filter(Boolean));
     const variant = p.export_variant;
@@ -714,7 +732,7 @@ window.Results = (() => {
         h("p", {}, `Vanaf ${variant.from_calendar_year} ${n(variant.export_eur_per_kwh, 4)} €/kWh vergoeding en ` +
           `${n(variant.export_fee_eur_per_kwh, 4)} €/kWh terugleverkosten; verder de basisaannames. Een aanname, geen voorspelling.`),
         ...split(["Optie", "NPV basis", "NPV variant", "Nettowinst variant", "ROI variant", "Terugverdiend na"], c => [
-          c.name, eur0(c.npv_eur), eur0(c.export_variant?.npv_eur), eur0(c.export_variant?.net_profit_eur),
+          name(c), eur0(c.npv_eur), eur0(c.export_variant?.npv_eur), eur0(c.export_variant?.net_profit_eur),
           c.key === "no_battery" ? "—" : pct(c.export_variant?.roi_pct), c.key === "no_battery" ? "—" : years(c.export_variant?.payback_years)])
           .filter(Boolean));
     }
@@ -1131,8 +1149,9 @@ window.Results = (() => {
     const grouped = h("li", {}, `Garantiestresstest voor ${count} accu’s: dezelfde berekening als de accu direct na zijn ` +
       "productgarantie stopt en elk jaar meer capaciteit verliest, nooit gunstiger dan de basisaannames. Het is een stresstest, " +
       "geen voorspelling; de keuze gebruikt de basisaannames.",
-      fold("Per accu", table(["Accu", "Levensduur", "Capaciteitsverlies", "Herkomst"], rows,
-        { caption: "Aannames in de garantiestresstest", stack: true })));
+      h("details", { class: "fold print-closed" }, h("summary", {}, "Per accu"),
+        table(["Accu", "Levensduur", "Capaciteitsverlies", "Herkomst"], rows,
+          { caption: "Aannames in de garantiestresstest", stack: true })));
     return warnings.flatMap((w, i) => i === first ? [grouped] : stress[i] ? [] : [h("li", {}, w)]);
   }
 

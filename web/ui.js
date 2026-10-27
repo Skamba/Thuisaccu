@@ -264,13 +264,16 @@ window.UI = (() => {
   }
 
   // Met stack: true wordt elke rij op een smal scherm een kaartje met de kolomkop bij elke waarde (zie styles.css).
-  function table(headers, rows, { caption, className = "", stack = false } = {}) {
+  // `numeric`: kolomnummers met bedragen of hoeveelheden; die staan rechts uitgelijnd, op één regel en met
+  // even brede cijfers, zodat getallen onder elkaar te vergelijken zijn.
+  function table(headers, rows, { caption, className = "", stack = false, numeric = [] } = {}) {
+    const num = i => numeric.includes(i) ? "num" : null;
     return h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": caption || headers.join(", ") },
       h("table", { class: [className, stack ? "stack" : ""].filter(Boolean).join(" ") },
         caption ? h("caption", {}, caption) : null,
-        h("thead", {}, h("tr", {}, headers.map(text => h("th", { scope: "col" }, text)))),
+        h("thead", {}, h("tr", {}, headers.map((text, i) => h("th", { scope: "col", class: num(i) }, text)))),
         h("tbody", {}, rows.map(row => h("tr", {}, row.map((cell, i) =>
-          h("td", { dataset: stack ? { label: headers[i] ?? "" } : null }, cell ?? "Onbekend")))))));
+          h("td", { class: num(i), dataset: stack ? { label: headers[i] ?? "" } : null }, cell ?? "Onbekend")))))));
   }
   // [label, waarde, korte uitleg]; de uitleg is optioneel en staat klein onder het label.
   const stats = items => h("dl", { class: "stats" },
@@ -559,7 +562,8 @@ window.UI = (() => {
       type === "range" ? h("span", { class: `swatch ${["swatch-low", "swatch-base", "swatch-high"][i]}` })
         : h("span", { class: "swatch", style: `background:${colour(i, s)}` }), s.label)));
     const data = h("details", {}, h("summary", {}, "Toon als tabel"),
-      table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")])));
+      table(["", ...series.map(s => `${s.label}${unit ? ` (${unit})` : ""}`)], rows.map(r => [r.label, ...r.values.map(v => finite(v) ? format(v) : "Onbekend")]),
+        { numeric: series.map((_, i) => i + 1) }));
     return h("figure", { class: "chart" }, h("figcaption", {}, title), svg, legend, data);
   }
 

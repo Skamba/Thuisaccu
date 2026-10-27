@@ -6,7 +6,13 @@
 window.Local = (() => {
   const enabled = document.documentElement.dataset.backend === "browser";
   const pending = new Map(), LOCK = "thuisaccu-database";
-  let worker = null, sequence = 0, held = !navigator.locks, claiming = null;
+  let worker = null, sequence = 0, held = !navigator.locks, claiming = null, writing = 0;
+
+  // Sluiten terwijl een wijziging nog onderweg is, of terwijl de laatste niet blijvend bewaard is, vraagt
+  // eerst om bevestiging: de database staat alleen in het geheugen van dit tabblad tot hij bewaard is.
+  if (enabled) addEventListener("beforeunload", event => {
+    if (writing > 0 || document.getElementById("unsaved")) event.preventDefault();
+  });
 
   // Eén tabblad tegelijk werkt met de database: elk tabblad houdt een eigen kopie in het geheugen en
   // bewaart die in zijn geheel, dus twee tabbladen zouden elkaars wijzigingen overschrijven. Een tweede
@@ -56,9 +62,11 @@ window.Local = (() => {
   async function localFetch(url, init = {}) {
     const request = new Request(new URL(url, location.origin), init);
     const target = new URL(request.url);
-    const body = ["GET", "HEAD"].includes(request.method) ? new ArrayBuffer(0) : await request.arrayBuffer();
+    const reading = ["GET", "HEAD"].includes(request.method);
+    const body = reading ? new ArrayBuffer(0) : await request.arrayBuffer();
+    if (!reading) writing++;
     const reply = await call({ type: "request", method: request.method, path: target.pathname + target.search,
-      contentType: request.headers.get("content-type"), body }, [body]);
+      contentType: request.headers.get("content-type"), body }, [body]).finally(() => { if (!reading) writing--; });
     if (reply.unsaved !== undefined) banner("unsaved", reply.unsaved);
     const empty = [204, 205, 304].includes(reply.status);
     return new Response(empty ? null : reply.body,
@@ -88,7 +96,8 @@ window.Local = (() => {
   async function restore(file) {
     if (!held) throw new Error("Thuisaccu is open in een ander tabblad; sluit dat eerst.");
     const bytes = await file.arrayBuffer();
-    await call({ type: "restore", bytes }, [bytes]);
+    writing++;
+    await call({ type: "restore", bytes }, [bytes]).finally(() => writing--);
   }
 
   const persisted = async () => Boolean(await navigator.storage?.persisted?.());

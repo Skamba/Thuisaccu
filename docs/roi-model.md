@@ -70,7 +70,7 @@ Zonder accu en zonder groei of degradatie geeft dat precies de gemeten netafname
 
 Voorbeeld (referentiegeval in `crates/core/tests/analysis.rs`): een uur met 2 kWh opwek, 2 kWh verbruik, 0,5 kWh netafname en 0,5 kWh teruglevering. Zonder accu is direct gebruik 1,5 kWh, met netafname en teruglevering van 0,5 kWh. Een verliesvrije accu met 1 kW laadvermogen laadt de 0,5 kWh en levert die in hetzelfde uur terug. Met halve opwek is de overlap 0,25 kWh: direct 0,75 kWh, teruglevering 0,25 kWh en netafname 1,25 kWh.
 
-Het verschil met de verdeling kan groot zijn: de verdeling is een gemiddelde van Duitse huishoudens, en een huishouden met minder wisselingen tussen overschot en tekort binnen het uur krijgt daarmee een te hoge accuopbrengst. Imports van vóór deze versie hebben de meterwaarden niet; opnieuw importeren met dezelfde instellingen vult ze aan in hetzelfde profiel. Een run vermeldt in een waarschuwing in hoeveel perioden de meterwaarden zijn gebruikt.
+Het verschil met de verdeling kan groot zijn: de verdeling is een gemiddelde van Duitse huishoudens, en een huishouden met minder wisselingen tussen overschot en tekort binnen het uur krijgt daarmee een te hoge accuopbrengst. Imports van vóór deze versie hebben de meterwaarden niet; opnieuw importeren met dezelfde instellingen geeft een nieuw profiel met meterwaarden (de versie van het inlezen staat in de instellingen). Een bestaand profiel verandert nooit, zodat berekeningen erop hun profiel-hash houden. Een run vermeldt in een waarschuwing in hoeveel perioden de meterwaarden zijn gebruikt.
 
 ### Verandering in verbruik
 
