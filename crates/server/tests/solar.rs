@@ -1,5 +1,5 @@
 use thuisaccu_server::solar_import::{
-    ImportOptions, MeterOptions, combine_with_meter, normalize, read_table,
+    ImportOptions, MeterOptions, combine_with_meter, is_clock_change, normalize, read_table,
 };
 
 fn analyze(
@@ -91,16 +91,27 @@ fn daylight_saving_ambiguities_require_offsets_and_calendar_days_keep_actual_dur
         timezone: "Europe/Amsterdam".into(),
         ..Default::default()
     };
+    let once = analyze("time,energy\n2026-10-25 02:00,1\n", &options).unwrap_err();
     assert!(
-        analyze("time,energy\n2026-10-25 02:00,1\n", &options)
-            .unwrap_err()
-            .contains("dubbelzinnig")
+        once.contains("twee keer") && is_clock_change(&once),
+        "{once}"
     );
+    let gap = analyze("time,energy\n2026-03-29 02:00,1\n", &options).unwrap_err();
     assert!(
-        analyze("time,energy\n2026-03-29 02:00,1\n", &options)
-            .unwrap_err()
-            .contains("bestaat niet")
+        gap.contains("bestaat niet") && is_clock_change(&gap),
+        "{gap}"
     );
+    // Een export die het hele jaar wintertijd aanhoudt, noemt 02:00 gewoon; als UTC+1 gelezen
+    // is dat 01:00 UTC. Andere fouten gaan niet over de klokwisseling.
+    let winter = ImportOptions {
+        timezone: "Etc/GMT-1".into(),
+        ..Default::default()
+    };
+    let summary = analyze("time,energy\n2026-03-29 02:00,1\n", &winter).unwrap();
+    assert_eq!(summary.from_unix_s, 1_774_746_000);
+    assert!(!is_clock_change(
+        &analyze("time,energy\nmorgen,1\n", &options).unwrap_err()
+    ));
     let summary = analyze(
         "time,energy\n2026-10-25T02:00:00+02:00,1\n2026-10-25T02:00:00+01:00,2\n",
         &options,
@@ -234,6 +245,34 @@ fn xlsx_with_one_far_off_cell_is_refused_before_memory_is_reserved() {
     let bytes = include_bytes!("fixtures/stray-far-cell.xlsx");
     let error = read_table("verbruik.xlsx", bytes, &ImportOptions::default()).unwrap_err();
     assert!(error.contains("te groot"), "{error}");
+}
+
+#[test]
+fn ods_with_one_repeated_row_is_refused_before_it_is_expanded() {
+    // Synthetisch blad van 836 bytes: één rij met 20 gevulde kolommen, een miljoen keer herhaald.
+    // Uitgevouwen zijn dat 20 miljoen cellen (ruim een gigabyte); de import weigert het vooraf.
+    let bytes = include_bytes!("fixtures/repeated-rows.ods");
+    let error = read_table("verbruik.ods", bytes, &ImportOptions::default()).unwrap_err();
+    assert!(error.contains("te groot"), "{error}");
+    // Ook onder een andere extensie: calamine herkent het bestand aan de inhoud.
+    let error = read_table("verbruik.xlsx", bytes, &ImportOptions::default()).unwrap_err();
+    assert!(error.contains("te groot"), "{error}");
+}
+
+#[test]
+fn ods_with_empty_repeated_rows_and_columns_up_to_the_edge_is_read_normally() {
+    // Zoals LibreOffice een blad bewaart: twee uren met 1,25 en 0,75 kWh, daarna lege
+    // opgemaakte cellen tot kolom XFD en lege rijen tot rij 1.048.576. Die tellen niet mee.
+    let options = ImportOptions {
+        time_column: 0,
+        production_column: 1,
+        ..Default::default()
+    };
+    let bytes = include_bytes!("fixtures/trailing-empty.ods");
+    let table = read_table("opwek.ods", bytes, &options).unwrap();
+    assert_eq!(table.headers, ["tijd", "opwek_kwh"]);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(normalize(&table, &options).unwrap().1.production_kwh, 2.0);
 }
 
 #[test]

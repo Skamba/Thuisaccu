@@ -138,9 +138,9 @@ function syntheticYear(dir) {
 
 // Synthetisch jaar zoals een Nederlandse energiemonitor: puntkomma, decimale komma en lokale tijd,
 // dus zonder 02.00 uur eind maart en met 02.00 uur twee keer eind oktober.
-function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv") {
+function dutchLocalYear(dir, hours = 8760, name = "energiemonitor.csv", timeZone = "Europe/Amsterdam") {
   const lines = ["Datum;Opwek (kWh);Verbruik (kWh)"];
-  const local = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", day: "2-digit", month: "2-digit",
+  const local = new Intl.DateTimeFormat("nl-NL", { timeZone, day: "2-digit", month: "2-digit",
     year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const start = Date.UTC(2024, 11, 31, 23);
   for (let hour = 0; hour < hours; hour++) {
@@ -542,14 +542,14 @@ test("omvormer- en meterbestand worden één bruikbaar jaarprofiel", async () =>
   await next(page);
   await page.waitForSelector("text=Kolommen en eenheden");
   await page.getByLabel("Meetperiode").selectOption("15min");
-  await page.getByLabel("Tijdzone").fill("UTC");
+  await page.getByLabel("Tijdzone", { exact: true }).selectOption("UTC");
   await next(page);
   await page.click("text=Ja, ik heb een P1- of meterexport");
   await page.setInputFiles(".wizard-body input[type=file]", files.meter);
   await page.click("button:has-text('Lees meterbestand')");
   await page.waitForSelector("text=Netafname");
   await page.getByLabel("Meetperiode").selectOption("hour");
-  await page.getByLabel("Tijdzone").fill("UTC");
+  await page.getByLabel("Tijdzone", { exact: true }).selectOption("UTC");
   await next(page);
   await page.waitForSelector(".stats", { timeout: 30000 });
   // 0,25 kWh per uur plus 0,6 kWh van 17 tot 22 uur: 2190 + 1095 = 3285 kWh bruto verbruik.
@@ -608,6 +608,31 @@ test("Nederlandse export in lokale tijd gaat zonder handwerk naar de keuzehulp",
   await page.waitForFunction(() => document.querySelectorAll(".wizard-body select option").length > 1);
   assert.match(await profile.evaluate(s => s.selectedOptions[0].textContent), /energiemonitor\.csv/);
   assert.deepEqual(problems, []);
+  await close();
+});
+
+test("een export die het hele jaar wintertijd aanhoudt: uitleg en één klik bij Kolommen", async () => {
+  // Zonder zomertijd staat 30-03-2025 02:00 in het bestand; in Nederlandse tijd bestaat dat uur niet.
+  const file = dutchLocalYear(workdir, 8760, "wintertijd.csv", "Etc/GMT-1");
+  const { page, problems, close } = await open();
+  await page.goto(`${base}/#/energie/import`);
+  await page.setInputFiles("input[type=file]", file);
+  await next(page);
+  await page.waitForSelector("text=Kolommen en eenheden");
+  await next(page);
+  // De fout komt al bij Kolommen, bij het tijdzoneveld, niet pas bij de controle.
+  const callout = page.locator("[role=alert]", { hasText: "30-03-2025 02:00" });
+  await callout.waitFor({ timeout: 30000 });
+  assert.match(await callout.textContent(), /bestaat niet in tijdzone Europe\/Amsterdam/);
+  await callout.getByRole("button", { name: "Lees als wintertijd (UTC+1)" }).click();
+  assert.equal(await page.getByLabel("Tijdzone", { exact: true }).inputValue(), "Etc/GMT-1");
+  await next(page);
+  await next(page);
+  await page.waitForSelector(".stats", { timeout: 30000 });
+  assert.match(await page.textContent(".stats"), /8\.760 uur/);
+  assert.deepEqual(await strayText(page), []);
+  // De eerste controle wijst het bestand bewust af (400); verder geen fouten.
+  assert.deepEqual(problems.filter(p => !/status of 400/.test(p)), []);
   await close();
 });
 
@@ -806,8 +831,10 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   for (const box of await page.locator(".wizard-body fieldset input[type=checkbox]").all()) await box.check();
   await page.click("button:has-text('Bereken en bewaar')");
   await page.waitForFunction(old => /berekeningen\/\d+/.test(location.hash) && location.hash !== old, firstRun, { timeout: 120000 });
-  // De herkomst staat ingeklapt in de uitleg, met de oorspronkelijke berekening in de titel.
-  await page.click("summary:has-text('Uit je offerte, op basis van ‘Synthetische offerte’')");
+  // Het oordeel gaat over de accu uit de offerte, ook als een andere optie beter uitkomt.
+  assert.match(await page.textContent(".verdict"), /Je offerte, binnen deze aannames/);
+  // De herkomst staat open in de uitleg, met de oorspronkelijke berekening in de titel.
+  assert.equal(await page.locator("details:has(> summary:has-text('Uit je offerte, op basis van ‘Synthetische offerte’'))").evaluate(d => d.open), true);
   await page.waitForSelector("text=Herberekend met de antwoorden uit je offerte");
   const quotedView = await page.textContent("#view");
   assert.match(quotedView, /bruikbare capaciteit 10 kWh → 9,3 kWh; sluimerverbruik 10 W → 15 W; startkosten vóór teruggaven/);
@@ -826,8 +853,9 @@ test("zelf doorrekenen met een eigen offerte, zonder adres", async () => {
   await page.goto(`${base}/#/berekeningen`);
   const compare = page.locator("button:has-text('Vergelijk')");
   await page.getByLabel(/^Vergelijk Synthetische offerte van /).check();
+  assert.match(await page.textContent("#view"), /Besproken accu.*Je offerte/);
   assert.equal(await compare.isDisabled(), true);
-  await page.getByLabel(/^Vergelijk Synthetische offerte · offerte van /).check();
+  await page.getByLabel(/^Vergelijk Synthetische offerte · offerte .+ van /).check();
   await compare.click();
   await page.waitForSelector("table.compare");
   const side = await page.textContent("table.compare");

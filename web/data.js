@@ -689,8 +689,10 @@ window.Data = (() => {
     for (const key of ["tax_administration", "tax_private_use", "vat_refund"]) fact(key, facts.vat);
     assume("other_upfront", "Geen overige startkosten bekend.");
     assume("other_annual", "Geen overige jaarkosten bekend.");
-    assume("inverter_replacement",
+    if (item.inverterIncluded) assume("inverter_replacement",
       "De omvormer is onderdeel van het product; vervanging valt binnen de aangenomen levensduur van het geheel.");
+    else assume("inverter_replacement", "Aanname: geen vervanging van de aparte omvormer binnen de looptijd. " +
+      "Een losse omvormer kan korter meegaan dan de accu; vraag naar de garantie en tel anders een vervanging mee.");
     assume("battery_replacement", "Geen vervanging: het model stopt de accu na de aangenomen levensduur.");
     fact("removal_recycling", facts.recycling);
     fact("grant", facts.grant);

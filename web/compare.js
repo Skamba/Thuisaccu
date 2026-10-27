@@ -88,7 +88,8 @@ window.Compare = (() => {
   // [rij, toelichting, waarde per berekening]
   const ROWS = [
     ["Uitkomst", null, (run, rec) => rec ? `Advies: ${rec.name}` : "Geen accu komt het beste uit"],
-    ["Besproken accu", null, (run, rec, c) => c ? `${c.name}${rec ? "" : " (komt het dichtst in de buurt)"}` : "Geen doorgerekend"],
+    ["Besproken accu", "Uit je offerte als de berekening daaruit komt, anders de aanbevolen", (run, rec, c) => c
+      ? `${c.name}${c === Results.quoted(run) ? " (je offerte)" : rec ? "" : " (komt het dichtst in de buurt)"}` : "Geen doorgerekend"],
     ["Startinvestering", "Na teruggaven en subsidie", (run, rec, c) => c && eur0(c.initial_investment_eur)],
     ["Besparing in jaar 1", "Op de energierekening", (run, rec, c) => c?.years?.[0] && eur0(c.years[0].energy_saving_eur)],
     ["Lonend tot", "Hoogste startinvestering die nog uit kan", (run, rec, c) => c && (Results.breakEven(c.break_even_investment_eur) ?? "Niet berekend")],
@@ -110,7 +111,7 @@ window.Compare = (() => {
   function render(view, runs) {
     const columns = runs.map(run => {
       const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
-      return { run, rec, option: Results.judged(run) };
+      return { run, rec, option: Results.quoted(run) ?? Results.judged(run) };
     });
     const head = h("tr", {}, h("td", {}), columns.map(({ run }) => h("th", { scope: "col" },
       link(run.title, `#/berekeningen/${run.id}`), h("br"), h("small", {}, UI.dateTime(run.created_at_unix_s),

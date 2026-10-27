@@ -52,7 +52,13 @@ window.Results = (() => {
     const score = SCORE[run.input.request.parameters.objective] || SCORE.net_present_value;
     const ranked = [...result.candidates].sort((a, b) => Number(b.key === result.recommended_key) -
       Number(a.key === result.recommended_key) || score(b) - score(a));
-    return [baseline, ...ranked.map((c, i) => ({ ...c, color: palette[i % palette.length] }))];
+    const quote = run.input.request.quote_basis?.candidate_key;
+    return [baseline, ...ranked.map((c, i) => ({ ...c, color: palette[i % palette.length], quoted: c.key === quote }))];
+  }
+  // De accu uit je offerte (herberekend vanuit de offertecheck), of null.
+  function quoted(run) {
+    const key = run.input.request.quote_basis?.candidate_key;
+    return key == null ? null : run.result.candidates.find(c => c.key === key) ?? null;
   }
   const SCORE = {
     net_present_value: c => c.npv_eur, roi: c => c.roi_pct ?? -Infinity,
@@ -75,7 +81,9 @@ window.Results = (() => {
     const labels = Data.shortLabels(run.input.request.candidates, kinds);
     for (const c of all) c.short = labels.get(c.key) ?? c.name;
   }
-  const shown = all => all.slice(0, TOP + 1);
+  // De accu uit een offerte staat er altijd bij, ook als hij niet bij de beste vijf hoort.
+  const shown = all => { const top = all.slice(0, TOP + 1), quote = all.find(c => c.quoted);
+    return quote && !top.includes(quote) ? [...top, quote] : top; };
   const more = all => all.length > TOP + 1;
   // Lange lijsten tonen eerst geen accu en de beste vijf; de rest staat ingeklapt en gaat niet mee op papier.
   const rest = (title, ...content) => h("details", { class: "fold all-options" }, h("summary", {}, title), ...content);
@@ -196,8 +204,22 @@ window.Results = (() => {
       "Dat verschil valt binnen de onzekerheid; kies tussen die twee op prijs, veiligheid, aansluiting of garantie.");
   }
 
+  // Bij een herberekende offerte: of de prijs uit de offerte binnen de grens valt.
+  function quoteLead(run, option) {
+    const limit = option.break_even_investment_eur, start = option.initial_investment_eur, price = run.input.request.quote_basis.price;
+    const startText = `de startkosten van ${eur0(start)}` + (price && Math.abs(price.total_eur - start) >= 1
+      ? ` (offerteprijs ${eur0(price.total_eur)}, met wat apart bleef, reserve en teruggaven; zie ‘Uit je offerte’)` : "");
+    if (!finite(limit)) return `Lonend tot is niet berekend; vergelijk het netto voordeel met de andere opties.`;
+    if (limit <= 0) return "Zelfs gratis niet lonend binnen deze aannames: de jaarkosten, verliezen en het sluimerverbruik wegen " +
+      "zwaarder dan de besparing.";
+    return start <= limit
+      ? `Lonend: ${startText} liggen ${eur0(limit - start)} onder de grens van ${roundedLimit(limit)}.`
+      : `Niet lonend: ${startText} liggen ${eur0(start - limit)} boven de grens van ${roundedLimit(limit)}. ` +
+        "Onder die grens wordt deze offerte lonend.";
+  }
+
   function verdict(run, kinds) {
-    const result = run.result, option = judged(run), rec = option?.key === result.recommended_key;
+    const result = run.result, quote = quoted(run), option = quote ?? judged(run), rec = option?.key === result.recommended_key;
     const limit = option?.break_even_investment_eur, plugged = run.input.request.candidates.some(c => kinds.get(c.key) === "plug");
     const isPlug = option && kinds.get(option.key) === "plug", isCircuit = option && kinds.get(option.key) === "circuit";
     // Bij een stekkerbatterij op een eigen groep ook de beste echte vaste installatie: de eigen groep vraagt een
@@ -206,13 +228,19 @@ window.Results = (() => {
     const fixed = isPlug ? result.candidates.filter(c => kinds.get(c.key) && kinds.get(c.key) !== "plug")
       .sort((a, b) => b.npv_eur - a.npv_eur)[0] : null;
     // De aanbevolen accu als kop, de zin van de rekenkern eronder: zo staat het antwoord ook op een telefoon in één oogopslag.
-    const lead = rec && result.recommendation.startsWith(`${option.name} `)
+    const lead = quote ? null : rec && result.recommendation.startsWith(`${option.name} `)
       ? result.recommendation.slice(option.name.length + 1) : null;
+    // Wat deze berekening zonder de offerte zou aanraden, als dat een andere optie is.
+    const best = quote && !rec ? judged(run) : null;
+    const other = !quote || rec ? null : result.recommended_key === "no_battery" || !best || best.key === quote.key
+      ? "Geen accu komt in deze berekening het beste uit."
+      : `Het beste in deze berekening komt ${best.name} uit: ${netText(best.npv_eur)} in geld van nu.`;
     const npvFirst = option && run.input.request.parameters.objective === "net_present_value";
-    return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, "Binnen deze aannames"),
-      h("h2", {}, lead ? option.name : result.recommendation),
+    return h("section", { class: "panel verdict" }, h("p", { class: "eyebrow" }, quote ? "Je offerte, binnen deze aannames" : "Binnen deze aannames"),
+      h("h2", {}, quote ? option.name : lead ? option.name : result.recommendation),
+      quote ? h("p", { class: "verdict-lead" }, quoteLead(run, option)) : null,
       lead ? h("p", { class: "verdict-lead" }, lead[0].toUpperCase() + lead.slice(1)) : null,
-      option ? [lead ? null : h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
+      option ? [lead || quote ? null : h("p", { class: "verdict-for" }, !rec ? `Het dichtst in de buurt komt ${option.name}:`
         : result.recommendation.includes(option.name) ? "Voor deze accu:" : `Voor ${option.name}:`),
         stats([
           npvFirst ? ["Netto voordeel (NPV)", eur0(option.npv_eur), "over de looptijd, in geld van nu"] : null,
@@ -220,7 +248,8 @@ window.Results = (() => {
           ["Startinvestering nu", eur0(option.initial_investment_eur)],
           ["Besparing in jaar 1", option.years?.[0] ? eur0(option.years[0].energy_saving_eur) : "—"],
           ["Terugverdiend na", option.payback_years == null ? `Niet binnen ${run.input.request.parameters.horizon_years} jaar` : years(option.payback_years)]
-        ].filter(Boolean)), closeCall(run, option)] : null,
+        ].filter(Boolean)), quote ? (rec ? h("p", { class: "verdict-for" }, "Ook zonder offerte komt deze accu in deze berekening het beste uit.")
+          : h("p", { class: "verdict-for" }, other)) : closeCall(run, option)] : null,
       isCircuit ? h("p", { class: "verdict-plug" }, h("strong", {}, "Let op: dit is een stekkerbatterij die een elektricien op een " +
         "eigen groep aansluit, geen vaste thuisaccu. "),
         "Vraag vooraf of een installateur hem zo wil aansluiten en of de fabrikant dat toestaat. " +
@@ -240,7 +269,8 @@ window.Results = (() => {
   function summary(run, kinds, circuit, categories) {
     const result = run.result, p = run.input.request.parameters, list = h("ul");
     const rec = result.candidates.find(c => c.key === result.recommended_key), base = result.baseline_first_year;
-    const best = judged(run);
+    // De besproken accu: die uit je offerte, anders de aanbevolen of beste.
+    const best = quoted(run) ?? judged(run);
     // Een stekkerbatterij ‘op een eigen groep’ werkt alleen als een installateur hem vast wil aansluiten: in een
     // stopcontact steekt hij de stekker volgens de NEN 1010 niet (Milieu Centraal).
     if (best && kinds.get(best.key) === "circuit") list.append(h("li", {}, `${best.name} is een stekkerbatterij die een elektricien op ` +
@@ -248,6 +278,10 @@ window.Results = (() => {
       "vraag vooraf of hij dit product vast wil aansluiten en of de fabrikant dat toestaat zonder dat de garantie vervalt." +
       (circuit ? ` De richtprijs van ${eur0(circuit.amount_eur)} is voor een extra groep met aansluiting in de meterkast; ` +
         "een volle of verouderde groepenkast komt erbij." : "")));
+    // Een offerte die niet de aanbevolen accu is: eerst wat die oplevert, dan de aanbevolen accu.
+    if (best && best === quoted(run) && rec && best.key !== rec.key) list.append(h("li", {},
+      `Je offerte voor ${best.name} geeft over ${p.horizon_years} jaar ${netText(best.npv_eur)} in geld van nu, vergeleken met ` +
+      `geen accu. Aanbevolen in deze berekening is ${rec.name}; de punten hierna gaan daarover, de grensprijs onder ‘Tot welke prijs’ over je offerte.`));
     // Wat de uitkomst zou veranderen: varianten, de grensprijs en bij geen accu ‘Dat verandert als’.
     const change = h("ul");
     if (!rec) {
@@ -413,8 +447,9 @@ window.Results = (() => {
       advice ? fold("Veiligheid van een stekkerbatterij", h("ul", {}, advice)) : null,
       change.children.length ? fold(changes.length ? "Wat zou de uitkomst veranderen?" : "Tot welke prijs is het lonend, en wat als het tegenzit?", limits, change) : null,
       sums.children.length ? fold("Zo is de besparing berekend", sums) : null,
-      origin.children.length ? fold(quotedOption ? `Uit je offerte, op basis van ‘${quote.title}’`
-        : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin) : null,
+      // Bij een offerte open: daar staat hoe de offerteprijs op de startkosten komt.
+      origin.children.length ? Object.assign(fold(quotedOption ? `Uit je offerte, op basis van ‘${quote.title}’`
+        : `Herberekend uit ‘${run.input.recalculated_from.title}’ met het huidige rekenmodel`, origin), { open: Boolean(quotedOption) }) : null,
       fold("Wat betekenen deze woorden?", h("dl", { class: "glossary" },
         Data.GLOSSARY.map(([term, text]) => [h("dt", {}, term), h("dd", {}, text)]))),
       h("p", { class: "next-step" }, "Laat je een accu vast aansluiten, vraag dan altijd een offerte; die laat zien of je meterkast, aansluiting en " +
@@ -492,6 +527,7 @@ window.Results = (() => {
       h("p", { class: "help" }, "De vergelijkingsbasis: geen investering en geen besparing. Elke accu is met deze situatie vergeleken; " +
         "een positief netto voordeel betekent dat de accu beter uitkomt dan geen accu.")] : [h("h3", {}, c.name),
       c.key === result.recommended_key ? badge("Aanbevolen", "accent") : null,
+      c.quoted ? badge("Je offerte", "success") : null,
       c.within_budget === false ? badge("Boven budget", "warning") : null, spec(c),
       stats([
         finite(c.break_even_investment_eur) ? ["Lonend tot", c.break_even_investment_eur > 0 ? roundedLimit(c.break_even_investment_eur) : "Zelfs gratis niet"] : null,
@@ -512,9 +548,10 @@ window.Results = (() => {
       c.key === result.export_variant_recommended_key && c.key !== result.recommended_key ? badge("Beste in de terugleveringsvariant", "") : null,
       kinds.get(c.key) === "plug" ? h("p", { class: "help" }, toAdvice()) : null))));
     if (more(all)) out.append(h("p", { class: "help" },
-      `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s; onder de grafiek staan ze allemaal.`));
+      `Hierboven geen accu en de beste ${TOP} van ${all.length - 1} doorgerekende accu’s` +
+      (shown(all).length > TOP + 1 ? ", en de accu uit je offerte" : "") + "; onder de grafiek staan ze allemaal."));
     out.append(chart("range", {
-      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP} en geen accu)` : ""}`, unit: "€",
+      title: `Netto voordeel (NPV) per optie, met gevoeligheidsvarianten${more(all) ? ` (beste ${TOP}${shown(all).length > TOP + 1 ? ", je offerte" : ""} en geen accu)` : ""}`, unit: "€",
       rows: shown(all).map(c => ({ label: c.short, color: c.color,
         values: [c.pessimistic?.npv_eur, c.npv_eur, c.optimistic?.npv_eur] })),
       series: [{ label: "Ongunstig" }, { label: "Basis" }, { label: "Gunstig" }]
@@ -523,7 +560,8 @@ window.Results = (() => {
       const variant = run.input.request.parameters.export_variant && result.export_variant_recommended_key != null;
       out.append(rest(`Toon alle ${all.length} opties`, table(["Optie", "Aansluiting", "Startinvestering nu", "Lonend tot", "NPV", "ROI over looptijd", "Terugverdiend na", "Eigen gebruik jaar 1",
         ...(variant ? ["NPV terugleveringsvariant"] : [])], all.map(c => [
-        c.key === result.recommended_key ? h("span", {}, c.name, " ", badge("Aanbevolen", "accent")) : c.name,
+        c.key === result.recommended_key || c.quoted ? h("span", {}, c.name,
+          c.key === result.recommended_key ? [" ", badge("Aanbevolen", "accent")] : null, c.quoted ? [" ", badge("Je offerte", "success")] : null) : c.name,
         c.key === "no_battery" ? "—" : connectionText(c, kinds), eur0(c.initial_investment_eur), c.key === "no_battery" ? "—" : breakEven(c.break_even_investment_eur) ?? "Niet berekend",
         eur0(c.npv_eur), c.key === "no_battery" ? "—" : pct(c.roi_pct),
         c.key === "no_battery" ? "—" : years(c.payback_years), pct(c.first_year?.self_consumption_pct),
@@ -769,18 +807,21 @@ window.Results = (() => {
         "restcapaciteit van 70% na 10 jaar is ongeveer 3,5% verlies per jaar. Vraag ook wie de garantie geeft, fabrikant of installateur, " +
         "en wat er gebeurt als de installateur stopt."]
   ];
+  // Sleutel voor wat de offertecheck per berekening in deze browser onthoudt. Een id kan na verwijderen
+  // opnieuw uitgegeven worden; met het tijdstip erbij erft een nieuwe berekening niets van een oude.
+  const checkKey = run => run.id != null ? `thuisaccu-offertecheck-${run.id}-${run.created_at_unix_s}` : null;
   function quoteCheck(run, all, categories) {
     const request = run.input.request, result = run.result, out = h("div"), target = h("div");
     const own = input => !Data.fromKeuzehulp(input);
     // Standaard je eigen offerte als die er is, anders de besproken accu. Wint geen accu, dan is
     // `recommended_key` ‘no_battery’; die staat niet in de keuzelijst.
-    const first = request.candidates.find(own)?.key ?? judged(run)?.key;
+    const first = request.quote_basis?.candidate_key ?? request.candidates.find(own)?.key ?? judged(run)?.key;
     const pick = UI.select(all.slice(1).map(c => [c.key, c.short]), first);
     const label = key => categories.find(c => c.key === key)?.label || key;
     const basis = request.quote_basis;
     // Wat je per optie uit de offerte overneemt, als tekst zoals ingetypt (9,3), en welke regels kloppen.
     // Bewaard in deze browser per berekening, zodat je de offerte in delen kunt nalopen; een gemak, geen opslag.
-    const memoryKey = run.id != null ? `thuisaccu-offertecheck-${run.id}` : null;
+    const memoryKey = Results.checkKey(run);
     const quoted = Object.fromEntries(Object.entries(memoryKey ? UI.store.get(memoryKey, {}) : {})
       .map(([key, terms]) => [key, { ...terms, separate: new Set(terms.separate || []), ok: new Set(terms.ok || []) }]));
     const remember = () => { if (memoryKey) UI.store.set(memoryKey, Object.fromEntries(Object.entries(quoted)
@@ -946,7 +987,9 @@ window.Results = (() => {
       if (!changes.length) { UI.toast("Vul eerst minstens één waarde uit de offerte in die afwijkt.", true); return; }
       candidate.assumptions = `${candidate.assumptions} Uit de offerte: ${[...changes.map(changeText), ...notes].join("; ")}.`.slice(0, 2000);
       delete copy.quote_basis;
-      Scenario.load(copy, { title: `${request.title} · offerte`.slice(0, 200), step: 3,
+      // De titel noemt accu en prijs, zodat twee offertes in Mijn berekeningen uit elkaar te houden zijn.
+      const named = `offerte ${c.short}${price ? ` ${eur0(price.total_eur)}` : ""}`;
+      Scenario.load(copy, { title: `${request.title.replace(/ · offerte .*$/, "")} · ${named}`.slice(0, 200), step: 3,
         basis: { run_id: run.id, title: request.title, candidate_key: c.key,
           break_even_investment_eur: finite(c.break_even_investment_eur) ? c.break_even_investment_eur : null, changes,
           ...(price && changes.some(ch => ch.field === "upfront_eur") ? { price } : {}) } });
@@ -1222,5 +1265,5 @@ window.Results = (() => {
   }
   const trimmedText = (all, kept) => `De kopie houdt de ${kept} beste van ${all} opties; de andere ${all - kept} blijven in de ` +
     "oorspronkelijke berekening staan.";
-  return { render, isFictitious, fromShare, judged, breakEven, warranty, outdated, recalculation, ranked, trimmed, trimmedText };
+  return { render, checkKey, isFictitious, fromShare, judged, quoted, breakEven, warranty, outdated, recalculation, ranked, trimmed, trimmedText };
 })();

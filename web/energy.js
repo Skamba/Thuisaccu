@@ -5,6 +5,11 @@
 (() => {
   const { h, button, link, external, badge, table, stats, chart, field, input, numberInput, select, kwh, number: n,
     toast } = UI;
+  // Tijdzones voor een bestand zonder UTC-offset. Veel omvormer- en spreadsheetexports houden het hele jaar
+  // wintertijd aan; in Nederlandse tijd bestaat dan het uur na 2:00 op de zomertijddag niet.
+  const ZONES = [["Europe/Amsterdam", "Nederlandse tijd, met zomertijd"], ["Etc/GMT-1", "Het hele jaar wintertijd (UTC+1)"],
+    ["UTC", "UTC"]];
+  const zoneLabel = zone => ZONES.find(([key]) => key === zone)?.[1] ?? zone;
   const PERIODS = { "5min": "5 min", "10min": "10 min", "15min": "15 min", "30min": "30 min", hour: "1 uur",
     day: "Dag", week: "Week", month: "Maand", year: "Jaar" };
   // Decimaalteken uit de voorbeeldrijen: alleen een eenduidig patroon telt, anders blijft de keuze staan.
@@ -193,7 +198,9 @@
         consumption_source: "gross", export_column: null, unit: "kwh", mode: "interval", period: "hour",
         timezone: "Europe/Amsterdam", timestamp_position: "start", data_kind: "measured", date_order: "day_first",
         missing_rows: "reject" };
-      const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null, noProduction: false };
+      // `clock`: een tijdstip dat door de klokwisseling niet bestaat, bij de stap waar je de tijdzone kiest.
+      const state = { file: null, name: "", inspected: null, sheets: [], summary: null, previewed: null, noProduction: false,
+        clock: null };
       // Optioneel meterbestand; opties volgen MeterOptions in solar_import.rs.
       const meter = {
         use: false, file: null, inspected: null,
@@ -206,11 +213,11 @@
       const fileKey = file => [file?.name, file?.size, file?.lastModified];
       const signature = () => JSON.stringify([fileKey(state.file), options,
         meter.use && [fileKey(meter.file), meter.options]]);
-      const multipart = () => {
+      const multipart = (withMeter = true) => {
         const body = new FormData();
         body.append("file", state.file, state.name.trim() || state.file.name);
         body.append("options", JSON.stringify(options));
-        if (meter.use) {
+        if (withMeter && meter.use) {
           body.append("meter_file", meter.file, meter.file.name);
           body.append("meter_options", JSON.stringify(meter.options));
         }
@@ -221,6 +228,35 @@
         return control;
       };
       const bind = bindTo(options), bindMeter = bindTo(meter.options);
+      // Tijdzone als keuze, met een eigen IANA-naam als uitweg. Na een klokfout erbij: wat er mis is en
+      // met één klik de waarschijnlijke oplossing.
+      function zoneFields(target, which, help) {
+        const known = ZONES.some(([key]) => key === target.timezone);
+        const other = input({ value: known ? "" : target.timezone, placeholder: "Europe/Brussels", required: !known });
+        const otherField = field("Andere tijdzone (IANA-naam)", other);
+        otherField.hidden = known;
+        const pick = select([...ZONES, ["other", "Andere tijdzone…"]], known ? target.timezone : "other");
+        const changed = zone => { target.timezone = zone; state.previewed = null; };
+        pick.addEventListener("change", () => {
+          const own = pick.value === "other";
+          otherField.hidden = !own; other.required = own;
+          changed(own ? other.value.trim() : pick.value);
+          if (own) other.focus();
+        });
+        other.addEventListener("change", () => changed(other.value.trim()));
+        const fields = [field("Tijdzone", pick, help), otherField];
+        if (state.clock?.which !== which) return fields;
+        const use = (zone, text) => button(text, () => {
+          state.clock = null; changed(zone); flow.rerender();
+          toast(`Tijdzone: ${zoneLabel(zone)}. Klik op Volgende om opnieuw te controleren.`);
+        }, "secondary");
+        return [...fields, h("div", { class: "callout wide", role: "alert" },
+          h("p", {}, state.clock.message),
+          h("p", {}, "Zo’n tijdstip komt voor als je export het hele jaar dezelfde kloktijd gebruikt, zonder zomertijd. " +
+            "Meestal is dat wintertijd; sommige apparaten gebruiken UTC. Piekt de opwek op een zonnige zomerdag rond " +
+            "12:40, dan is het wintertijd; rond 11:40 is het UTC (bij panelen op het zuiden)."),
+          h("p", { class: "actions" }, use("Etc/GMT-1", "Lees als wintertijd (UTC+1)"), use("UTC", "Lees als UTC")))];
+      }
       const headerOptions = (headers, optional) => [
         ...(optional ? [["", "Niet beschikbaar"]] : []),
         ...headers.map((name, i) => [String(i), `${i + 1}. ${name || "(leeg)"}`])
@@ -329,10 +365,7 @@
           field("Tijdstempel markeert",
             opts([["start", "Begin van de periode"], ["end", "Einde van de periode"]], "timestamp_position")),
           field("Decimaalteken", opts([["dot", "Punt (1.25)"], ["comma", "Komma (1,25)"]], "decimal")),
-          field("Tijdzone",
-            bind(input({ value: options.timezone, required: true, placeholder: "Europe/Amsterdam" }), "timezone",
-              v => v.trim()),
-            "ISO-tijdstippen met een offset blijven leidend."),
+          ...zoneFields(options, "file", "Voor tijdstippen zonder UTC-offset; een offset in het bestand blijft leidend."),
           field("Herkomst", opts([["measured", "Gemeten"], ["modelled", "Gemodelleerd"]], "data_kind")),
           field("Datumnotatie",
             opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
@@ -398,8 +431,7 @@
           field("Tijdstempel markeert",
             opts([["start", "Begin van de periode"], ["end", "Einde van de periode"]], "timestamp_position")),
           field("Decimaalteken", opts([["dot", "Punt (1.25)"], ["comma", "Komma (1,25)"]], "decimal")),
-          field("Tijdzone",
-            bindMeter(input({ value: meter.options.timezone, required: true }), "timezone", v => v.trim())),
+          ...zoneFields(meter.options, "meter", "Voor tijdstippen zonder UTC-offset."),
           field("Datumnotatie",
             opts([["day_first", "Dag / maand / jaar"], ["month_first", "Maand / dag / jaar (VS)"]], "date_order")),
           field("Ontbrekende waarden", opts([["reject", "Stop en meld de fout"], ["skip", "Sla de rij over en vermeld dit"]], "missing_rows"))),
@@ -407,18 +439,35 @@
             "Cumulatieve P1-meterstanden kunnen direct; de eerste stand is dan alleen het beginpunt."),
           h("h3", {}, "Eerste rijen"), table(meter.inspected.headers, meter.inspected.preview));
       }
-      async function preview() {
-        if (meter.use && !meter.inspected) throw new Error("Kies en lees eerst het meterbestand, of kies ‘Nee’.");
-        const sent = signature(),
-          summary = await UI.api("/api/v1/solar/preview", { method: "POST", body: multipart() });
+      // Al na de kolommen een controle van het omvormerbestand, zodat een fout in tijd of getallen bij de
+      // stap komt waar je hem oplost; na de meterstap opnieuw met het meterbestand, als er iets veranderde.
+      async function preview(withMeter = true) {
+        const combined = withMeter && meter.use;
+        if (combined && !meter.inspected) throw new Error("Kies en lees eerst het meterbestand, of kies ‘Nee’.");
+        const sent = signature();
+        if (state.previewed === sent) return;
+        let summary;
+        try { summary = await UI.api("/api/v1/solar/preview", { method: "POST", body: multipart(combined) }); }
+        catch (error) {
+          const which = { clock_change: "file", meter_clock_change: "meter" }[error.code];
+          if (!which) throw error;
+          state.clock = { which, message: error.message }; flow.rerender();
+          // De melding staat bij het tijdzoneveld, met de knoppen om het op te lossen; een foutmelding onderin
+          // zou die op een telefoon bedekken.
+          flow.element.querySelector(".wizard-body .callout[role=alert]")?.scrollIntoView({ block: "center" });
+          throw Object.assign(new Error("Een tijdstip in het bestand past niet bij de tijdzone; zie de melding bij Tijdzone."),
+            { shown: true });
+        }
         if (sent !== signature()) throw new Error("De instellingen zijn veranderd. Controleer opnieuw.");
-        state.summary = summary; state.previewed = sent;
+        state.clock = null;
+        // Zonder meter is dit al de volledige controle; anders volgt die na de meterstap.
+        if (combined === meter.use) { state.summary = summary; state.previewed = sent; }
       }
       function stepCheck(body) {
         const problem = Data.unusableText(state.summary);
-        body.append(h("h2", {}, "Controle"),
+        UI.append(body, [h("h2", {}, "Controle"),
           problem ? h("div", { class: "callout", role: "note" }, h("p", {}, problem)) : null,
-          summaryView(state.summary, options.timezone));
+          summaryView(state.summary, options.timezone)]);
       }
       function stepSave(body) {
         const name = input({ value: state.name, required: true, maxlength: "240",
@@ -442,10 +491,9 @@
         async validate(index, body) {
           if (!UI.validate(body)) return false;
           // De volgende stap opent pas na een geslaagde controle door de server.
-          const work = { 0: inspect, 2: preview }[index];
+          const work = { 0: inspect, 1: () => preview(false), 2: preview }[index];
           if (!work) return true;
-          try { await work(); return true; } catch (error) { toast(error.message, true); return false; }
-          return true;
+          try { await work(); return true; } catch (error) { if (!error.shown) toast(error.message, true); return false; }
         }
       });
       view.append(flow.element); flow.show(0);

@@ -365,7 +365,24 @@ async fn process(
         Ok((input, intervals, summary))
     })
     .await?
-    .map_err(bad_request)
+    .map_err(import_error)
+}
+
+/// Een importfout; een tijdstip dat door de klokwisseling niet past, krijgt een eigen code, apart voor
+/// het meterbestand, zodat de interface de oplossing bij de juiste tijdzone toont.
+fn import_error(message: String) -> ApiError {
+    if !solar_import::is_clock_change(&message) {
+        return bad_request(message);
+    }
+    let code = if message.starts_with("Meterbestand: ") {
+        "meter_clock_change"
+    } else {
+        "clock_change"
+    };
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({"error": code, "message": message})),
+    )
 }
 
 pub async fn preview(ApiMultipart(multipart): ApiMultipart) -> Result<Json<Value>, ApiError> {

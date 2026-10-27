@@ -44,6 +44,7 @@
       "Gedeelde links naar deze berekening blijven werken; die bevatten de uitkomst zelf."
     ], "Verwijder berekening", async () => {
       await UI.api(`/api/v1/analysis/runs/${run.id}`, { method: "DELETE" });
+      UI.store.set(Results.checkKey(run), null);
       toast("Berekening verwijderd.");
       UI.reload();
     });
@@ -68,8 +69,9 @@
         for (const box of boxes) box.disabled = !box.checked && chosen.size >= Compare.MAX;
       };
       UI.append(view, [backupHint(runs.length), h("div", { class: "toolbar" }, compare, status)]);
-      view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Beste keuze", "Netto voordeel", ""], runs.map(run => {
-        const rec = run.result.candidates.find(c => c.key === run.result.recommended_key);
+      view.append(table(["Vergelijk", "Berekening", "Datum", "Doel", "Besproken accu", "Netto voordeel", ""], runs.map(run => {
+        // Uit een offerte: de accu uit die offerte, anders de aanbevolen accu.
+        const quote = Results.quoted(run), rec = quote ?? run.result.candidates.find(c => c.key === run.result.recommended_key);
         const when = UI.dateTime(run.created_at_unix_s), p = run.input.request.parameters;
         // Berekeningen hebben vaak dezelfde titel; deze kenmerken maken ze uit elkaar te houden.
         const options = run.result.candidates.filter(c => c.key !== "no_battery").length;
@@ -84,7 +86,8 @@
           h("span", {}, h("a", { href: `#/berekeningen/${run.id}`, "aria-label": `${run.title} van ${when}` }, run.title),
             Results.isFictitious(run) ? [" ", badge("FICTIEF", "demo")] : null, h("small", { class: "help run-facts" }, facts)), when,
           Data.objectives[run.input.request.parameters.objective],
-            rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
+            quote ? h("span", {}, badge("Je offerte", "success"), " ", quote.name)
+              : rec?.name || (run.result.recommended_key === "no_battery" ? "Geen accu" : "Onbekend"),
           money(rec ? rec.npv_eur : 0, { decimals: 0 }), h("span", { class: "row-buttons" }, button("Pas aan", event => UI.busy(event.currentTarget, async () => duplicate(await Data.run(run.id))), "ghost",
             { "aria-label": `Pas ${run.title} van ${when} aan` }),
             button("Verwijder", () => remove(run), "ghost remove", { "aria-label": `Verwijder ${run.title} van ${when}` }))];

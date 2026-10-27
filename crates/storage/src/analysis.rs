@@ -41,6 +41,15 @@ pub struct SummaryInput {
 pub struct SummaryRequest {
     #[serde(default)]
     pub parameters: SummaryParameters,
+    /// Bij een herberekening uit de offertecheck: welke optie de offerte is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_basis: Option<SummaryQuote>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SummaryQuote {
+    #[serde(default)]
+    pub candidate_key: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]

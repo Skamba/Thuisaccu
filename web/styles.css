@@ -137,6 +137,8 @@ details > summary { cursor: pointer; font-weight: 600; margin: .3rem 0; }
 .toast.error { border-left-color: var(--danger); }
 /* Boven de vastgezette wizardknoppen, zodat ‘Volgende’ bereikbaar blijft. */
 body:has(.wizard-footer) .toasts { bottom: 5.5rem; }
+/* Een veld dat focus krijgt (Tab, of het eerste ongeldige veld) schuift niet achter de vaste wizardbalk. */
+html:has(.wizard-footer) { scroll-padding-bottom: 6rem; }
 dialog { width: min(52rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); padding: var(--pad); }
 dialog::backdrop { background: #0007; }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; }

@@ -79,7 +79,9 @@ window.UI = (() => {
     // In de browserversie (local.js) beantwoordt een webworker de API in plaats van de server.
     const response = await (Local.enabled ? Local.fetch : fetch)(url, options);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || `Verzoek mislukt (${response.status}).`);
+    // De foutcode van de API (`error`) gaat mee, zodat een scherm een bekende fout bij het juiste veld kan tonen.
+    if (!response.ok) throw Object.assign(new Error(data.message || `Verzoek mislukt (${response.status}).`),
+      { code: data.error ?? null, status: response.status });
     return data;
   }
 
@@ -244,7 +246,9 @@ window.UI = (() => {
         first ||= control;
         const holder = control.closest(".field, fieldset");
         let error = holder?.querySelector(":scope > .error");
-        if (holder && !error) holder.append(error = h("small", { class: "error", id: uid("fout") }, invalidMessage(control)));
+        // Direct onder het veld, vóór de toelichting: zo staat de melding in beeld bij het veld dat focus krijgt.
+        if (holder && !error) { error = h("small", { class: "error", id: uid("fout") }, invalidMessage(control));
+          if (control.parentElement === holder) control.after(error); else holder.append(error); }
         if (error) described.push(error.id);
       }
       if (described.length) control.setAttribute("aria-describedby", described.join(" "));

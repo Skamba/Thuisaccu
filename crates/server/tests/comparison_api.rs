@@ -259,6 +259,41 @@ fn upload(path: &str, content: &[u8], options: Value) -> Request<Body> {
 }
 
 #[tokio::test]
+async fn a_time_that_does_not_exist_in_the_timezone_gets_its_own_error_code() {
+    // 2026-03-29 02:00 bestaat niet in Nederlandse tijd; als wintertijd het hele jaar wel.
+    let app = thuisaccu_server::app(Catalog::in_memory().await.unwrap());
+    let csv = b"time,production\n2026-03-29 01:00,1\n2026-03-29 02:00,2\n";
+    let refused = app
+        .clone()
+        .oneshot(upload(
+            "/api/v1/solar/preview",
+            csv,
+            json!({"timezone": "Europe/Amsterdam"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(refused).await;
+    assert_eq!(body["error"], "clock_change");
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap()
+            .contains("2026-03-29 02:00")
+    );
+    let winter = app
+        .oneshot(upload(
+            "/api/v1/solar/preview",
+            csv,
+            json!({"timezone": "Etc/GMT-1"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(winter.status(), StatusCode::OK);
+    assert_eq!(response_json(winter).await["production_kwh"], 3.0);
+}
+
+#[tokio::test]
 async fn upload_inspection_and_preview_do_not_persist_until_save_and_repeat_save_is_idempotent() {
     let catalog = Catalog::in_memory().await.unwrap();
     let app = thuisaccu_server::app(catalog.clone());

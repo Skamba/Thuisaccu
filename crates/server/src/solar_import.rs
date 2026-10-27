@@ -9,6 +9,17 @@ use serde::{Deserialize, Serialize};
 use thuisaccu_storage::solar::{SolarInterval, SolarPeriod, SolarSummary};
 
 pub const MAX_ROWS: usize = 250_000;
+
+/// Slot van elke melding over een tijdstip dat door de klokwisseling niet of dubbelzinnig bestaat.
+/// De API herkent er de melding aan en geeft de code `clock_change`, zodat de interface de oplossing
+/// bij de tijdzone kan tonen.
+const CLOCK_CHANGE_HINT: &str =
+    "Kies een tijdzone die bij het bestand past, of gebruik tijdstippen met UTC-offset.";
+
+/// Of een importfout over de klokwisseling gaat: zulke meldingen eindigen met dezelfde tip over de tijdzone.
+pub fn is_clock_change(message: &str) -> bool {
+    message.ends_with(CLOCK_CHANGE_HINT)
+}
 /// Versie van het inlezen, bewaard bij de instellingen van een import. Verhoog hem bij elke
 /// wijziging die uit hetzelfde bestand met dezelfde instellingen andere meetperioden maakt:
 /// een import telt als dubbel bij dezelfde bytes én dezelfde instellingen, en zou anders de
@@ -207,6 +218,7 @@ pub fn read_table(filename: &str, bytes: &[u8], options: &ImportOptions) -> Resu
             result
         },
         "xlsx" | "xls" | "ods" => {
+            ods_size_check(bytes, options.header_row)?;
             let mut workbook = open_workbook_auto_from_rs(Cursor::new(bytes.to_vec())).map_err(|e| format!("Spreadsheet: {e}"))?;
             sheets = workbook.sheet_names();
             let name = options.sheet.as_ref().or(sheets.first()).ok_or("Geen werkblad gevonden.")?;
@@ -312,6 +324,90 @@ fn xlsx_range<RS: std::io::Read + std::io::Seek>(
         cells.push(Cell::new((row, col), Data::from(cell.get_value().clone())));
     }
     Ok(Range::from_sparse(cells))
+}
+
+/// Controleert de omvang van elk werkblad in een OpenDocument-bestand vóór calamine het opent.
+/// Calamine leest bij het openen alle werkbladen in als rechthoekig blok en herhaalt daarbij
+/// `number-rows-repeated` en `number-columns-repeated`: een bestand van een paar honderd bytes met
+/// één herhaalde rij vraagt zo meer dan een gigabyte. Hier tellen alleen cellen met inhoud; lege
+/// herhaalde rijen en kolommen (die LibreOffice achter elk blad zet) maken een blad niet groter.
+/// Geen OpenDocument (geen zip met `content.xml`): niets te controleren.
+fn ods_size_check(bytes: &[u8], header_row: usize) -> Result<(), String> {
+    use quick_xml::events::{BytesStart, Event};
+
+    let Ok(mut zip) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+        return Ok(());
+    };
+    let Ok(content) = zip.by_name("content.xml") else {
+        return Ok(());
+    };
+    let mut reader = quick_xml::Reader::from_reader(std::io::BufReader::new(content));
+    let repeats = |e: &BytesStart, key: &str| -> usize {
+        e.try_get_attribute(key)
+            .ok()
+            .flatten()
+            .and_then(|a| a.value.parse().ok())
+            .unwrap_or(1)
+    };
+    let has = |e: &BytesStart, key: &str| e.try_get_attribute(key).ok().flatten().is_some();
+    // Per werkblad: de volgende rij, de eerste en laatste rij met inhoud en de breedste rij.
+    // Per rij: de volgende kolom, het einde van de laatste cel met inhoud en het aantal herhalingen.
+    let (mut row, mut first, mut last, mut width) = (0usize, None, 0usize, 0usize);
+    let (mut col, mut filled, mut row_repeats) = (0usize, 0usize, 1usize);
+    let mut buf = Vec::new();
+    loop {
+        let event = reader
+            .read_event_into(&mut buf)
+            .map_err(|e| format!("Spreadsheet: {e}"))?;
+        let (start, empty) = match &event {
+            Event::Start(e) => (Some(e), false),
+            Event::Empty(e) => (Some(e), true),
+            _ => (None, false),
+        };
+        if let Some(e) = start {
+            match e.name().as_ref() {
+                "table:table" => (row, first, last, width) = (0, None, 0, 0),
+                "table:table-row" if empty => {
+                    row = row.saturating_add(repeats(e, "table:number-rows-repeated"))
+                }
+                "table:table-row" => {
+                    (col, filled, row_repeats) = (0, 0, repeats(e, "table:number-rows-repeated"))
+                }
+                "table:table-cell" | "table:covered-table-cell" => {
+                    let span = repeats(e, "table:number-columns-repeated");
+                    // Een cel met waarde, formule of tekst telt; een lege, eventueel opgemaakte cel niet.
+                    if !empty || has(e, "office:value-type") || has(e, "table:formula") {
+                        filled = col.saturating_add(span);
+                    }
+                    col = col.saturating_add(span);
+                }
+                _ => {}
+            }
+        }
+        match &event {
+            Event::End(e) if e.name().as_ref() == "table:table-row" => {
+                if filled > 0 {
+                    first.get_or_insert(row);
+                    last = row.saturating_add(row_repeats.saturating_sub(1));
+                    width = width.max(filled);
+                }
+                row = row.saturating_add(row_repeats);
+            }
+            Event::End(e) if e.name().as_ref() == "table:table" => {
+                let height = first.map_or(0, |first| last - first + 1);
+                // Dezelfde grenzen als na het inlezen, maar voor elk werkblad: calamine leest ze allemaal.
+                if height > MAX_ROWS + header_row + 1
+                    || width > 200
+                    || height.saturating_mul(width) > MAX_CELLS
+                {
+                    return Err(TOO_LARGE.into());
+                }
+            }
+            Event::Eof => return Ok(()),
+            _ => {}
+        }
+        buf.clear();
+    }
 }
 
 /// Zet een spreadsheetcel om naar tekst zoals in een CSV. Een cel met alleen een tijd (een
@@ -447,12 +543,12 @@ fn parse_time(
                 1 => Ok(summer),
                 2 => Ok(winter),
                 _ => Err(format!(
-                    "Tijdstip {raw} komt vaker dan twee keer voor in het dubbele uur bij de overgang naar wintertijd."
+                    "Tijdstip {raw} komt vaker dan twee keer voor in het dubbele uur bij de overgang naar wintertijd. {CLOCK_CHANGE_HINT}"
                 )),
             }
         }
         LocalResult::None => Err(format!(
-            "Tijdstip {raw} bestaat niet door de overgang naar zomertijd; geef een ISO-tijdstip met UTC-offset."
+            "Tijdstip {raw} bestaat niet in tijdzone {timezone}: de klok springt daar dan een uur vooruit naar zomertijd. {CLOCK_CHANGE_HINT}"
         )),
     }
 }
@@ -632,7 +728,7 @@ pub fn normalize(
     // Zonder tweede vermelding is niet te zeggen of het tijdstip zomer- of wintertijd is.
     if let Some((time, _)) = repeated.iter().find(|(_, count)| **count == 1) {
         return Err(format!(
-            "Tijdstip {} is dubbelzinnig door zomer-/wintertijd en komt maar één keer voor; geef een ISO-tijdstip met UTC-offset.",
+            "Tijdstip {} bestaat in tijdzone {timezone} twee keer door de overgang naar wintertijd, maar staat maar één keer in het bestand. {CLOCK_CHANGE_HINT}",
             time.format("%Y-%m-%d %H:%M")
         ));
     }

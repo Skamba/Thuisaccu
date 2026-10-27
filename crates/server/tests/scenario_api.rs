@@ -632,6 +632,24 @@ async fn quote_basis_is_saved_as_provenance_and_strictly_validated() {
             .iter()
             .any(|r| r.input["request"].get("quote_basis").is_none())
     );
+    // De lijst noemt alleen welke optie de offerte is, zodat die als besproken accu kan staan.
+    let list = body(
+        app.clone()
+            .oneshot(
+                Request::get("/api/v1/analysis/runs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    let runs = list["runs"].as_array().unwrap();
+    assert_eq!(
+        runs[0]["input"]["request"]["quote_basis"],
+        json!({"candidate_key": "test"})
+    );
+    assert!(runs[1]["input"]["request"].get("quote_basis").is_none());
 
     for (path, value) in [
         ("candidate_key", json!("elders")),
